@@ -1,0 +1,322 @@
+<deployment-project plugin="plugin.ezdeploy" plugin-version="1.0">
+  <configuration build-checksum="1045845912" file="C:\Users\hozan\OneDrive - University of Nebraska-Lincoln\BTNRH\EmotionGUI\Emognition_sourcecode_20200501\Emognition2.1.0_May2020.prj" location="C:\Users\hozan\OneDrive - University of Nebraska-Lincoln\BTNRH\EmotionGUI\Emognition_sourcecode_20200501" name="Emognition2.1.0_May2020" preferred-package-location="C:\Users\hozan\OneDrive - University of Nebraska-Lincoln\BTNRH\EmotionGUI\Emognition2.1.0_May2020\for_redistribution" preferred-package-type="package.type.exe" target="target.ezdeploy.standalone" target-name="Application Compiler">
+    <param.appname>Emognition2</param.appname>
+    <param.icon>${PROJECT_ROOT}\Emognition2.1.0_May2020_resources\icon.ico</param.icon>
+    <param.icons>
+      <file>${PROJECT_ROOT}\Emognition2.1.0_May2020_resources\icon_48.png</file>
+      <file>${PROJECT_ROOT}\Emognition2.1.0_May2020_resources\icon_32.png</file>
+      <file>${PROJECT_ROOT}\Emognition2.1.0_May2020_resources\icon_24.png</file>
+      <file>${PROJECT_ROOT}\Emognition2.1.0_May2020_resources\icon_16.png</file>
+    </param.icons>
+    <param.version>2.1.0</param.version>
+    <param.authnamewatermark>Mohsen Hozan</param.authnamewatermark>
+    <param.email>mohsenhozan@gmail.com</param.email>
+    <param.company>APP Lab, BTNRH, boystownhospital.org</param.company>
+    <param.summary>Speech Emotion Recognition Test, ©APP Lab BTNRH 2020
+***NOT INTENDED FOR REDISTRIBUTION***</param.summary>
+    <param.description>Please install in a location with write privileges, or "run as adminstrator" when installed.
+
+New in Version 2.1.0 May 2020
+Recompiled in Matlab R2020a
+Replaced deprecated xlswrite() function by writecell() and writematrix()
+Replaced rms() and hann() function with their analytical formula to remove dependency on Signal Processing Toolbox
+Mat2xls can now convert multiple files.
+Incorporated Mat2Xls() conversion toolbox in the main menu, can be summoned by Ctrl+M.
+Replaced previous background images with solid color backgrounds for smaller app size.
+Updated splash image and thumbnail icon.
+
+New in Version 2.0.5 Mar 2020
+solved the flickering issues between axes panels caused by the axes() command in newer versions of Matlab
+fixed the calibrationmode malfunction
+minor aesthetic fixes applied to the main screen
+
+New in Version 2.0.4 Feb 2020
+recompiled with MATLAB R2019b for Windows 10 compatibility and fixing the excel server issue.
+uimenu callback property name changed from 'call' to 'MenuSelectedFcn'
+
+New in Version 2.0.3
+* Calibration mode crash resolved.
+* Freezing issue resolved.
+* Log file info improved.
+
+New in Version 2.0.2
+*Calibration Issue Resolved. A Pause button is now included.
+*MException error in reading previous settings by textscan() resolved.
+
+New in Version 2.0.1
+*Amplitude normalization feature
+*Waitbar pops up while generating reports and saving results
+*Fixed Button repositioning issue for 4 emotions 
+
+New in Version 2.0
+*Passive training
+*Choose 2-5 emotions to be tested
+*Keep previous settings
+*Calibration mode redesigned
+*Additional stats provided for male/female inputs
+*Improvements in PDF and Excel report generations
+*Tooltipstring hints added on many buttons and textboxes
+*Cosmetic improvements
+
+
+Updates in Ver 1.14
+Skips loading of non-WAV audio files. LED back to work.
+
+Updates in Ver 1.13
+TimerPeriod issue fixed, Volume Indicator LED back to work.
+
+Updates in Ver 1.12
+Prevent program shutdown after finishing the training
+No blink of the green LED  after the end of the task.
+default installation path changed.
+
+Updates in Ver 1.11
+Compatible with MATLAB R2015a and MCR 8.5
+Standalone installer
+
+Updates in Ver 1.1.0
+Option to not have english/mandarin captions below smiley buttons.
+Option to not see the results after the test is over.
+
+Ver 1.09 Skipped
+
+Updates in Ver. 1.08
+Bug fixed in the training mode's last question 
+An audio driver must be detected to proceed to the test
+
+Updates in Ver. 1.07
+Played sequence will be saved with corresponding audio filenames and the right or wrong answers to each. This can be helpful in eliminating troublesome recordings after awhile.
+Output files renamed to a shorter format.
+
+Updates in Ver 1.06
+Cosmetic Improvements
+Improved audio input recognition and warnings
+
+Updates in Ver 1.05
+Output .MAT files. 
+Screen Size and Center Adjustments
+Preventing total shutdown of the program
+Load issue resolved
+Opengl Software</param.description>
+    <param.screenshot>${PROJECT_ROOT}\splash2.png</param.screenshot>
+    <param.guid />
+    <param.installpath.string>\BTNRH\Emognition2\</param.installpath.string>
+    <param.installpath.combo>option.installpath.appdata</param.installpath.combo>
+    <param.logo>${PROJECT_ROOT}\splash2.png</param.logo>
+    <param.install.notes />
+    <param.target.install.notes />
+    <param.intermediate>C:\Users\hozan\OneDrive - University of Nebraska-Lincoln\BTNRH\EmotionGUI\Emognition2.1.0_May2020\for_testing</param.intermediate>
+    <param.files.only>C:\Users\hozan\OneDrive - University of Nebraska-Lincoln\BTNRH\EmotionGUI\Emognition2.1.0_May2020\for_redistribution_files_only</param.files.only>
+    <param.output>C:\Users\hozan\OneDrive - University of Nebraska-Lincoln\BTNRH\EmotionGUI\Emognition2.1.0_May2020\for_redistribution</param.output>
+    <param.logdir>C:\Users\hozan\OneDrive - University of Nebraska-Lincoln\BTNRH\EmotionGUI\Emognition2.1.0_May2020</param.logdir>
+    <param.enable.clean.build>false</param.enable.clean.build>
+    <param.user.defined.mcr.options />
+    <param.target.type>subtarget.standalone</param.target.type>
+    <param.support.packages />
+    <param.web.mcr>false</param.web.mcr>
+    <param.package.mcr>true</param.package.mcr>
+    <param.no.mcr>false</param.no.mcr>
+    <param.web.mcr.name>Emognition2.1_webinstaller</param.web.mcr.name>
+    <param.package.mcr.name>Emognition2.1_offlineinstaller</param.package.mcr.name>
+    <param.no.mcr.name>MyAppInstaller_app</param.no.mcr.name>
+    <param.windows.command.prompt>false</param.windows.command.prompt>
+    <param.create.log>true</param.create.log>
+    <param.log.file>logfile_emailTOmohsenhozanATgmailDOTcom</param.log.file>
+    <param.native.matlab>false</param.native.matlab>
+    <param.checkbox>false</param.checkbox>
+    <param.example />
+    <param.help.text>Syntax 
+	 Emognition2 -? 
+	 Emognition2 varargin 
+ Input Arguments 
+	 -?  print help on how to use the application 
+	 varargin  input arguments 
+ Description 
+ 	 Please install in a location with write privileges, or "run as adminstrator" when installed.
+
+New in Version 2.1.0 May 2020
+Recompiled in Matlab R2020a
+Replaced deprecated xlswrite() function by writecell() and writematrix()
+Replaced rms() and hann() function with their analytical formula to remove dependency on Signal Processing Toolbox
+Mat2xls can now convert multiple files.
+Incorporated Mat2Xls() conversion toolbox in the main menu, can be summoned by Ctrl+M.
+Replaced previous background images with solid color backgrounds for smaller app size.
+Updated splash image and thumbnail icon.
+
+New in Version 2.0.5 Mar 2020
+solved the flickering issues between axes panels caused by the axes() command in newer versions of Matlab
+fixed the calibrationmode malfunction
+minor aesthetic fixes applied to the main screen
+
+New in Version 2.0.4 Feb 2020
+recompiled with MATLAB R2019b for Windows 10 compatibility and fixing the excel server issue.
+uimenu callback property name changed from 'call' to 'MenuSelectedFcn'
+
+New in Version 2.0.3
+* Calibration mode crash resolved.
+* Freezing issue resolved.
+* Log file info improved.
+
+New in Version 2.0.2
+*Calibration Issue Resolved. A Pause button is now included.
+*MException error in reading previous settings by textscan() resolved.
+
+New in Version 2.0.1
+*Amplitude normalization feature
+*Waitbar pops up while generating reports and saving results
+*Fixed Button repositioning issue for 4 emotions 
+
+New in Version 2.0
+*Passive training
+*Choose 2-5 emotions to be tested
+*Keep previous settings
+*Calibration mode redesigned
+*Additional stats provided for male/female inputs
+*Improvements in PDF and Excel report generations
+*Tooltipstring hints added on many buttons and textboxes
+*Cosmetic improvements
+
+
+Updates in Ver 1.14
+Skips loading of non-WAV audio files. LED back to work.
+
+Updates in Ver 1.13
+TimerPeriod issue fixed, Volume Indicator LED back to work.
+
+Updates in Ver 1.12
+Prevent program shutdown after finishing the training
+No blink of the green LED  after the end of the task.
+default installation path changed.
+
+Updates in Ver 1.11
+Compatible with MATLAB R2015a and MCR 8.5
+Standalone installer
+
+Updates in Ver 1.1.0
+Option to not have english/mandarin captions below smiley buttons.
+Option to not see the results after the test is over.
+
+Ver 1.09 Skipped
+
+Updates in Ver. 1.08
+Bug fixed in the training mode's last question 
+An audio driver must be detected to proceed to the test
+
+Updates in Ver. 1.07
+Played sequence will be saved with corresponding audio filenames and the right or wrong answers to each. This can be helpful in eliminating troublesome recordings after awhile.
+Output files renamed to a shorter format.
+
+Updates in Ver 1.06
+Cosmetic Improvements
+Improved audio input recognition and warnings
+
+Updates in Ver 1.05
+Output .MAT files. 
+Screen Size and Center Adjustments
+Preventing total shutdown of the program
+Load issue resolved
+Opengl Software</param.help.text>
+    <unset>
+      <param.authnamewatermark />
+      <param.email />
+      <param.company />
+      <param.guid />
+      <param.install.notes />
+      <param.target.install.notes />
+      <param.enable.clean.build />
+      <param.user.defined.mcr.options />
+      <param.target.type />
+      <param.support.packages />
+      <param.no.mcr />
+      <param.no.mcr.name />
+      <param.native.matlab />
+      <param.checkbox />
+      <param.example />
+    </unset>
+    <fileset.main>
+      <file>${PROJECT_ROOT}\Emognition2.m</file>
+    </fileset.main>
+    <fileset.resources>
+      <file>${PROJECT_ROOT}\01_ang_f.wav</file>
+      <file>${PROJECT_ROOT}\01_ang_m.wav</file>
+      <file>${PROJECT_ROOT}\02_hap_f.wav</file>
+      <file>${PROJECT_ROOT}\02_hap_m.wav</file>
+      <file>${PROJECT_ROOT}\03_neu_f.wav</file>
+      <file>${PROJECT_ROOT}\03_neu_m.wav</file>
+      <file>${PROJECT_ROOT}\04_sad_f.wav</file>
+      <file>${PROJECT_ROOT}\04_sad_m.wav</file>
+      <file>${PROJECT_ROOT}\05_sca_f.wav</file>
+      <file>${PROJECT_ROOT}\05_sca_m.wav</file>
+      <file>${PROJECT_ROOT}\SampleReport.pdf</file>
+      <file>${PROJECT_ROOT}\SampleReport.xlsx</file>
+    </fileset.resources>
+    <fileset.package>
+      <file>${PROJECT_ROOT}\updates.txt</file>
+    </fileset.package>
+    <fileset.depfun>
+      <file>${PROJECT_ROOT}\0angry.png</file>
+      <file>${PROJECT_ROOT}\0happy.png</file>
+      <file>${PROJECT_ROOT}\0neutral.png</file>
+      <file>${PROJECT_ROOT}\0sad.png</file>
+      <file>${PROJECT_ROOT}\0scared.png</file>
+      <file>${PROJECT_ROOT}\1angry.png</file>
+      <file>${PROJECT_ROOT}\1happy.png</file>
+      <file>${PROJECT_ROOT}\1neutral.png</file>
+      <file>${PROJECT_ROOT}\1sad.png</file>
+      <file>${PROJECT_ROOT}\1scared.png</file>
+      <file>${PROJECT_ROOT}\2angry.png</file>
+      <file>${PROJECT_ROOT}\2happy.png</file>
+      <file>${PROJECT_ROOT}\2neutral.png</file>
+      <file>${PROJECT_ROOT}\2sad.png</file>
+      <file>${PROJECT_ROOT}\2scared.png</file>
+      <file>${PROJECT_ROOT}\analyzeaudiodir.m</file>
+      <file>${PROJECT_ROOT}\background_main.jpg</file>
+      <file>${PROJECT_ROOT}\bgchanger.m</file>
+      <file>${PROJECT_ROOT}\buttonrelocate.m</file>
+      <file>${PROJECT_ROOT}\calibrationmode.m</file>
+      <file>${PROJECT_ROOT}\checkdirname.m</file>
+      <file>${PROJECT_ROOT}\extraclick.m</file>
+      <file>${PROJECT_ROOT}\getdirectory.m</file>
+      <file>${PROJECT_ROOT}\loadstate.m</file>
+      <file>${PROJECT_ROOT}\mat2xls_emognition.m</file>
+      <file>${PROJECT_ROOT}\moh3nplayer.m</file>
+      <file>${PROJECT_ROOT}\monitorperf.m</file>
+      <file>${PROJECT_ROOT}\pb_5emotions_call.m</file>
+      <file>${PROJECT_ROOT}\pb_beginner.m</file>
+      <file>${PROJECT_ROOT}\pb_pauser.m</file>
+      <file>${PROJECT_ROOT}\preproceed.m</file>
+      <file>${PROJECT_ROOT}\proceed.m</file>
+      <file>${PROJECT_ROOT}\reactiontime.m</file>
+      <file>${PROJECT_ROOT}\replaybutton.png</file>
+      <file>${PROJECT_ROOT}\rusure.m</file>
+      <file>${PROJECT_ROOT}\savesettings.m</file>
+      <file>${PROJECT_ROOT}\savestate.m</file>
+      <file>${PROJECT_ROOT}\volumeLED.m</file>
+    </fileset.depfun>
+    <build-deliverables>
+      <file location="C:\Users\hozan\OneDrive - University of Nebraska-Lincoln\BTNRH\EmotionGUI\Emognition2.1.0_May2020\for_testing" name="readme.txt" optional="true">C:\Users\hozan\OneDrive - University of Nebraska-Lincoln\BTNRH\EmotionGUI\Emognition2.1.0_May2020\for_testing\readme.txt</file>
+      <file location="C:\Users\hozan\OneDrive - University of Nebraska-Lincoln\BTNRH\EmotionGUI\Emognition2.1.0_May2020\for_testing" name="splash.png" optional="false">C:\Users\hozan\OneDrive - University of Nebraska-Lincoln\BTNRH\EmotionGUI\Emognition2.1.0_May2020\for_testing\splash.png</file>
+      <file location="C:\Users\hozan\OneDrive - University of Nebraska-Lincoln\BTNRH\EmotionGUI\Emognition2.1.0_May2020\for_testing" name="Emognition2.exe" optional="false">C:\Users\hozan\OneDrive - University of Nebraska-Lincoln\BTNRH\EmotionGUI\Emognition2.1.0_May2020\for_testing\Emognition2.exe</file>
+    </build-deliverables>
+    <workflow />
+    <matlab>
+      <root>C:\Program Files\MATLAB\R2020a</root>
+      <toolboxes />
+    </matlab>
+    <platform>
+      <unix>false</unix>
+      <mac>false</mac>
+      <windows>true</windows>
+      <win2k>false</win2k>
+      <winxp>false</winxp>
+      <vista>false</vista>
+      <linux>false</linux>
+      <solaris>false</solaris>
+      <osver>10.0</osver>
+      <os32>false</os32>
+      <os64>true</os64>
+      <arch>win64</arch>
+      <matlab>true</matlab>
+    </platform>
+  </configuration>
+</deployment-project>

@@ -1,0 +1,82 @@
+New in Version 2.1.0 May 2020
+Recompiled in Matlab R2020a
+Replaced deprecated xlswrite() function by writecell() and writematrix()
+Replaced rms() and hann() function with their analytical formula to remove dependency on Signal Processing Toolbox
+Mat2xls can now convert multiple files.
+Incorporated Mat2Xls conversion toolbox in the main menu, can be summoned by Ctrl+M.
+Replaced previous background images with solid color backgrounds for smaller app size.
+Updated splash image and thumbnail icon.
+
+New in Version 2.0.5 Mar 2020
+solved the flickering issues between axes panels caused by the axes() command in newer versions of Matlab
+fixed the calibrationmode malfunction
+minor aesthetic fixes applied to the main screen
+
+New in Version 2.0.4 Feb 2020
+recompiled with MATLAB R2019b for Windows 10 compatibility and fixing the excel server issue.
+uimenu callback property name changed from 'call' to 'MenuSelectedFcn'
+
+New in Version 2.0.3
+* Calibration mode crash resolved.
+* Freezing issue resolved.
+* Log file info improved.
+
+New in Version 2.0.2
+*Calibration Issue Resolved. A Pause button is now included.
+*MException error in reading previous settings by textscan() resolved.
+
+New in Version 2.0.1
+*Amplitude normalization feature
+*Waitbar pops up while generating reports and saving results
+*Fixed Button repositioning issue for 4 emotions 
+
+New in Version 2.0
+*Passive training
+*Choose 2-5 emotions to be tested
+*Keep previous settings
+*Calibration mode redesigned
+*Additional stats provided for male/female inputs
+*Improvements in PDF and Excel report generations
+*Tooltipstring hints added on many buttons and textboxes
+*Cosmetic improvements
+
+
+Updates in Ver 1.14
+Skips loading of non-WAV audio files. LED back to work.
+
+Updates in Ver 1.13
+TimerPeriod issue fixed, Volume Indicator LED back to work.
+
+Updates in Ver 1.12
+Prevent program shutdown after finishing the training
+No blink of the green LED  after the end of the task.
+default installation path changed.
+
+Updates in Ver 1.11
+Compatible with MATLAB R2015a and MCR 8.5
+Standalone installer
+
+Updates in Ver 1.1.0
+Option to not have english/mandarin captions below smiley buttons.
+Option to not see the results after the test is over.
+
+Ver 1.09 Skipped
+
+Updates in Ver. 1.08
+Bug fixed in the training mode's last question 
+An audio driver must be detected to proceed to the test
+
+Updates in Ver. 1.07
+Played sequence will be saved with corresponding audio filenames and the right or wrong answers to each. This can be helpful in eliminating troublesome recordings after awhile.
+Output files renamed to a shorter format.
+
+Updates in Ver 1.06
+Cosmetic Improvements
+Improved audio input recognition and warnings
+
+Updates in Ver 1.05
+Output .MAT files. 
+Screen Size and Center Adjustments
+Preventing total shutdown of the program
+Load issue resolved
+Opengl Software
