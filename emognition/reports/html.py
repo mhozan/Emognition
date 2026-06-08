@@ -1,0 +1,272 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2014-2026 Mohsen Hozan
+#
+# This file is part of Emognition. It is free software: you can redistribute
+# it and/or modify it under the terms of the GNU Affero General Public License
+# as published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version. See the LICENSE file.
+
+"""Self-contained, styled HTML report.
+
+Pure standard library -- no template engine, no CSS framework, no external assets
+-- so the output is a single ``.html`` file you can open anywhere, email, archive
+alongside a paper, or "Print -> Save as PDF" from the browser.
+
+Design:
+  * ``render_html_report(...)`` returns the markup as a *string* (testable and
+    embeddable); ``write_html_report(...)`` is the thin file wrapper.
+  * Every value that originates from the user (participant name, filenames,
+    notes) goes through :func:`html.escape` before it touches the page.
+  * The confusion matrix is heat-mapped with inline ``background`` colours
+    computed the same way as the Excel report, so the two look like siblings.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Sequence
+from html import escape
+
+from ..core import EMOTIONS_IN_ORDER, Gender, Response, SessionSummary, summarize
+from ..core.scoring import DEFAULT_RT_KIND, GroupStats
+from .common import (
+    EMPTY,
+    STAT_COLUMNS,
+    SessionInfo,
+    fmt_datetime,
+    fmt_pct,
+    fmt_replays,
+    fmt_seconds,
+)
+
+# --------------------------------------------------------------------------
+# colour helpers (mirror the Excel heat-map: green = correct, red = confusion)
+# --------------------------------------------------------------------------
+
+def _heat_rgb(count: int, max_count: int, on_diagonal: bool) -> str | None:
+    """CSS ``rgb(...)`` for a confusion cell, or None for an empty cell."""
+    if count <= 0 or max_count <= 0:
+        return None
+    t = 0.25 + 0.75 * count / max_count
+    target = (76, 175, 80) if on_diagonal else (229, 115, 115)
+    r, g, b = (round(255 * (1 - t) + c * t) for c in target)
+    return f"rgb({r},{g},{b})"
+
+
+# --------------------------------------------------------------------------
+# section builders (each returns an HTML fragment)
+# --------------------------------------------------------------------------
+
+def _info_section(info: SessionInfo, summary: SessionSummary) -> str:
+    rows = [
+        ("Participant", info.participant),
+        ("Experimenter", info.experimenter),
+        ("Mode", info.mode),
+        ("Audio folder", info.audio_folder),
+        ("Started", fmt_datetime(info.started_at)),
+        ("Finished", fmt_datetime(info.finished_at)),
+        ("Reaction-time basis", summary.rt_kind),
+        ("App version", info.app_version),
+    ]
+    if info.notes:
+        rows.append(("Notes", info.notes))
+    items = "".join(
+        f"<div class='kv'><span class='k'>{escape(str(k))}</span>"
+        f"<span class='v'>{escape(str(v)) if v else EMPTY}</span></div>"
+        for k, v in rows
+    )
+    return f"<section class='info'>{items}</section>"
+
+
+def _cards_section(summary: SessionSummary) -> str:
+    t = summary.total
+    cards = [
+        ("Overall accuracy", fmt_pct(t.pct_correct) + ("%" if t.pct_correct is not None else "")),
+        ("Mean reaction", fmt_seconds(t.mean_rt) + (" s" if t.mean_rt is not None else "")),
+        ("Trials answered", f"{t.n_answered} / {t.n_presented}"),
+        ("Correct", str(t.n_correct)),
+    ]
+    blocks = "".join(
+        f"<div class='card'><div class='card-val'>{escape(v)}</div>"
+        f"<div class='card-lbl'>{escape(l)}</div></div>"
+        for l, v in cards
+    )
+    return f"<section class='cards'>{blocks}</section>"
+
+
+def _confusion_section(summary: SessionSummary) -> str:
+    labels = [e.label for e in summary.emotion_order]
+    max_count = max((max(row) for row in summary.confusion), default=0)
+
+    head = "".join(f"<th>{escape(l)}</th>" for l in labels)
+    body_rows = []
+    for i, (lab, row) in enumerate(zip(labels, summary.confusion)):
+        cells = []
+        for j, count in enumerate(row):
+            rgb = _heat_rgb(count, max_count, on_diagonal=(i == j))
+            style = f" style='background:{rgb};color:#1a1a1a'" if rgb else ""
+            cells.append(f"<td{style}>{count}</td>")
+        body_rows.append(f"<tr><th class='rowhead'>{escape(lab)}</th>{''.join(cells)}</tr>")
+    return f"""
+    <section>
+      <h2>Confusion matrix</h2>
+      <p class='muted'>Rows = emotion played (true); columns = emotion chosen.</p>
+      <table class='confusion'>
+        <thead><tr><th class='corner'>true \\ chosen</th>{head}</tr></thead>
+        <tbody>{''.join(body_rows)}</tbody>
+      </table>
+    </section>"""
+
+
+def _stat_cells(stats: GroupStats) -> str:
+    return (
+        f"<td>{fmt_pct(stats.pct_correct)}</td>"
+        f"<td>{fmt_seconds(stats.mean_rt)}</td>"
+        f"<td>{fmt_replays(stats.mean_replays)}</td>"
+    )
+
+
+def _stats_section(summary: SessionSummary) -> str:
+    head = "".join(f"<th>{escape(c)}</th>" for c in STAT_COLUMNS)
+    rows = []
+    for emo in summary.emotion_order:
+        rows.append(
+            f"<tr><th class='rowhead'>{escape(emo.label)}</th>"
+            f"{_stat_cells(summary.per_emotion[emo])}</tr>"
+        )
+    for label, g in (("Female", Gender.FEMALE), ("Male", Gender.MALE)):
+        rows.append(
+            f"<tr class='group'><th class='rowhead'>{label}</th>"
+            f"{_stat_cells(summary.per_gender[g])}</tr>"
+        )
+    rows.append(
+        f"<tr class='total'><th class='rowhead'>Total</th>{_stat_cells(summary.total)}</tr>"
+    )
+    return f"""
+    <section>
+      <h2>Statistics</h2>
+      <table class='stats'>
+        <thead><tr><th></th>{head}</tr></thead>
+        <tbody>{''.join(rows)}</tbody>
+      </table>
+    </section>"""
+
+
+def _trials_section(responses: Sequence[Response]) -> str:
+    rows = []
+    for i, r in enumerate(responses, start=1):
+        chosen = r.responded.label if r.responded else EMPTY
+        cls = "ok" if r.is_correct else ("miss" if r.answered else "blank")
+        mark = "✓" if r.is_correct else ("✗" if r.answered else EMPTY)
+        rows.append(
+            f"<tr class='{cls}'>"
+            f"<td>{i}</td>"
+            f"<td class='mono'>{escape(r.stimulus.filename)}</td>"
+            f"<td>{escape(r.true_emotion.label)}</td>"
+            f"<td>{escape(chosen)}</td>"
+            f"<td class='center'>{mark}</td>"
+            f"<td>{fmt_seconds(r.rt_onset)}</td>"
+            f"<td>{fmt_seconds(r.rt_offset)}</td>"
+            f"<td class='center'>{r.n_replays}</td>"
+            f"</tr>"
+        )
+    return f"""
+    <section>
+      <h2>Per-trial detail</h2>
+      <table class='trials'>
+        <thead><tr>
+          <th>#</th><th>Audio file</th><th>Played</th><th>Chosen</th>
+          <th>OK</th><th>RT onset (s)</th><th>RT offset (s)</th><th>Replays</th>
+        </tr></thead>
+        <tbody>{''.join(rows)}</tbody>
+      </table>
+    </section>"""
+
+
+_CSS = """
+  :root { --bg:#0f1226; --panel:#171a33; --ink:#e9ebff; --muted:#9aa0c7;
+          --line:#2a2e52; --accent:#7c6cff; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink);
+         font:15px/1.5 system-ui,-apple-system,Segoe UI,Roboto,sans-serif; }
+  .wrap { max-width:980px; margin:0 auto; padding:32px 24px 64px; }
+  header h1 { margin:0 0 4px; font-size:26px; }
+  header .sub { color:var(--muted); margin-bottom:24px; }
+  h2 { font-size:18px; margin:28px 0 10px; }
+  .muted { color:var(--muted); font-size:13px; margin:.2em 0 .8em; }
+  section.info { display:grid; grid-template-columns:repeat(2,1fr); gap:6px 28px;
+                 background:var(--panel); border:1px solid var(--line);
+                 border-radius:12px; padding:16px 20px; }
+  .kv { display:flex; justify-content:space-between; gap:16px;
+        border-bottom:1px dashed var(--line); padding:4px 0; }
+  .kv .k { color:var(--muted); } .kv .v { font-weight:600; }
+  section.cards { display:grid; grid-template-columns:repeat(4,1fr); gap:14px;
+                  margin:20px 0; }
+  .card { background:var(--panel); border:1px solid var(--line);
+          border-radius:12px; padding:18px; text-align:center; }
+  .card-val { font-size:26px; font-weight:700; color:#fff; }
+  .card-lbl { color:var(--muted); font-size:13px; margin-top:4px; }
+  table { border-collapse:collapse; width:100%; background:var(--panel);
+          border:1px solid var(--line); border-radius:12px; overflow:hidden; }
+  th,td { padding:8px 12px; text-align:right; border-bottom:1px solid var(--line); }
+  thead th { background:#1f2347; color:#cdd2ff; font-weight:600; text-align:right; }
+  .rowhead,.corner { text-align:left; color:#cdd2ff; font-weight:600; }
+  table.confusion td { text-align:center; font-variant-numeric:tabular-nums; }
+  .center { text-align:center; } .mono { font-family:ui-monospace,monospace; text-align:left; }
+  tr.total th, tr.total td { font-weight:700; background:#20254d; }
+  tr.group td, tr.group th { color:#cdd2ff; }
+  tr.ok td:nth-child(5) { color:#5ad17a; } tr.miss td:nth-child(5) { color:#ff7b7b; }
+  footer { color:var(--muted); font-size:12px; margin-top:36px;
+           border-top:1px solid var(--line); padding-top:12px; }
+  @media print {
+    body { background:#fff; color:#111; }
+    .card,section.info,table { background:#fff; border-color:#ccc; }
+    .card-val,thead th,.rowhead,.corner { color:#111; }
+  }
+"""
+
+
+def render_html_report(
+    responses: Sequence[Response],
+    *,
+    summary: SessionSummary | None = None,
+    info: SessionInfo | None = None,
+    rt_kind: str = DEFAULT_RT_KIND,
+) -> str:
+    """Render the full report as a self-contained HTML document string."""
+    summary = summary or summarize(responses, rt_kind=rt_kind)
+    info = info or SessionInfo(rt_kind=rt_kind)
+
+    title = "Emognition — Session Report"
+    subtitle = escape(info.participant or "Unnamed participant")
+    body = "".join([
+        _info_section(info, summary),
+        _cards_section(summary),
+        _confusion_section(summary),
+        _stats_section(summary),
+        _trials_section(responses),
+    ])
+    return f"""<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{escape(title)}</title>
+<style>{_CSS}</style></head>
+<body><div class="wrap">
+  <header><h1>{escape(title)}</h1><div class="sub">{subtitle}</div></header>
+  {body}
+  <footer>Generated by Emognition · Speech Emotion Recognition · AGPL-3.0</footer>
+</div></body></html>"""
+
+
+def write_html_report(
+    responses: Sequence[Response],
+    path: str,
+    *,
+    summary: SessionSummary | None = None,
+    info: SessionInfo | None = None,
+    rt_kind: str = DEFAULT_RT_KIND,
+) -> str:
+    """Render and write the HTML report to *path*; return the path."""
+    html = render_html_report(responses, summary=summary, info=info, rt_kind=rt_kind)
+    with open(path, "w", encoding="utf-8") as fh:
+        fh.write(html)
+    return path

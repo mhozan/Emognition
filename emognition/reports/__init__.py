@@ -14,8 +14,11 @@ All writers consume the same inputs (a list of ``core.Response`` plus an optiona
 
 from .common import SessionInfo
 from .excel import write_excel_report
+from .html import render_html_report, write_html_report
 
 __all__ = [
     "SessionInfo",
     "write_excel_report",
+    "render_html_report",
+    "write_html_report",
 ]
