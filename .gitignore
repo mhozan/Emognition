@@ -32,3 +32,14 @@ results/
 .idea/
 *.swp
 .DS_Store
+
+# --- Local / agent working files (not needed to build or deploy) ---
+CLAUDE.md
+.claude/
+ONBOARDING.md
+*.log
+
+# --- PyInstaller working files (the .spec IS tracked; its outputs are not) ---
+*.manifest
+warn-*.txt
+xref-*.html

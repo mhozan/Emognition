@@ -20,5 +20,5 @@ fpdf2                          # PDF reports  (was: MATLAB print -dpdf)
 openpyxl                       # Excel reports (was: MATLAB writecell/writematrix)
 matplotlib                     # confusion-matrix figure for the PDF
 
-# --- Packaging (phase 3: the double-click executable) ---
-# pyinstaller                  # uncomment when we build per-OS binaries
+# --- Packaging (the double-click executable) ---
+pyinstaller                    # build per-OS bundles: scripts/build_executable.sh

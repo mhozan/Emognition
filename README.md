@@ -78,6 +78,30 @@ pytest
 python scripts/timing_spike.py   # needs a display + audio device
 ```
 
+### Run the app (from source)
+```bash
+python -m emognition                 # setup dialog -> Test block -> reports
+python -m emognition --selfcheck     # import/initialise everything and exit
+```
+
+## Building a standalone executable
+
+A double-click app that needs no Python install on the target machine, built with
+[PyInstaller](https://pyinstaller.org/):
+
+```bash
+scripts/build_executable.sh          # -> dist/emognition/ (zip it to share)
+./dist/emognition/emognition --selfcheck   # verify the bundle is complete
+```
+
+Notes:
+- **One folder, ~0.5 GB.** PsychoPy is large; the spec (`emognition.spec`)
+  already excludes the heavyweight bits we don't use (OpenCV, ffmpeg/movie
+  playback, Arrow/HDF5, the Coder IDE) to roughly halve the size.
+- **No cross-compiling.** Run the build on each target OS to get that OS's
+  binary (Windows `.exe`, macOS `.app`, Linux ELF). Per-OS installers come in
+  Phase 3.
+
 ## Reaction time
 
 Reaction time is reported **two ways**, matching the original tool:
