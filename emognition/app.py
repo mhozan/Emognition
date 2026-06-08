@@ -88,11 +88,14 @@ def _run_session(args: argparse.Namespace) -> int:
     from .ui.assets import Caption, audio_dir
     from .ui.experiment_window import ExperimentAborted, TestExperiment
 
-    stimuli = scan_audio_dir(audio_dir())
+    audio_folder = args.audio_dir or audio_dir()
+    stimuli = scan_audio_dir(audio_folder)
     if not stimuli:
-        print("No audio stimuli found.", file=sys.stderr)
+        print(f"No audio stimuli found in {audio_folder}.", file=sys.stderr)
         return 1
-    trials = build_trial_list(stimuli, shuffle=not args.no_shuffle)
+    trials = build_trial_list(
+        stimuli, emotions=_parse_emotions(args.emotions), shuffle=not args.no_shuffle
+    )
 
     started = datetime.now()
     win = visual.Window(
@@ -127,7 +130,7 @@ def _run_session(args: argparse.Namespace) -> int:
         participant=args.participant,
         experimenter=args.experimenter,
         mode="Test" + (" (aborted)" if aborted else ""),
-        audio_folder=audio_dir(),
+        audio_folder=audio_folder,
         started_at=started, finished_at=datetime.now(),
         app_version=__version__,
     )
@@ -147,15 +150,40 @@ def _caption_value(choice: str) -> str:
     return {"english": "0", "mandarin": "1", "none": "2"}.get(choice, "2")
 
 
+def _parse_emotions(spec: str | None):
+    """Parse a comma-separated emotion-tag list into Emotions, or None for all."""
+    if not spec:
+        return None
+    from .core import TAG_TO_EMOTION
+
+    tags = [t.strip().lower() for t in spec.split(",") if t.strip()]
+    emotions = [TAG_TO_EMOTION[t] for t in tags if t in TAG_TO_EMOTION]
+    return emotions or None
+
+
+def _open_config_ui() -> int:
+    """Open the PyQt6 experimenter setup screen (the front door)."""
+    from .ui.config_window import run_config_ui
+
+    return run_config_ui()
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="emognition", description="Speech Emotion Recognition")
     parser.add_argument("--version", action="version", version=f"Emognition {__version__}")
     parser.add_argument("--selfcheck", action="store_true",
                         help="import/initialise everything and exit (headless build test)")
+    parser.add_argument("--setup", action="store_true",
+                        help="open the experimenter setup screen (config UI)")
     parser.add_argument("--participant", default="Participant01",
                         help="participant label (default: Participant01)")
     parser.add_argument("--experimenter", default="APPstaff",
                         help="experimenter name (default: APPstaff)")
+    parser.add_argument("--audio-dir", default=None,
+                        help="folder of stimulus .wav files (default: bundled clips)")
+    parser.add_argument("--emotions", default=None,
+                        help="comma-separated emotion tags to test, e.g. hap,sad,ang "
+                             "(default: all five)")
     parser.add_argument("--caption", choices=["none", "english", "mandarin"],
                         default="none", help="emoticon caption language (default: none)")
     parser.add_argument("--fullscreen", action="store_true",
@@ -168,10 +196,15 @@ def main(argv: list[str] | None = None) -> int:
                         help="show a green amplitude LED during playback")
     parser.add_argument("--save-dir", default=None,
                         help="folder for output reports (default: ./save_location)")
-    args = parser.parse_args(argv)
+    raw = sys.argv[1:] if argv is None else list(argv)
+    args = parser.parse_args(raw)
 
     if args.selfcheck:
         return _selfcheck()
+    # Bare launch (no args) or explicit --setup opens the experimenter screen;
+    # an explicit run (e.g. --participant ...) goes straight to the experiment.
+    if args.setup or not raw:
+        return _open_config_ui()
     return _run_session(args)
 
 
