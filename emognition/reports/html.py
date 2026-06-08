@@ -28,6 +28,7 @@ from html import escape
 
 from ..core import EMOTIONS_IN_ORDER, Gender, Response, RtFlag, SessionSummary
 from ..core.scoring import DEFAULT_RT_KIND, GroupStats
+from .charts import reaction_time_svg
 from .common import (
     EMPTY,
     RT_FLAG_LABEL,
@@ -237,6 +238,8 @@ _CSS = """
   .flagcell { text-align:left; }
   .flag { background:#3a2140; color:#ffb38a; border:1px solid #6b3f54;
           border-radius:6px; padding:1px 7px; font-size:11px; white-space:nowrap; }
+  .chart { background:var(--panel); border:1px solid var(--line);
+           border-radius:12px; padding:10px; } .chart svg { width:100%; height:auto; }
   footer { color:var(--muted); font-size:12px; margin-top:36px;
            border-top:1px solid var(--line); padding-top:12px; }
   @media print {
@@ -260,11 +263,19 @@ def render_html_report(
 
     title = "Emognition — Session Report"
     subtitle = escape(info.participant or "Unnamed participant")
+    chart = reaction_time_svg(responses, rt_kind=summary.rt_kind)
+    chart_section = (
+        "<section><h2>Reaction time per trial</h2>"
+        "<p class='muted'>Marker size grows with replays; "
+        "green = correct, red = incorrect.</p>"
+        f"<div class='chart'>{chart}</div></section>"
+    )
     body = "".join([
         _info_section(info, summary),
         _cards_section(summary),
         _confusion_section(summary),
         _stats_section(summary),
+        chart_section,
         _trials_section(responses, flags),
     ])
     return f"""<!doctype html>
