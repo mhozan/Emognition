@@ -41,12 +41,19 @@ from psychopy import prefs  # noqa: E402
 
 prefs.hardware["audioLib"] = ["ptb", "sounddevice"]
 
+# Make 'emognition' importable when run straight from the repo root.
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+# Defuse the PsychoPy TextStim/PsychoToolbox SystemError race BEFORE creating any
+# window/keyboard/sound threads. See emognition.runtime.harden_psychopy.
+from emognition.runtime import harden_psychopy  # noqa: E402
+
+harden_psychopy()
+
 import psychtoolbox as ptb  # noqa: E402
 from psychopy import core, sound, visual  # noqa: E402
 from psychopy.hardware import keyboard  # noqa: E402
 
-# Make 'emognition' importable when run straight from the repo root.
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from emognition.core import scan_audio_dir  # noqa: E402
 
 ASSETS_AUDIO = os.path.join(
@@ -72,10 +79,16 @@ def main() -> int:
     kb = keyboard.Keyboard()
     msg = visual.TextStim(win, text="", height=0.05, wrapWidth=1.2)
 
+    # Open ONE audio stream and reuse it for every clip (snd.setSound swaps the
+    # buffer). Constructing a fresh sound.Sound per clip opens a new exclusive
+    # ALSA stream and fails on the 2nd clip; one shared stream is also lower
+    # latency. (Homage: the original juggled a single Java/MATLAB player too.)
+    snd = sound.Sound(stimuli[0].path, stereo=True)
+
     results = []
     # Test the first few clips -- enough to eyeball that RTs are plausible.
     for i, stim in enumerate(stimuli[:5], start=1):
-        snd = sound.Sound(stim.path, stereo=True)
+        snd.setSound(stim.path)
         duration = snd.getDuration()
         want_key = EMO_TO_KEY[int(stim.emotion)]
 
