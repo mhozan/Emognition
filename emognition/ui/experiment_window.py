@@ -104,7 +104,11 @@ class EmotionButton:
             color="white",
         )
 
-    def draw(self) -> None:
+    def draw(self, enabled: bool = True) -> None:
+        """Draw the face; dim it when disabled (response not yet allowed)."""
+        opacity = 1.0 if enabled else 0.3
+        self.stim.opacity = opacity
+        self.label.opacity = opacity
         self.stim.draw()
         self.label.draw()
 
@@ -187,11 +191,13 @@ class TestExperiment:
         self._sound.setSound(stim.path)
         duration = self._sound.getDuration()
 
-        # Draw the response screen once so it's visible as the audio begins.
-        self._draw_scene(progress=f"{index} / {total}")
+        # Draw the response screen once so it's visible as the audio begins
+        # (greyed -- responses aren't allowed until the clip finishes).
+        self._draw_scene(progress=f"{index} / {total}", enabled=False)
         self.win.flip()
 
         onset = self._start_audio_and_zero_clock()
+        self._wait_until_offset(duration)   # buttons greyed; ignore early presses
         press = self._await_response()
 
         rt: ReactionTime = reaction_time(
@@ -221,6 +227,23 @@ class TestExperiment:
         self.mouse.clickReset()
         return onset
 
+    def _wait_until_offset(self, duration: float) -> None:
+        """Hold responses off (buttons greyed) until the clip finishes playing.
+
+        Restores the original program's behaviour -- you can only answer after
+        hearing the whole clip -- which also guarantees a non-negative offset RT.
+        Any key pressed during playback is drained and discarded (Escape still
+        quits); the keyboard buffer is cleared at offset so the next real press
+        is timed from a clean slate.
+        """
+        while self.kb.clock.getTime() < duration:
+            for key in self.kb.getKeys():        # drain early presses
+                if key.name == "escape":
+                    raise ExperimentAborted()
+            self._draw_scene(progress=None, enabled=False)
+            self.win.flip()
+        self.kb.clearEvents()
+
     def _await_response(self) -> _Press:
         """Spin the draw/flip loop, polling input, until a response arrives."""
         mouse_was_down = self.mouse.getPressed()[0] == 1  # ignore a held-over click
@@ -245,11 +268,19 @@ class TestExperiment:
             self._draw_scene(progress=None)
             self.win.flip()
 
-    def _draw_scene(self, progress: str | None) -> None:
-        """Draw one frame: prompt, buttons, and (optionally) the progress text."""
+    def _draw_scene(self, progress: str | None, enabled: bool = True) -> None:
+        """Draw one frame: prompt, buttons, and (optionally) the progress text.
+
+        ``enabled`` dims the buttons while a clip is still playing (responses
+        not yet allowed).
+        """
+        self.prompt.text = (
+            "Listen, then choose the emotion you heard."
+            if enabled else "Listen..."
+        )
         self.prompt.draw()
         for button in self.buttons:
-            button.draw()
+            button.draw(enabled)
         if progress is not None:
             self.progress.text = f"Progress: {progress}"
         self.progress.draw()

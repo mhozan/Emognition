@@ -240,6 +240,7 @@ _CSS = """
           border-radius:6px; padding:1px 7px; font-size:11px; white-space:nowrap; }
   .chart { background:var(--panel); border:1px solid var(--line);
            border-radius:12px; padding:10px; } .chart svg { width:100%; height:auto; }
+  h3.charth { font-size:14px; color:var(--muted); margin:16px 0 6px; font-weight:600; }
   footer { color:var(--muted); font-size:12px; margin-top:36px;
            border-top:1px solid var(--line); padding-top:12px; }
   @media print {
@@ -263,12 +264,17 @@ def render_html_report(
 
     title = "Emognition — Session Report"
     subtitle = escape(info.participant or "Unnamed participant")
-    chart = reaction_time_svg(responses, rt_kind=summary.rt_kind)
+    chart_offset = reaction_time_svg(responses, rt_kind="offset")
+    chart_onset = reaction_time_svg(responses, rt_kind="onset")
     chart_section = (
         "<section><h2>Reaction time per trial</h2>"
         "<p class='muted'>Marker size grows with replays; "
         "green = correct, red = incorrect.</p>"
-        f"<div class='chart'>{chart}</div></section>"
+        "<h3 class='charth'>From audio offset (default)</h3>"
+        f"<div class='chart'>{chart_offset}</div>"
+        "<h3 class='charth'>From audio onset</h3>"
+        f"<div class='chart'>{chart_onset}</div>"
+        "</section>"
     )
     body = "".join([
         _info_section(info, summary),
