@@ -23,6 +23,34 @@ _TEXTSTIM_PYGLET_FILTER = ".*text.Label*"
 _hardened = False
 
 
+def configure_prefs(audio_libs: tuple[str, ...] = ("ptb", "sounddevice")) -> None:
+    """Select PsychoPy's audio backend(s). MUST run before importing psychopy.sound.
+
+    PsychoPy decides which audio library to use at the moment ``psychopy.sound`` is
+    first imported, by reading ``prefs.hardware['audioLib']``. Set it afterwards and
+    you're ignored. We list PsychoToolbox (``ptb``) first -- it gives the lowest
+    latency and sample-accurate onset scheduling we rely on for valid reaction
+    times -- with ``sounddevice`` as a fallback if PTB can't initialise.
+
+    Importing :mod:`psychopy.preferences` here is cheap and starts no threads.
+    """
+    from psychopy import prefs
+
+    prefs.hardware["audioLib"] = list(audio_libs)
+
+
+def bootstrap() -> None:
+    """One call to make PsychoPy safe to use: set audio prefs, then harden.
+
+    Call this once, at the very start of any entry point, BEFORE importing
+    ``psychopy.sound`` / ``psychopy.visual`` or creating any window. Order matters:
+    audio prefs first (see :func:`configure_prefs`), then the TextStim race fix
+    (see :func:`harden_psychopy`).
+    """
+    configure_prefs()
+    harden_psychopy()
+
+
 def harden_psychopy() -> None:
     """Neutralise a PsychoPy ``TextStim`` race that crashes under PsychoToolbox.
 
