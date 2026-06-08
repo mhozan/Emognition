@@ -1,0 +1,34 @@
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+*.spec.bak
+
+# --- Virtual environment (interpreter pinned via .python-version + pyenv) ---
+.venv/
+venv/
+env/
+
+# --- PyInstaller build output (phase 3) ---
+/build/
+/dist/
+
+# --- Test / coverage ---
+.pytest_cache/
+.coverage
+htmlcov/
+
+# --- Experiment output written at runtime (participant data must NOT be committed) ---
+save_location/
+*.psydat
+out/
+results/
+
+# --- Editor / OS cruft ---
+.vscode/
+.idea/
+*.swp
+.DS_Store

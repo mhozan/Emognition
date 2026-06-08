@@ -1,0 +1,40 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "emognition"
+version = "3.0.0-dev"
+description = "Speech Emotion Recognition experiment (PsychoPy port of the MATLAB Emognition app)"
+readme = "README.md"
+requires-python = ">=3.10,<3.12"
+license = { file = "LICENSE" }
+authors = [{ name = "Mohsen Hozan" }]
+keywords = ["psychophysics", "emotion-recognition", "psychopy", "reaction-time", "experiment"]
+classifiers = [
+    "License :: OSI Approved :: GNU Affero General Public License v3 or later (AGPLv3+)",
+    "Programming Language :: Python :: 3.10",
+    "Intended Audience :: Science/Research",
+    "Topic :: Scientific/Engineering",
+    "Operating System :: OS Independent",
+]
+
+# NOTE: psychopy is intentionally installed with --no-deps (see requirements.in),
+# so it is not listed as a hard dependency here. Use the lockfile to set up an env:
+#     pip install --no-deps -r requirements.txt
+dependencies = []
+
+[project.optional-dependencies]
+dev = ["pytest>=7", "pytest-cov"]
+
+[project.scripts]
+emognition = "emognition.app:main"
+
+[tool.setuptools.packages.find]
+include = ["emognition*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# Keep the default test run UI-free (no display/audio needed); the timing spike
+# is run manually via scripts/timing_spike.py, not collected here.
+addopts = "-q"
