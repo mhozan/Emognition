@@ -61,13 +61,20 @@ def _default_save_dir() -> str:
     return os.path.join(base, "save_location")
 
 
-def _run_session(save_dir: str) -> int:
-    """Show the setup dialog, run a Test block, write and open the reports."""
+def _run_session(args: argparse.Namespace) -> int:
+    """Run a Test block from CLI settings, then write and open the reports.
+
+    Settings come from the command line (not a GUI dialog) on purpose: opening a
+    PyQt6 dialog and then a pyglet/OpenGL PsychoPy window in the *same* process
+    crashes on Linux (the two toolkits fight over the GL context). The graphical
+    setup screen (Phase 2, #12) will launch the experiment in a separate process
+    to avoid exactly this. For now, defaults + flags keep things robust.
+    """
     from .runtime import bootstrap
 
     bootstrap()
 
-    from psychopy import core, gui, visual
+    from psychopy import core, visual
 
     from .core import build_trial_list, scan_audio_dir
     from .io import open_path
@@ -80,34 +87,18 @@ def _run_session(save_dir: str) -> int:
     from .ui.assets import Caption, audio_dir
     from .ui.experiment_window import ExperimentAborted, TestExperiment
 
-    # --- minimal setup dialog (Qt-backed; no wxPython) --------------------
-    fields = {
-        "Participant": "Participant01",
-        "Experimenter": "APPstaff",
-        "Caption": ["none", "english", "mandarin"],
-        "Fullscreen": False,
-        "Shuffle": True,
-    }
-    dlg = gui.DlgFromDict(
-        fields, title=f"Emognition {__version__}",
-        order=["Participant", "Experimenter", "Caption", "Fullscreen", "Shuffle"],
-    )
-    if not dlg.OK:
-        print("Cancelled.")
-        return 0
-
     stimuli = scan_audio_dir(audio_dir())
     if not stimuli:
         print("No audio stimuli found.", file=sys.stderr)
         return 1
-    trials = build_trial_list(stimuli, shuffle=bool(fields["Shuffle"]))
+    trials = build_trial_list(stimuli, shuffle=not args.no_shuffle)
 
     started = datetime.now()
     win = visual.Window(
         size=(1280, 800), color=(-0.3, -0.3, -0.3), units="height",
-        fullscr=bool(fields["Fullscreen"]),
+        fullscr=args.fullscreen,
     )
-    experiment = TestExperiment(win, caption=Caption(_caption_value(fields["Caption"])))
+    experiment = TestExperiment(win, caption=Caption(_caption_value(args.caption)))
     aborted = False
     try:
         responses = experiment.run(trials)
@@ -121,13 +112,14 @@ def _run_session(save_dir: str) -> int:
         core.quit()
         return 0
 
+    save_dir = args.save_dir or _default_save_dir()
     os.makedirs(save_dir, exist_ok=True)
     stamp = started.strftime("%Y%m%d_%H%M%S")
-    safe = "".join(c for c in str(fields["Participant"]) if c.isalnum() or c in "-_") or "session"
+    safe = "".join(c for c in args.participant if c.isalnum() or c in "-_") or "session"
     base = os.path.join(save_dir, f"{safe}_{stamp}")
     info = SessionInfo(
-        participant=str(fields["Participant"]),
-        experimenter=str(fields["Experimenter"]),
+        participant=args.participant,
+        experimenter=args.experimenter,
         mode="Test" + (" (aborted)" if aborted else ""),
         audio_folder=audio_dir(),
         started_at=started, finished_at=datetime.now(),
@@ -144,7 +136,7 @@ def _run_session(save_dir: str) -> int:
 
 
 def _caption_value(choice: str) -> str:
-    """Map the dialog's caption label to the Caption enum value ('0'/'1'/'2')."""
+    """Map a caption choice to the Caption enum value ('0'/'1'/'2')."""
     return {"english": "0", "mandarin": "1", "none": "2"}.get(choice, "2")
 
 
@@ -153,13 +145,23 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--version", action="version", version=f"Emognition {__version__}")
     parser.add_argument("--selfcheck", action="store_true",
                         help="import/initialise everything and exit (headless build test)")
+    parser.add_argument("--participant", default="Participant01",
+                        help="participant label (default: Participant01)")
+    parser.add_argument("--experimenter", default="APPstaff",
+                        help="experimenter name (default: APPstaff)")
+    parser.add_argument("--caption", choices=["none", "english", "mandarin"],
+                        default="none", help="emoticon caption language (default: none)")
+    parser.add_argument("--fullscreen", action="store_true",
+                        help="run the experiment window full screen")
+    parser.add_argument("--no-shuffle", action="store_true",
+                        help="present clips in folder order instead of shuffled")
     parser.add_argument("--save-dir", default=None,
                         help="folder for output reports (default: ./save_location)")
     args = parser.parse_args(argv)
 
     if args.selfcheck:
         return _selfcheck()
-    return _run_session(args.save_dir or _default_save_dir())
+    return _run_session(args)
 
 
 if __name__ == "__main__":
