@@ -13,6 +13,7 @@ All writers consume the same inputs (a list of ``core.Response`` plus an optiona
 """
 
 from .common import SessionInfo
+from .csv import write_csv_report, write_summary_csv, write_trials_csv
 from .excel import write_excel_report
 from .html import render_html_report, write_html_report
 
@@ -21,4 +22,7 @@ __all__ = [
     "write_excel_report",
     "render_html_report",
     "write_html_report",
+    "write_csv_report",
+    "write_trials_csv",
+    "write_summary_csv",
 ]
