@@ -14,10 +14,12 @@ Kept deliberately free of PsychoPy / Qt imports so the scientific logic
 
 from .emotions import (
     Emotion,
-    Gender,
+    Sex,
     Stimulus,
     EMOTIONS_IN_ORDER,
+    SEXES_IN_ORDER,
     TAG_TO_EMOTION,
+    TAG_TO_SEX,
 )
 from .stimuli import parse_stimulus_filename, scan_audio_dir
 from .responses import Response
@@ -34,10 +36,12 @@ from .quality import RtFlag, flag_responses, scrub_flagged_rts
 __all__ = [
     # emotions / stimuli
     "Emotion",
-    "Gender",
+    "Sex",
     "Stimulus",
     "EMOTIONS_IN_ORDER",
+    "SEXES_IN_ORDER",
     "TAG_TO_EMOTION",
+    "TAG_TO_SEX",
     "parse_stimulus_filename",
     "scan_audio_dir",
     # trial sequencing

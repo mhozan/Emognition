@@ -12,7 +12,7 @@ import pytest
 
 from emognition.core import (
     Emotion,
-    Gender,
+    Sex,
     Response,
     Stimulus,
     confusion_matrix,
@@ -24,7 +24,7 @@ H, SC, NE, SA, AN = 0, 1, 2, 3, 4
 
 
 def _resp(true, gender, responded, rt_offset=None, n_replays=0):
-    stim = Stimulus(path="x.wav", emotion=true, gender=gender)
+    stim = Stimulus(path="x.wav", emotion=true, sex=gender)
     rt_onset = None if rt_offset is None else rt_offset + 1.0  # onset = offset + duration(=1)
     return Response(
         stimulus=stim,
@@ -41,10 +41,10 @@ def _resp(true, gender, responded, rt_offset=None, n_replays=0):
 #   3) Sad/F    -> Sad    (correct,   rt_off=0.7, 0 replays)
 #   4) Angry/M  -> (no response)
 RESPONSES = [
-    _resp(Emotion.HAPPY, Gender.FEMALE, Emotion.HAPPY, 0.5, 0),
-    _resp(Emotion.HAPPY, Gender.MALE, Emotion.SAD, 1.0, 1),
-    _resp(Emotion.SAD, Gender.FEMALE, Emotion.SAD, 0.7, 0),
-    _resp(Emotion.ANGRY, Gender.MALE, None),
+    _resp(Emotion.HAPPY, Sex.FEMALE, Emotion.HAPPY, 0.5, 0),
+    _resp(Emotion.HAPPY, Sex.MALE, Emotion.SAD, 1.0, 1),
+    _resp(Emotion.SAD, Sex.FEMALE, Emotion.SAD, 0.7, 0),
+    _resp(Emotion.ANGRY, Sex.MALE, None),
 ]
 
 
@@ -70,14 +70,14 @@ def test_per_emotion_stats():
     assert ang.pct_correct is None and ang.mean_rt is None  # no data -> None, not 0
 
 
-def test_per_gender_stats():
+def test_per_sex_stats():
     s = summarize(RESPONSES)
-    fem = s.per_gender[Gender.FEMALE]
+    fem = s.per_sex[Sex.FEMALE]
     assert fem.n_answered == 2 and fem.n_correct == 2
     assert fem.pct_correct == pytest.approx(100.0)
     assert fem.mean_rt == pytest.approx(0.6)  # mean(0.5, 0.7)
 
-    male = s.per_gender[Gender.MALE]
+    male = s.per_sex[Sex.MALE]
     assert male.n_presented == 2 and male.n_answered == 1
     assert male.pct_correct == pytest.approx(0.0)
     assert male.mean_rt == pytest.approx(1.0)

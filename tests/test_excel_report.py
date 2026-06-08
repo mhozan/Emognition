@@ -11,12 +11,12 @@
 import pytest
 from openpyxl import load_workbook
 
-from emognition.core import Emotion, Gender, Response, Stimulus
+from emognition.core import Emotion, Sex, Response, Stimulus
 from emognition.reports import SessionInfo, write_excel_report
 
 
 def _resp(true, gender, responded, rt_offset=None, n_replays=0, fname="x_hap_f.wav"):
-    stim = Stimulus(path=fname, emotion=true, gender=gender)
+    stim = Stimulus(path=fname, emotion=true, sex=gender)
     rt_onset = None if rt_offset is None else rt_offset + 1.0
     return Response(stim, responded, rt_onset, rt_offset, n_replays)
 
@@ -25,10 +25,10 @@ def _resp(true, gender, responded, rt_offset=None, n_replays=0, fname="x_hap_f.w
 #   Happy/F -> Happy ; Happy/M -> Sad ; Sad/F -> Sad ; Angry/M -> (none)
 def _responses():
     return [
-        _resp(Emotion.HAPPY, Gender.FEMALE, Emotion.HAPPY, 0.5, 0, "01_hap_f.wav"),
-        _resp(Emotion.HAPPY, Gender.MALE, Emotion.SAD, 1.0, 1, "02_hap_m.wav"),
-        _resp(Emotion.SAD, Gender.FEMALE, Emotion.SAD, 0.7, 0, "03_sad_f.wav"),
-        _resp(Emotion.ANGRY, Gender.MALE, None, None, 0, "04_ang_m.wav"),
+        _resp(Emotion.HAPPY, Sex.FEMALE, Emotion.HAPPY, 0.5, 0, "01_hap_f.wav"),
+        _resp(Emotion.HAPPY, Sex.MALE, Emotion.SAD, 1.0, 1, "02_hap_m.wav"),
+        _resp(Emotion.SAD, Sex.FEMALE, Emotion.SAD, 0.7, 0, "03_sad_f.wav"),
+        _resp(Emotion.ANGRY, Sex.MALE, None, None, 0, "04_ang_m.wav"),
     ]
 
 
@@ -72,9 +72,9 @@ def test_confusion_matrix_cells(workbook):
 
 def test_percentages_total_accuracy(workbook):
     ws = workbook["Percentages"]
-    # Rows: emotions 2-6, Female 7, Male 8, Total 9. Column B = % correct.
-    assert ws["A9"].value == "Total"
-    assert ws["B9"].value == pytest.approx(200.0 / 3, abs=0.05)
+    # Rows: emotions 2-6, Female 7, Male 8, Unknown 9, Total 10. Column B = % correct.
+    assert ws["A10"].value == "Total"
+    assert ws["B10"].value == pytest.approx(200.0 / 3, abs=0.05)
 
 
 def test_pressed_keys_rows(workbook):

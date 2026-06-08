@@ -76,28 +76,47 @@ TAG_TO_EMOTION: dict[str, Emotion] = {tag: emo for emo, tag in _TAGS.items()}
 EMOTIONS_IN_ORDER: tuple[Emotion, ...] = tuple(sorted(Emotion, key=int))
 
 
-class Gender(IntEnum):
-    """Speaker gender encoded by the trailing 'G' letter in the filename ('F'/'M')."""
+class Sex(IntEnum):
+    """Speaker sex, encoded by the trailing letter in the filename.
+
+    'f' -> Female, 'm' -> Male, 'u' -> Unknown (for recordings whose speaker sex
+    isn't recorded as female/male). Reports break accuracy down by speaker sex.
+    """
 
     FEMALE = 0
     MALE = 1
+    UNKNOWN = 2
 
     @property
     def tag(self) -> str:
-        return "f" if self is Gender.FEMALE else "m"
+        return {Sex.FEMALE: "f", Sex.MALE: "m", Sex.UNKNOWN: "u"}[self]
+
+    @property
+    def label(self) -> str:
+        return self.name.title()  # "Female" / "Male" / "Unknown"
+
+
+# Reverse lookup: filename tag -> Sex (lowercase keys).
+TAG_TO_SEX: dict[str, Sex] = {s.tag: s for s in Sex}
+
+# The sexes in enum order, for stable report rows.
+SEXES_IN_ORDER: tuple[Sex, ...] = tuple(Sex)
 
 
 @dataclass(frozen=True, slots=True)
 class Stimulus:
     """One audio stimulus: its file path plus the truth it encodes.
 
-    ``emotion`` is the correct answer for this clip; ``gender`` is the speaker's
-    gender (the original reports break accuracy down by male/female speaker).
+    ``emotion`` is the correct answer for this clip; ``sex`` is the speaker's sex;
+    ``recording_id`` is the free-form prefix of the filename (everything before
+    the ``_EMO_SEX.wav`` ending) -- e.g. a speaker/take label, kept so individual
+    recordings can be identified and filtered in the reports.
     """
 
     path: str
     emotion: Emotion
-    gender: Gender
+    sex: Sex
+    recording_id: str = ""
 
     @property
     def filename(self) -> str:

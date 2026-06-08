@@ -12,20 +12,20 @@ import random
 
 from emognition.core import (
     Emotion,
-    Gender,
+    Sex,
     Stimulus,
     build_trial_list,
     summarize_stimuli,
 )
 
 
-def _stim(emotion: Emotion, gender: Gender, n: int = 0) -> Stimulus:
-    return Stimulus(path=f"{emotion.tag}_{gender.tag}_{n}.wav", emotion=emotion, gender=gender)
+def _stim(emotion: Emotion, gender: Sex, n: int = 0) -> Stimulus:
+    return Stimulus(path=f"{emotion.tag}_{gender.tag}_{n}.wav", emotion=emotion, sex=gender)
 
 
 def _full_set() -> list[Stimulus]:
-    # one clip per emotion x gender = 10 stimuli
-    return [_stim(e, g) for e in Emotion for g in Gender]
+    # one clip per emotion x sex (female/male) = 10 stimuli
+    return [_stim(e, g) for e in Emotion for g in (Sex.FEMALE, Sex.MALE)]
 
 
 def test_no_shuffle_preserves_order_and_does_not_mutate_input():
@@ -56,7 +56,7 @@ def test_summarize_stimuli_counts():
     stimuli = _full_set()
     bd = summarize_stimuli(stimuli)
     assert bd.total == 10
-    assert bd.by_gender[Gender.FEMALE] == 5
-    assert bd.by_gender[Gender.MALE] == 5
+    assert bd.by_sex[Sex.FEMALE] == 5
+    assert bd.by_sex[Sex.MALE] == 5
     assert all(bd.by_emotion[e] == 2 for e in Emotion)
-    assert bd.by_emotion_gender[(Emotion.ANGRY, Gender.MALE)] == 1
+    assert bd.by_emotion_sex[(Emotion.ANGRY, Sex.MALE)] == 1

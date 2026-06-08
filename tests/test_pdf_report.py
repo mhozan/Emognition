@@ -8,22 +8,22 @@
 
 """Tests for the PDF report (headless matplotlib Agg + fpdf2)."""
 
-from emognition.core import Emotion, Gender, Response, Stimulus
+from emognition.core import Emotion, Sex, Response, Stimulus
 from emognition.reports import SessionInfo, write_pdf_report
 
 
 def _resp(true, gender, responded, rt_offset=None, fname="x_hap_f.wav"):
-    stim = Stimulus(path=fname, emotion=true, gender=gender)
+    stim = Stimulus(path=fname, emotion=true, sex=gender)
     rt_onset = None if rt_offset is None else rt_offset + 1.0
     return Response(stim, responded, rt_onset, rt_offset, 0)
 
 
 def _responses():
     return [
-        _resp(Emotion.HAPPY, Gender.FEMALE, Emotion.HAPPY, 0.5, "01_hap_f.wav"),
-        _resp(Emotion.HAPPY, Gender.MALE, Emotion.SAD, 1.0, "02_hap_m.wav"),
-        _resp(Emotion.SAD, Gender.FEMALE, Emotion.SAD, 0.7, "03_sad_f.wav"),
-        _resp(Emotion.ANGRY, Gender.MALE, None, None, "04_ang_m.wav"),
+        _resp(Emotion.HAPPY, Sex.FEMALE, Emotion.HAPPY, 0.5, "01_hap_f.wav"),
+        _resp(Emotion.HAPPY, Sex.MALE, Emotion.SAD, 1.0, "02_hap_m.wav"),
+        _resp(Emotion.SAD, Sex.FEMALE, Emotion.SAD, 0.7, "03_sad_f.wav"),
+        _resp(Emotion.ANGRY, Sex.MALE, None, None, "04_ang_m.wav"),
     ]
 
 

@@ -11,7 +11,7 @@
 Two flat tables, both stdlib ``csv`` only:
 
 * a **per-trial** CSV (one row per presentation), and
-* a **summary** CSV (per-emotion / gender / total stats).
+* a **summary** CSV (per-emotion / sex / total stats).
 
 Gotcha worth knowing: always open CSV files with ``newline=""``. The csv module
 writes its own line terminator (``\\r\\n``); if you let the text layer also
@@ -25,13 +25,14 @@ import csv
 import os
 from collections.abc import Sequence
 
-from ..core import EMOTIONS_IN_ORDER, Gender, Response, SessionSummary
+from ..core import SEXES_IN_ORDER, Response, SessionSummary
 from ..core.scoring import DEFAULT_RT_KIND, GroupStats
 from .common import RT_FLAG_LABEL, prepare_summary
 
 _TRIAL_FIELDS = [
     "trial",
     "audio_file",
+    "recording_id",
     "true_emotion",
     "true_code",
     "chosen_emotion",
@@ -40,7 +41,7 @@ _TRIAL_FIELDS = [
     "rt_onset_s",
     "rt_offset_s",
     "replays",
-    "gender",
+    "sex",
     "rt_flag",
 ]
 
@@ -78,6 +79,7 @@ def write_trials_csv(
             writer.writerow({
                 "trial": i,
                 "audio_file": r.stimulus.filename,
+                "recording_id": r.stimulus.recording_id,
                 "true_emotion": r.true_emotion.label,
                 "true_code": int(r.true_emotion),
                 "chosen_emotion": r.responded.label if r.responded else "",
@@ -86,7 +88,7 @@ def write_trials_csv(
                 "rt_onset_s": _round(r.rt_onset, 4),
                 "rt_offset_s": _round(r.rt_offset, 4),
                 "replays": r.n_replays,
-                "gender": r.gender.name.lower(),
+                "sex": r.sex.name.lower(),
                 "rt_flag": RT_FLAG_LABEL[flag] or "ok",
             })
     return path
@@ -105,14 +107,14 @@ def _summary_row(group: str, stats: GroupStats) -> dict:
 
 
 def write_summary_csv(summary: SessionSummary, path: str) -> str:
-    """Write the per-emotion / gender / total summary CSV; return the path."""
+    """Write the per-emotion / sex / total summary CSV; return the path."""
     with open(path, "w", newline="", encoding="utf-8") as fh:
         writer = csv.DictWriter(fh, fieldnames=_SUMMARY_FIELDS)
         writer.writeheader()
         for emo in summary.emotion_order:
             writer.writerow(_summary_row(emo.label, summary.per_emotion[emo]))
-        writer.writerow(_summary_row("Female", summary.per_gender[Gender.FEMALE]))
-        writer.writerow(_summary_row("Male", summary.per_gender[Gender.MALE]))
+        for sex in SEXES_IN_ORDER:
+            writer.writerow(_summary_row(sex.label, summary.per_sex[sex]))
         writer.writerow(_summary_row("Total", summary.total))
     return path
 

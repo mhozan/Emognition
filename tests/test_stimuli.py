@@ -16,7 +16,7 @@ import os
 
 import pytest
 
-from emognition.core import Emotion, Gender, parse_stimulus_filename, scan_audio_dir
+from emognition.core import Emotion, Sex, parse_stimulus_filename, scan_audio_dir
 
 ASSETS_AUDIO = os.path.join(
     os.path.dirname(__file__), os.pardir, "assets", "audio"
@@ -24,23 +24,26 @@ ASSETS_AUDIO = os.path.join(
 
 
 @pytest.mark.parametrize(
-    "name, emotion, gender",
+    "name, emotion, sex, recording_id",
     [
-        ("01_ang_f.wav", Emotion.ANGRY, Gender.FEMALE),
-        ("02_hap_m.wav", Emotion.HAPPY, Gender.MALE),
-        ("03_neu_f.wav", Emotion.NEUTRAL, Gender.FEMALE),
-        ("04_sad_m.wav", Emotion.SAD, Gender.MALE),
-        ("05_sca_f.wav", Emotion.SCARED, Gender.FEMALE),
-        # case-insensitivity + free-form prefix (per the original tooltip)
-        ("subjectA_recording12_HAP_M.wav", Emotion.HAPPY, Gender.MALE),
-        ("weird-Name_ScA_f.wav", Emotion.SCARED, Gender.FEMALE),
+        ("01_ang_f.wav", Emotion.ANGRY, Sex.FEMALE, "01"),
+        ("02_hap_m.wav", Emotion.HAPPY, Sex.MALE, "02"),
+        ("03_neu_f.wav", Emotion.NEUTRAL, Sex.FEMALE, "03"),
+        ("04_sad_m.wav", Emotion.SAD, Sex.MALE, "04"),
+        ("05_sca_f.wav", Emotion.SCARED, Sex.FEMALE, "05"),
+        # 'u' = unknown speaker sex
+        ("clip07_neu_u.wav", Emotion.NEUTRAL, Sex.UNKNOWN, "clip07"),
+        # case-insensitivity + free-form prefix kept as recording_id
+        ("subjectA_recording12_HAP_M.wav", Emotion.HAPPY, Sex.MALE, "subjectA_recording12"),
+        ("weird-Name_ScA_f.wav", Emotion.SCARED, Sex.FEMALE, "weird-Name"),
     ],
 )
-def test_valid_names(name, emotion, gender):
+def test_valid_names(name, emotion, sex, recording_id):
     stim = parse_stimulus_filename(name)
     assert stim is not None
     assert stim.emotion is emotion
-    assert stim.gender is gender
+    assert stim.sex is sex
+    assert stim.recording_id == recording_id
 
 
 @pytest.mark.parametrize(
@@ -71,4 +74,4 @@ def test_scan_bundled_assets():
     # The repo ships 10 reference clips (5 emotions x 2 genders).
     assert len(stimuli) == 10
     assert {s.emotion for s in stimuli} == set(Emotion)
-    assert {s.gender for s in stimuli} == {Gender.FEMALE, Gender.MALE}
+    assert {s.sex for s in stimuli} == {Sex.FEMALE, Sex.MALE}

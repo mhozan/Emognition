@@ -14,9 +14,10 @@ in Emognition2.m) is:
 
     Any filename that ends with the pattern   ..._EMO_G.wav
         EMO -> one of {ANG, HAP, SAD, NEU, SCA}   (case-insensitive)
-        G   -> F or M                              (case-insensitive)
-    Anything preceding the trailing "_EMO_G.wav" is ignored, so
-    "01_ang_f.wav", "subjectA_recording12_HAP_M.wav", etc. are all valid.
+        G   -> F, M, or U  (female / male / unknown, case-insensitive)
+    Everything preceding the trailing "_EMO_G.wav" is captured as the free-form
+    ``recording_id`` (a speaker/take label), so "01_ang_f.wav" -> id "01" and
+    "subjectA_recording12_HAP_M.wav" -> id "subjectA_recording12".
 
 Files that do not match are skipped -- echoing the v1.14 changelog note:
     "Skips loading of non-WAV audio files."
@@ -27,12 +28,12 @@ from __future__ import annotations
 import os
 import re
 
-from .emotions import Emotion, Gender, Stimulus, TAG_TO_EMOTION
+from .emotions import Emotion, Sex, Stimulus, TAG_TO_EMOTION, TAG_TO_SEX
 
-# Match a trailing  _EMO_G  just before the .wav extension.
-# Example matches: "_ang_f", "_HAP_M". The leading part of the name is free-form.
+# Match the trailing  _EMO_G.wav  ending. Everything before the matched portion is
+# the free-form recording id. Example matches: "_ang_f.wav", "_HAP_M.wav".
 _PATTERN = re.compile(
-    r"_(?P<emo>ang|hap|sad|neu|sca)_(?P<gender>[fm])\.wav$",
+    r"_(?P<emo>ang|hap|sad|neu|sca)_(?P<sex>[fmu])\.wav$",
     re.IGNORECASE,
 )
 
@@ -44,8 +45,9 @@ def parse_stimulus_filename(path: str) -> Stimulus | None:
         path: A filename or full path ending in the ``_EMO_G.wav`` pattern.
 
     Returns:
-        A :class:`Stimulus` carrying the correct emotion + speaker gender, or
-        ``None`` if the name doesn't follow the convention (caller should skip it).
+        A :class:`Stimulus` carrying the emotion, speaker sex, and the free-form
+        ``recording_id`` (the part before the ``_EMO_G.wav`` ending), or ``None``
+        if the name doesn't follow the convention (caller should skip it).
     """
     name = os.path.basename(path)
     match = _PATTERN.search(name)
@@ -53,8 +55,9 @@ def parse_stimulus_filename(path: str) -> Stimulus | None:
         return None
 
     emotion: Emotion = TAG_TO_EMOTION[match.group("emo").lower()]
-    gender = Gender.FEMALE if match.group("gender").lower() == "f" else Gender.MALE
-    return Stimulus(path=path, emotion=emotion, gender=gender)
+    sex: Sex = TAG_TO_SEX[match.group("sex").lower()]
+    recording_id = name[: match.start()]  # everything before "_EMO_G.wav"
+    return Stimulus(path=path, emotion=emotion, sex=sex, recording_id=recording_id)
 
 
 def scan_audio_dir(directory: str) -> list[Stimulus]:

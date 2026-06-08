@@ -10,22 +10,22 @@
 
 import csv
 
-from emognition.core import Emotion, Gender, Response, Stimulus
+from emognition.core import Emotion, Sex, Response, Stimulus
 from emognition.reports import write_csv_report
 
 
 def _resp(true, gender, responded, rt_offset=None, fname="x_hap_f.wav"):
-    stim = Stimulus(path=fname, emotion=true, gender=gender)
+    stim = Stimulus(path=fname, emotion=true, sex=gender)
     rt_onset = None if rt_offset is None else rt_offset + 1.0
     return Response(stim, responded, rt_onset, rt_offset, 0)
 
 
 def _responses():
     return [
-        _resp(Emotion.HAPPY, Gender.FEMALE, Emotion.HAPPY, 0.5, "01_hap_f.wav"),
-        _resp(Emotion.HAPPY, Gender.MALE, Emotion.SAD, 1.0, "02_hap_m.wav"),
-        _resp(Emotion.SAD, Gender.FEMALE, Emotion.SAD, 0.7, "03_sad_f.wav"),
-        _resp(Emotion.ANGRY, Gender.MALE, None, None, "04_ang_m.wav"),
+        _resp(Emotion.HAPPY, Sex.FEMALE, Emotion.HAPPY, 0.5, "01_hap_f.wav"),
+        _resp(Emotion.HAPPY, Sex.MALE, Emotion.SAD, 1.0, "02_hap_m.wav"),
+        _resp(Emotion.SAD, Sex.FEMALE, Emotion.SAD, 0.7, "03_sad_f.wav"),
+        _resp(Emotion.ANGRY, Sex.MALE, None, None, "04_ang_m.wav"),
     ]
 
 
@@ -48,7 +48,7 @@ def test_trials_csv_rows_and_values(tmp_path):
     assert r0["audio_file"] == "01_hap_f.wav"
     assert r0["true_emotion"] == "Happy" and r0["true_code"] == "1"
     assert r0["correct"] == "1"
-    assert r0["gender"] == "female"
+    assert r0["sex"] == "female"
 
     # Unanswered trial: blank chosen fields, correct=0.
     r3 = rows[3]

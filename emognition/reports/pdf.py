@@ -25,7 +25,7 @@ from collections.abc import Sequence
 
 from fpdf import FPDF
 
-from ..core import EMOTIONS_IN_ORDER, Gender, Response, SessionSummary
+from ..core import EMOTIONS_IN_ORDER, SEXES_IN_ORDER, Response, SessionSummary
 from ..core.scoring import DEFAULT_RT_KIND, GroupStats
 from .charts_mpl import confusion_png, reaction_time_png
 from .common import (
@@ -102,8 +102,8 @@ def _stats_table(pdf: FPDF, summary: SessionSummary) -> None:
     rows = [["", *STAT_COLUMNS]]
     for emo in summary.emotion_order:
         rows.append(_stat_row(emo.label, summary.per_emotion[emo]))
-    rows.append(_stat_row("Female", summary.per_gender[Gender.FEMALE]))
-    rows.append(_stat_row("Male", summary.per_gender[Gender.MALE]))
+    for sex in SEXES_IN_ORDER:
+        rows.append(_stat_row(sex.label, summary.per_sex[sex]))
     rows.append(_stat_row("Total", summary.total))
     with pdf.table(text_align=("LEFT", "RIGHT", "RIGHT", "RIGHT")) as table:
         for r in rows:

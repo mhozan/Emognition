@@ -20,7 +20,7 @@ import random
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 
-from .emotions import Emotion, EMOTIONS_IN_ORDER, Gender, Stimulus
+from .emotions import Emotion, EMOTIONS_IN_ORDER, SEXES_IN_ORDER, Sex, Stimulus
 
 
 def build_trial_list(
@@ -60,25 +60,25 @@ class StimulusBreakdown:
     """
 
     total: int
-    by_gender: dict[Gender, int]
+    by_sex: dict[Sex, int]
     by_emotion: dict[Emotion, int]
-    by_emotion_gender: dict[tuple[Emotion, Gender], int]
+    by_emotion_sex: dict[tuple[Emotion, Sex], int]
 
 
 def summarize_stimuli(stimuli: Sequence[Stimulus]) -> StimulusBreakdown:
-    """Count a stimulus set by gender, emotion, and emotion×gender."""
-    by_gender: dict[Gender, int] = {g: 0 for g in Gender}
+    """Count a stimulus set by sex, emotion, and emotion×sex."""
+    by_sex: dict[Sex, int] = {s: 0 for s in SEXES_IN_ORDER}
     by_emotion: dict[Emotion, int] = {e: 0 for e in EMOTIONS_IN_ORDER}
-    by_emotion_gender: dict[tuple[Emotion, Gender], int] = {
-        (e, g): 0 for e in EMOTIONS_IN_ORDER for g in Gender
+    by_emotion_sex: dict[tuple[Emotion, Sex], int] = {
+        (e, s): 0 for e in EMOTIONS_IN_ORDER for s in SEXES_IN_ORDER
     }
-    for s in stimuli:
-        by_gender[s.gender] += 1
-        by_emotion[s.emotion] += 1
-        by_emotion_gender[(s.emotion, s.gender)] += 1
+    for stim in stimuli:
+        by_sex[stim.sex] += 1
+        by_emotion[stim.emotion] += 1
+        by_emotion_sex[(stim.emotion, stim.sex)] += 1
     return StimulusBreakdown(
         total=len(stimuli),
-        by_gender=by_gender,
+        by_sex=by_sex,
         by_emotion=by_emotion,
-        by_emotion_gender=by_emotion_gender,
+        by_emotion_sex=by_emotion_sex,
     )

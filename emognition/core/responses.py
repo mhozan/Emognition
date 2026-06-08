@@ -20,7 +20,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from .emotions import Emotion, Gender, Stimulus
+from .emotions import Emotion, Sex, Stimulus
 
 
 @dataclass(slots=True)
@@ -28,7 +28,7 @@ class Response:
     """One completed trial.
 
     Attributes:
-        stimulus: The clip that was played (carries the true emotion + gender).
+        stimulus: The clip that was played (carries the true emotion + sex).
         responded: The emotion the participant chose, or ``None`` if they made no
             response (e.g. the trial was aborted).
         rt_onset: Reaction time in seconds measured from audio *onset*.
@@ -51,9 +51,9 @@ class Response:
         return self.stimulus.emotion
 
     @property
-    def gender(self) -> Gender:
-        """The speaker's gender for this trial."""
-        return self.stimulus.gender
+    def sex(self) -> Sex:
+        """The speaker's sex for this trial."""
+        return self.stimulus.sex
 
     @property
     def answered(self) -> bool:

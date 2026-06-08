@@ -10,12 +10,12 @@
 
 import xml.dom.minidom as minidom
 
-from emognition.core import Emotion, Gender, Response, Stimulus
+from emognition.core import Emotion, Sex, Response, Stimulus
 from emognition.reports import reaction_time_svg
 
 
 def _resp(responded, rt_offset, n_replays=0):
-    stim = Stimulus(path="x_hap_f.wav", emotion=Emotion.HAPPY, gender=Gender.FEMALE)
+    stim = Stimulus(path="x_hap_f.wav", emotion=Emotion.HAPPY, sex=Sex.FEMALE)
     rt_onset = None if rt_offset is None else rt_offset + 1.8
     return Response(stim, responded, rt_onset, rt_offset, n_replays)
 

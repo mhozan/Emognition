@@ -8,22 +8,22 @@
 
 """Tests for the HTML report (assert on the rendered markup string)."""
 
-from emognition.core import Emotion, Gender, Response, Stimulus
+from emognition.core import Emotion, Sex, Response, Stimulus
 from emognition.reports import SessionInfo, render_html_report
 
 
 def _resp(true, gender, responded, rt_offset=None, n_replays=0, fname="x_hap_f.wav"):
-    stim = Stimulus(path=fname, emotion=true, gender=gender)
+    stim = Stimulus(path=fname, emotion=true, sex=gender)
     rt_onset = None if rt_offset is None else rt_offset + 1.0
     return Response(stim, responded, rt_onset, rt_offset, n_replays)
 
 
 def _responses():
     return [
-        _resp(Emotion.HAPPY, Gender.FEMALE, Emotion.HAPPY, 0.5, 0, "01_hap_f.wav"),
-        _resp(Emotion.HAPPY, Gender.MALE, Emotion.SAD, 1.0, 1, "02_hap_m.wav"),
-        _resp(Emotion.SAD, Gender.FEMALE, Emotion.SAD, 0.7, 0, "03_sad_f.wav"),
-        _resp(Emotion.ANGRY, Gender.MALE, None, None, 0, "04_ang_m.wav"),
+        _resp(Emotion.HAPPY, Sex.FEMALE, Emotion.HAPPY, 0.5, 0, "01_hap_f.wav"),
+        _resp(Emotion.HAPPY, Sex.MALE, Emotion.SAD, 1.0, 1, "02_hap_m.wav"),
+        _resp(Emotion.SAD, Sex.FEMALE, Emotion.SAD, 0.7, 0, "03_sad_f.wav"),
+        _resp(Emotion.ANGRY, Sex.MALE, None, None, 0, "04_ang_m.wav"),
     ]
 
 

@@ -33,7 +33,7 @@ from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.worksheet.worksheet import Worksheet
 
-from ..core import EMOTIONS_IN_ORDER, Gender, Response, RtFlag, SessionSummary
+from ..core import EMOTIONS_IN_ORDER, SEXES_IN_ORDER, Response, RtFlag, SessionSummary
 from ..core.scoring import DEFAULT_RT_KIND, GroupStats
 from .common import RT_FLAG_LABEL, STAT_COLUMNS, SessionInfo, fmt_datetime, prepare_summary
 
@@ -141,7 +141,7 @@ def _stat_row(ws: Worksheet, row: int, label: str, stats: GroupStats) -> None:
 
 
 def _write_percentages(ws: Worksheet, summary: SessionSummary) -> None:
-    """Per-emotion, per-gender, and total stats (legacy 'Percentages' sheet)."""
+    """Per-emotion, per-sex, and total stats (legacy 'Percentages' sheet)."""
     for j, title in enumerate(STAT_COLUMNS, start=2):
         _header(ws.cell(row=1, column=j, value=title))
 
@@ -149,8 +149,8 @@ def _write_percentages(ws: Worksheet, summary: SessionSummary) -> None:
     for emo in summary.emotion_order:
         _stat_row(ws, row, emo.label, summary.per_emotion[emo])
         row += 1
-    _stat_row(ws, row, "Female", summary.per_gender[Gender.FEMALE]); row += 1
-    _stat_row(ws, row, "Male", summary.per_gender[Gender.MALE]); row += 1
+    for sex in SEXES_IN_ORDER:
+        _stat_row(ws, row, sex.label, summary.per_sex[sex]); row += 1
     _stat_row(ws, row, "Total", summary.total)
 
     ws.column_dimensions["A"].width = 12

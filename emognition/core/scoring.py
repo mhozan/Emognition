@@ -16,7 +16,7 @@ products feed the Excel/PDF reports directly:
   emotion that was played and columns are the emotion the participant chose, in
   the canonical Happy / Scared / Neutral / Sad / Angry order; and
 * **summary statistics** -- percent-correct, mean reaction time, and mean replays
-  broken down per emotion, per speaker gender, and overall (the legacy
+  broken down per emotion, per speaker sex, and overall (the legacy
   "Percentages" sheet).
 
 Percent-correct for an emotion is ``100 * diagonal / row-sum`` -- correct
@@ -29,7 +29,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import dataclass
 
-from .emotions import Emotion, EMOTIONS_IN_ORDER, Gender
+from .emotions import Emotion, EMOTIONS_IN_ORDER, SEXES_IN_ORDER, Sex
 from .responses import Response
 
 # Default reaction-time basis for the reported means. The legacy reactiontime.m
@@ -54,7 +54,7 @@ def confusion_matrix(responses: Sequence[Response]) -> list[list[int]]:
 
 @dataclass(frozen=True, slots=True)
 class GroupStats:
-    """Scores for one subset of trials (an emotion, a gender, or everything).
+    """Scores for one subset of trials (an emotion, a sex, or everything).
 
     ``mean_rt`` and ``pct_correct`` are ``None`` when the subset has no answered
     trials, rather than silently reporting 0 or NaN -- so an empty cell is
@@ -76,7 +76,7 @@ class SessionSummary:
     confusion: list[list[int]]
     emotion_order: tuple[Emotion, ...]
     per_emotion: dict[Emotion, GroupStats]
-    per_gender: dict[Gender, GroupStats]
+    per_sex: dict[Sex, GroupStats]
     total: GroupStats
     rt_kind: str
 
@@ -127,21 +127,21 @@ def summarize(
 
     Returns:
         A :class:`SessionSummary` with the confusion matrix plus per-emotion,
-        per-gender, and total :class:`GroupStats`.
+        per-sex, and total :class:`GroupStats`.
     """
     per_emotion = {
         emo: _group_stats([r for r in responses if r.true_emotion is emo], rt_kind)
         for emo in EMOTIONS_IN_ORDER
     }
-    per_gender = {
-        g: _group_stats([r for r in responses if r.gender is g], rt_kind)
-        for g in Gender
+    per_sex = {
+        s: _group_stats([r for r in responses if r.sex is s], rt_kind)
+        for s in SEXES_IN_ORDER
     }
     return SessionSummary(
         confusion=confusion_matrix(responses),
         emotion_order=EMOTIONS_IN_ORDER,
         per_emotion=per_emotion,
-        per_gender=per_gender,
+        per_sex=per_sex,
         total=_group_stats(responses, rt_kind),
         rt_kind=rt_kind,
     )

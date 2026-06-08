@@ -12,7 +12,7 @@ import pytest
 
 from emognition.core import (
     Emotion,
-    Gender,
+    Sex,
     Response,
     RtFlag,
     Stimulus,
@@ -23,7 +23,7 @@ from emognition.core import (
 
 
 def _resp(rt_onset, responded=Emotion.HAPPY):
-    stim = Stimulus(path="x_hap_f.wav", emotion=Emotion.HAPPY, gender=Gender.FEMALE)
+    stim = Stimulus(path="x_hap_f.wav", emotion=Emotion.HAPPY, sex=Sex.FEMALE)
     rt_offset = None if rt_onset is None else rt_onset - 1.8
     return Response(stim, responded, rt_onset, rt_offset, 0)
 

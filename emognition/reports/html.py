@@ -26,7 +26,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from html import escape
 
-from ..core import EMOTIONS_IN_ORDER, Gender, Response, RtFlag, SessionSummary
+from ..core import EMOTIONS_IN_ORDER, SEXES_IN_ORDER, Response, RtFlag, SessionSummary
 from ..core.scoring import DEFAULT_RT_KIND, GroupStats
 from .charts import reaction_time_svg
 from .common import (
@@ -136,10 +136,10 @@ def _stats_section(summary: SessionSummary) -> str:
             f"<tr><th class='rowhead'>{escape(emo.label)}</th>"
             f"{_stat_cells(summary.per_emotion[emo])}</tr>"
         )
-    for label, g in (("Female", Gender.FEMALE), ("Male", Gender.MALE)):
+    for sex in SEXES_IN_ORDER:
         rows.append(
-            f"<tr class='group'><th class='rowhead'>{label}</th>"
-            f"{_stat_cells(summary.per_gender[g])}</tr>"
+            f"<tr class='group'><th class='rowhead'>{escape(sex.label)}</th>"
+            f"{_stat_cells(summary.per_sex[sex])}</tr>"
         )
     rows.append(
         f"<tr class='total'><th class='rowhead'>Total</th>{_stat_cells(summary.total)}</tr>"
