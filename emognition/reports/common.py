@@ -1,0 +1,66 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2014-2026 Mohsen Hozan
+#
+# This file is part of Emognition. It is free software: you can redistribute
+# it and/or modify it under the terms of the GNU Affero General Public License
+# as published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version. See the LICENSE file.
+
+"""Shared pieces for every report writer (Excel, PDF, HTML).
+
+Keeping the session metadata and the "how do we render an empty/None value"
+decisions in one place means the three report formats can't drift apart -- a
+percent shown as ``75.0`` in the spreadsheet looks the same in the HTML and PDF.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from datetime import datetime
+
+# Labels for the three statistic columns, shared across all report formats.
+STAT_COLUMNS: tuple[str, str, str] = ("% Correct", "Avg. Reaction (s)", "Avg. Replays")
+
+# What to print where a statistic is undefined (e.g. an emotion never presented).
+# An em dash reads as "no data", distinct from a real 0.
+EMPTY = "—"  # —
+
+
+@dataclass(slots=True)
+class SessionInfo:
+    """Human-facing metadata about one session, for the report headers.
+
+    All fields are optional so a report can be generated from responses alone;
+    the experiment/config layer fills these in when it has them.
+    """
+
+    participant: str = ""
+    experimenter: str = ""
+    mode: str = "Test"
+    audio_folder: str = ""
+    started_at: datetime | None = None
+    finished_at: datetime | None = None
+    rt_kind: str = "offset"
+    app_version: str = ""
+    notes: str = ""
+    extra: dict[str, str] = field(default_factory=dict)
+
+
+def fmt_pct(value: float | None) -> str:
+    """Format a percentage to one decimal, or the empty marker if missing."""
+    return EMPTY if value is None else f"{value:.1f}"
+
+
+def fmt_seconds(value: float | None) -> str:
+    """Format a reaction time in seconds to three decimals (ms resolution)."""
+    return EMPTY if value is None else f"{value:.3f}"
+
+
+def fmt_replays(value: float | None) -> str:
+    """Format a mean replay count to two decimals."""
+    return EMPTY if value is None else f"{value:.2f}"
+
+
+def fmt_datetime(value: datetime | None) -> str:
+    """Format a timestamp like '2026-06-08 14:30:05', or empty marker."""
+    return EMPTY if value is None else value.strftime("%Y-%m-%d %H:%M:%S")

@@ -6,4 +6,16 @@
 # as published by the Free Software Foundation, either version 3 of the
 # License, or (at your option) any later version. See the LICENSE file.
 
-"""Emognition reports subpackage."""
+"""Emognition reports: turn a session's responses into Excel / PDF / HTML reports.
+
+All writers consume the same inputs (a list of ``core.Response`` plus an optional
+``SessionSummary`` and ``SessionInfo``) so the three formats stay consistent.
+"""
+
+from .common import SessionInfo
+from .excel import write_excel_report
+
+__all__ = [
+    "SessionInfo",
+    "write_excel_report",
+]
