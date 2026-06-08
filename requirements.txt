@@ -99,3 +99,4 @@ xarray==2025.6.1
 xmlschema==4.3.1
 zope.event==5.0
 zope.interface==7.2
+pyloudnorm==0.2.0

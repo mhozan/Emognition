@@ -20,5 +20,9 @@ fpdf2                          # PDF reports  (was: MATLAB print -dpdf)
 openpyxl                       # Excel reports (was: MATLAB writecell/writematrix)
 matplotlib                     # confusion-matrix figure for the PDF
 
+# --- Audio preprocessing / calibration (loudness normalize + trim silence) ---
+pyloudnorm                     # perceived loudness, ITU-R BS.1770 (LUFS)
+# soundfile is already pulled in by psychopy (wav read/write)
+
 # --- Packaging (the double-click executable) ---
 pyinstaller                    # build per-OS bundles: scripts/build_executable.sh
