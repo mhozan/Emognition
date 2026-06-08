@@ -22,9 +22,16 @@ The trial loop, conceptually::
         RT = (response time) - (t=0); offset RT = onset RT - clip duration
 
 Two response modalities, one shared clock (reset at audio onset):
-  * number keys 1-5  -> PsychoToolbox-timestamped, sub-millisecond precision
-  * clicking a face  -> frame-resolution (~16 ms), faithful to the original GUI
-We store which modality produced each RT so the precision is never misrepresented.
+  * number keys 1-5  -> pyglet keyboard via psychopy.event
+  * clicking a face  -> mouse, faithful to the original GUI
+Both are timed at frame resolution against a clock zeroed at the (precisely
+scheduled) audio onset; we store which modality produced each RT.
+
+Why not PsychoToolbox's keyboard (sub-ms)? Its PsychHID C thread intermittently
+corrupts the Python heap on this Linux stack -> random segfaults in the garbage
+collector. iohub (separate process) is crash-free but its keyboard event
+timestamps were unreliable here. The pyglet path is in-process, robust, and its
+~refresh-rate resolution is dominated by audio-output latency anyway.
 """
 
 from __future__ import annotations
@@ -40,8 +47,7 @@ configure_prefs()
 harden_psychopy()
 
 import psychtoolbox as ptb  # noqa: E402  (low-level clock: ptb.GetSecs)
-from psychopy import event, sound, visual  # noqa: E402
-from psychopy.hardware import keyboard  # noqa: E402
+from psychopy import core, event, sound, visual  # noqa: E402
 
 from ..core import EMOTIONS_IN_ORDER, Emotion, Response, Stimulus, reaction_time  # noqa: E402
 from ..core.timing import ReactionTime  # noqa: E402
@@ -133,8 +139,10 @@ class TestExperiment:
         button_size: float = 0.16,
     ) -> None:
         self.win = win
-        self.kb = keyboard.Keyboard()       # PTB-timestamped key events
         self.mouse = event.Mouse(win=win, visible=True)
+        # One clock, reset at each clip's audio onset; every RT is measured
+        # against it (keyboard via psychopy.event, mouse via this clock).
+        self.clock = core.Clock()
 
         # One reusable audio stream. We swap the buffer per clip with setSound();
         # constructing a new Sound per clip opens a new (exclusive) device stream
@@ -217,13 +225,13 @@ class TestExperiment:
     def _start_audio_and_zero_clock(self) -> float:
         """Schedule the clip and reset the keyboard clock to its onset (t=0)."""
         assert self._sound is not None
-        self.kb.clearEvents()
+        event.clearEvents("keyboard")
         now = ptb.GetSecs()
         onset = now + _ONSET_LEAD_SECONDS
         self._sound.play(when=onset)            # sample-accurate scheduled start
         while ptb.GetSecs() < onset:            # brief spin to the exact instant
             pass
-        self.kb.clock.reset()                    # now t=0 is the audio onset
+        self.clock.reset()                       # now t=0 is the audio onset
         self.mouse.clickReset()
         return onset
 
@@ -236,32 +244,33 @@ class TestExperiment:
         quits); the keyboard buffer is cleared at offset so the next real press
         is timed from a clean slate.
         """
-        while self.kb.clock.getTime() < duration:
-            for key in self.kb.getKeys():        # drain early presses
-                if key.name == "escape":
-                    raise ExperimentAborted()
+        while self.clock.getTime() < duration:
+            if "escape" in event.getKeys():      # drains & discards early presses
+                raise ExperimentAborted()
             self._draw_scene(progress=None, enabled=False)
             self.win.flip()
-        self.kb.clearEvents()
+        event.clearEvents()
 
     def _await_response(self) -> _Press:
         """Spin the draw/flip loop, polling input, until a response arrives."""
         mouse_was_down = self.mouse.getPressed()[0] == 1  # ignore a held-over click
         while True:
-            # 1) Keyboard (precise): getKeys returns discrete press events with an
-            #    .rt already relative to our onset-zeroed clock.
-            for key in self.kb.getKeys(list(KEY_TO_EMOTION) + ["escape"]):
-                if key.name == "escape":
+            # 1) Keyboard: pyglet events, time-stamped against our onset-zeroed
+            #    clock (event time is the press as dispatched at the last flip).
+            for name, t in event.getKeys(
+                keyList=list(KEY_TO_EMOTION) + ["escape"], timeStamped=self.clock
+            ):
+                if name == "escape":
                     raise ExperimentAborted()
-                return _Press(KEY_TO_EMOTION[key.name], key.rt, "key")
+                return _Press(KEY_TO_EMOTION[name], t, "key")
 
-            # 2) Mouse (frame-resolution): accept only a *fresh* press (edge), so a
-            #    click held from the previous trial doesn't auto-trigger.
+            # 2) Mouse: accept only a *fresh* press (edge), so a click held from
+            #    the previous trial doesn't auto-trigger.
             mouse_down = self.mouse.getPressed()[0] == 1
             if mouse_down and not mouse_was_down:
                 for button in self.buttons:
                     if button.clicked_by(self.mouse):
-                        return _Press(button.emotion, self.kb.clock.getTime(), "mouse")
+                        return _Press(button.emotion, self.clock.getTime(), "mouse")
             mouse_was_down = mouse_down
 
             # 3) Keep the window alive and frame-lock the polling.

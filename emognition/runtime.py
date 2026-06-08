@@ -23,20 +23,32 @@ _TEXTSTIM_PYGLET_FILTER = ".*text.Label*"
 _hardened = False
 
 
-def configure_prefs(audio_libs: tuple[str, ...] = ("ptb", "sounddevice")) -> None:
+def configure_prefs(
+    audio_libs: tuple[str, ...] = ("ptb", "sounddevice"),
+    audio_latency_mode: int = 1,
+) -> None:
     """Select PsychoPy's audio backend(s). MUST run before importing psychopy.sound.
 
     PsychoPy decides which audio library to use at the moment ``psychopy.sound`` is
     first imported, by reading ``prefs.hardware['audioLib']``. Set it afterwards and
-    you're ignored. We list PsychoToolbox (``ptb``) first -- it gives the lowest
-    latency and sample-accurate onset scheduling we rely on for valid reaction
-    times -- with ``sounddevice`` as a fallback if PTB can't initialise.
+    you're ignored. We list PsychoToolbox (``ptb``) first -- it sample-accurately
+    *schedules* onsets (what our reaction times are measured against) -- with
+    ``sounddevice`` as a fallback if PTB can't initialise.
+
+    ``audio_latency_mode`` controls how aggressively PsychoToolbox grabs the sound
+    device (0 = don't care … 3-4 = exclusive/aggressive). The aggressive default
+    takes the ALSA device *exclusively*, which is unstable on shared servers like
+    PipeWire and intermittently **segfaults** here. Mode 1 ("share a low-latency
+    driver") keeps accurate onset scheduling while cooperating with the audio
+    server -- the right trade for reliability. The constant hardware latency that
+    adds is irrelevant to RTs measured from the *scheduled* onset.
 
     Importing :mod:`psychopy.preferences` here is cheap and starts no threads.
     """
     from psychopy import prefs
 
     prefs.hardware["audioLib"] = list(audio_libs)
+    prefs.hardware["audioLatencyMode"] = audio_latency_mode
 
 
 def bootstrap() -> None:
