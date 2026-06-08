@@ -20,8 +20,18 @@ from .emotions import (
     TAG_TO_EMOTION,
 )
 from .stimuli import parse_stimulus_filename, scan_audio_dir
+from .responses import Response
+from .trials import build_trial_list, summarize_stimuli, StimulusBreakdown
+from .timing import ReactionTime, reaction_time
+from .scoring import (
+    GroupStats,
+    SessionSummary,
+    confusion_matrix,
+    summarize,
+)
 
 __all__ = [
+    # emotions / stimuli
     "Emotion",
     "Gender",
     "Stimulus",
@@ -29,4 +39,17 @@ __all__ = [
     "TAG_TO_EMOTION",
     "parse_stimulus_filename",
     "scan_audio_dir",
+    # trial sequencing
+    "build_trial_list",
+    "summarize_stimuli",
+    "StimulusBreakdown",
+    # responses + timing
+    "Response",
+    "ReactionTime",
+    "reaction_time",
+    # scoring
+    "GroupStats",
+    "SessionSummary",
+    "confusion_matrix",
+    "summarize",
 ]
