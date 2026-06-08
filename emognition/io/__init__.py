@@ -6,4 +6,18 @@
 # as published by the Free Software Foundation, either version 3 of the
 # License, or (at your option) any later version. See the LICENSE file.
 
-"""Emognition io subpackage."""
+"""Emognition io: cross-platform filesystem helpers (open/reveal, config I/O)."""
+
+from .openfile import (
+    open_command,
+    open_path,
+    reveal_command,
+    reveal_in_file_manager,
+)
+
+__all__ = [
+    "open_command",
+    "open_path",
+    "reveal_command",
+    "reveal_in_file_manager",
+]

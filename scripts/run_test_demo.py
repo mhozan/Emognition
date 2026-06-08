@@ -32,6 +32,13 @@ bootstrap()
 from psychopy import core, visual  # noqa: E402
 
 from emognition.core import build_trial_list, scan_audio_dir, summarize  # noqa: E402
+from emognition.io import open_path  # noqa: E402
+from emognition.reports import (  # noqa: E402
+    SessionInfo,
+    write_csv_report,
+    write_excel_report,
+    write_html_report,
+)
 from emognition.ui.assets import Caption, audio_dir  # noqa: E402
 from emognition.ui.experiment_window import (  # noqa: E402
     ExperimentAborted,
@@ -75,6 +82,23 @@ def main() -> int:
               "order Happy,Scared,Neutral,Sad,Angry):")
         for emo, row in zip(s.emotion_order, s.confusion):
             print(f"  {emo.label:<8} {row}")
+
+        # Write all report formats next to each other, then open the HTML one.
+        from datetime import datetime
+
+        os.makedirs("save_location", exist_ok=True)
+        stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        base = os.path.join("save_location", f"demo_{stamp}")
+        info = SessionInfo(participant="DemoParticipant", experimenter="dev",
+                           mode="Test", app_version="3.0.0-dev",
+                           started_at=datetime.now())
+        html = write_html_report(responses, base + ".html", info=info)
+        write_excel_report(responses, base + ".xlsx", info=info)
+        write_csv_report(responses, base + ".csv")
+        print(f"\nreports written to: {base}.{{html,xlsx,csv,_summary.csv}}")
+        print(f"opening {html} ...")
+        open_path(html)
+
     core.quit()
     return 0
 
