@@ -83,6 +83,7 @@ def _run_session(args: argparse.Namespace) -> int:
         write_csv_report,
         write_excel_report,
         write_html_report,
+        write_pdf_report,
     )
     from .ui.assets import Caption, audio_dir
     from .ui.experiment_window import ExperimentAborted, TestExperiment
@@ -127,8 +128,9 @@ def _run_session(args: argparse.Namespace) -> int:
     )
     html = write_html_report(responses, base + ".html", info=info)
     write_excel_report(responses, base + ".xlsx", info=info)
+    write_pdf_report(responses, base + ".pdf", info=info)
     write_csv_report(responses, base + ".csv")
-    print(f"Reports saved to: {base}.(html|xlsx|csv)")
+    print(f"Reports saved to: {base}.(html|pdf|xlsx|csv)")
     open_path(html)
 
     core.quit()

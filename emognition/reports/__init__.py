@@ -17,6 +17,7 @@ from .common import SessionInfo
 from .csv import write_csv_report, write_summary_csv, write_trials_csv
 from .excel import write_excel_report
 from .html import render_html_report, write_html_report
+from .pdf import write_pdf_report
 
 __all__ = [
     "SessionInfo",
@@ -27,4 +28,5 @@ __all__ = [
     "write_trials_csv",
     "write_summary_csv",
     "reaction_time_svg",
+    "write_pdf_report",
 ]
