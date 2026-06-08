@@ -20,17 +20,17 @@ settings persist to JSON between launches ("keep previous settings").
 from __future__ import annotations
 
 import os
-import subprocess
 import sys
 
-from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QPainter, QPixmap
+from PyQt6.QtCore import QProcess
+from PyQt6.QtGui import QColor, QPainter, QPixmap
 from PyQt6.QtWidgets import (
     QApplication,
     QCheckBox,
     QComboBox,
     QFileDialog,
     QFrame,
+    QGraphicsDropShadowEffect,
     QGridLayout,
     QHBoxLayout,
     QLabel,
@@ -46,6 +46,34 @@ from .assets import background_path
 _CAPTIONS = ["none", "english", "mandarin"]
 _EMOTION_LABELS = {"hap": "Happy", "sca": "Scared", "neu": "Neutral",
                    "sad": "Sad", "ang": "Angry"}
+
+# Light, high-contrast theme for the form (overrides the OS theme so labels are
+# never light-on-light regardless of the user's desktop appearance).
+_STYLE = """
+QWidget { font-size: 14px; color: #20203a; }
+QLabel { background: transparent; color: #20203a; }
+QLabel#title { font-size: 22px; font-weight: 700; color: #2a2250; }
+QLabel#subtitle { color: #5a5a7a; }
+QFrame#card { background: #ffffff; border-radius: 14px; }
+QLineEdit, QComboBox {
+    background: #ffffff; color: #20203a;
+    border: 1px solid #c4c4d6; border-radius: 7px; padding: 7px 9px;
+}
+QLineEdit:focus, QComboBox:focus { border: 1px solid #6c5ce7; }
+QComboBox::drop-down { border: none; width: 22px; }
+QCheckBox { background: transparent; color: #20203a; spacing: 7px; }
+QPushButton {
+    background: #6c5ce7; color: #ffffff; border: none;
+    border-radius: 9px; padding: 9px 18px; font-weight: 700;
+}
+QPushButton:hover { background: #5a4bd0; }
+QPushButton:pressed { background: #4d3fb8; }
+QPushButton:disabled { background: #b7b1e0; }
+QPushButton#browse {
+    background: #ececf5; color: #3a3a5a; font-weight: 600; padding: 7px 12px;
+}
+QPushButton#browse:hover { background: #dedeee; }
+"""
 
 
 def default_settings_path() -> str:
@@ -69,8 +97,10 @@ class ConfigWindow(QWidget):
         super().__init__()
         self.settings_path = settings_path or default_settings_path()
         self._bg = QPixmap(background_path())
+        self._proc: QProcess | None = None
         self.setWindowTitle("Emognition - Setup")
-        self.resize(720, 600)
+        self.setStyleSheet(_STYLE)
+        self.resize(760, 620)
         self._build()
         if os.path.exists(self.settings_path):
             try:
@@ -86,10 +116,12 @@ class ConfigWindow(QWidget):
 
     def _panel(self) -> QFrame:
         frame = QFrame()
-        frame.setStyleSheet(
-            "QFrame{background:rgba(255,255,255,0.90);border-radius:12px;}"
-            "QLabel{background:transparent;}"
-        )
+        frame.setObjectName("card")               # styled white card (see _STYLE)
+        shadow = QGraphicsDropShadowEffect(self)
+        shadow.setBlurRadius(28)
+        shadow.setOffset(0, 6)
+        shadow.setColor(QColor(0, 0, 0, 90))
+        frame.setGraphicsEffect(shadow)
         return frame
 
     def _build(self) -> None:
@@ -113,8 +145,11 @@ class ConfigWindow(QWidget):
         grid.setContentsMargins(20, 20, 20, 20)
         r = 0
         title = QLabel("Speech Emotion Recognition")
-        title.setStyleSheet("font-size:20px;font-weight:bold;")
+        title.setObjectName("title")
         grid.addWidget(title, r, 0, 1, 3); r += 1
+        subtitle = QLabel("Experimenter setup")
+        subtitle.setObjectName("subtitle")
+        grid.addWidget(subtitle, r, 0, 1, 3); r += 1
 
         grid.addWidget(QLabel("Participant"), r, 0); grid.addWidget(self.participant, r, 1, 1, 2); r += 1
         grid.addWidget(QLabel("Experimenter"), r, 0); grid.addWidget(self.experimenter, r, 1, 1, 2); r += 1
@@ -154,6 +189,7 @@ class ConfigWindow(QWidget):
 
     def _browse_button(self, target: QLineEdit) -> QPushButton:
         button = QPushButton("Browse...")
+        button.setObjectName("browse")
         button.clicked.connect(lambda: self._browse_into(target))
         return button
 
@@ -195,6 +231,8 @@ class ConfigWindow(QWidget):
     # -- actions ---------------------------------------------------------
 
     def _on_proceed(self) -> None:
+        if self._proc is not None and self._proc.state() != QProcess.ProcessState.NotRunning:
+            return  # a session is already running; ignore (also: window is hidden)
         settings = self.settings_from_form()
         if not settings.emotions:
             self.status.setStyleSheet("color:#c62828;")
@@ -204,9 +242,29 @@ class ConfigWindow(QWidget):
             settings.save(self.settings_path)
         except Exception:
             pass
-        subprocess.Popen(_experiment_command(settings.to_argv()), start_new_session=True)
-        self.status.setStyleSheet("color:#2e7d32;")
-        self.status.setText(f"Launched session for '{settings.participant}'.")
+
+        self._participant = settings.participant
+        cmd = _experiment_command(settings.to_argv())
+        self._proc = QProcess(self)
+        # Re-show the setup window when the experiment process ends (normal exit,
+        # crash, or failure to start) -- so the button can't fire twice and the
+        # experimenter gets the window back automatically.
+        self._proc.finished.connect(self._on_experiment_finished)
+        self._proc.errorOccurred.connect(lambda _err: self._on_experiment_finished())
+        self._proc.setProgram(cmd[0])
+        self._proc.setArguments(cmd[1:])
+
+        self.hide()                 # hide the setup window while the participant runs
+        self._proc.start()
+
+    def _on_experiment_finished(self, *args) -> None:
+        """Bring the setup window back once the experiment process has ended."""
+        if not self.isVisible():
+            self.show()
+            self.raise_()
+            self.activateWindow()
+            self.status.setStyleSheet("color:#2e7d32;")
+            self.status.setText(f"Session for '{getattr(self, '_participant', '')}' finished.")
 
 
 def run_config_ui(settings_path: str | None = None) -> int:
