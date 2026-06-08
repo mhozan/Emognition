@@ -15,8 +15,18 @@ percent shown as ``75.0`` in the spreadsheet looks the same in the HTML and PDF.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
+
+from ..core import (
+    Response,
+    RtFlag,
+    SessionSummary,
+    flag_responses,
+    scrub_flagged_rts,
+    summarize,
+)
 
 # Labels for the three statistic columns, shared across all report formats.
 STAT_COLUMNS: tuple[str, str, str] = ("% Correct", "Avg. Reaction (s)", "Avg. Replays")
@@ -64,3 +74,37 @@ def fmt_replays(value: float | None) -> str:
 def fmt_datetime(value: datetime | None) -> str:
     """Format a timestamp like '2026-06-08 14:30:05', or empty marker."""
     return EMPTY if value is None else value.strftime("%Y-%m-%d %H:%M:%S")
+
+
+# Short human labels for RT flags, shown in the per-trial tables.
+RT_FLAG_LABEL: dict[RtFlag, str] = {
+    RtFlag.OK: "",
+    RtFlag.NO_RESPONSE: "no response",
+    RtFlag.ANTICIPATORY: "anticipatory",
+    RtFlag.SLOW_OUTLIER: "slow outlier",
+}
+
+
+def prepare_summary(
+    responses: Sequence[Response],
+    *,
+    summary: SessionSummary | None,
+    rt_kind: str,
+    exclude_flagged: bool = True,
+) -> tuple[SessionSummary, list[RtFlag]]:
+    """Compute the RT flags and the summary the report should display.
+
+    Every report writer calls this so they all treat flags identically:
+
+    * Flags are computed for every trial (and shown per-trial in the report).
+    * If ``summary`` isn't supplied, it's computed with flagged trials' RTs
+      scrubbed (so reaction-time means ignore anticipatory/outlier trials) unless
+      ``exclude_flagged`` is False. Accuracy/confusion are unaffected either way.
+
+    Returns ``(summary, flags)`` with ``flags`` aligned to ``responses``.
+    """
+    flags = flag_responses(responses, rt_kind=rt_kind)
+    if summary is None:
+        source = scrub_flagged_rts(responses, flags) if exclude_flagged else list(responses)
+        summary = summarize(source, rt_kind=rt_kind)
+    return summary, flags

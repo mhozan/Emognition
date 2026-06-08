@@ -29,6 +29,7 @@ from .scoring import (
     confusion_matrix,
     summarize,
 )
+from .quality import RtFlag, flag_responses, scrub_flagged_rts
 
 __all__ = [
     # emotions / stimuli
@@ -52,4 +53,8 @@ __all__ = [
     "SessionSummary",
     "confusion_matrix",
     "summarize",
+    # reaction-time quality control
+    "RtFlag",
+    "flag_responses",
+    "scrub_flagged_rts",
 ]

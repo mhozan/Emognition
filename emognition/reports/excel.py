@@ -33,9 +33,9 @@ from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.worksheet.worksheet import Worksheet
 
-from ..core import EMOTIONS_IN_ORDER, Gender, Response, SessionSummary, summarize
+from ..core import EMOTIONS_IN_ORDER, Gender, Response, RtFlag, SessionSummary
 from ..core.scoring import DEFAULT_RT_KIND, GroupStats
-from .common import STAT_COLUMNS, SessionInfo, fmt_datetime
+from .common import RT_FLAG_LABEL, STAT_COLUMNS, SessionInfo, fmt_datetime, prepare_summary
 
 _BOLD = Font(bold=True)
 _CENTER = Alignment(horizontal="center")
@@ -160,17 +160,20 @@ def _write_percentages(ws: Worksheet, summary: SessionSummary) -> None:
 
 
 def _write_pressed_keys(
-    ws: Worksheet, responses: Sequence[Response], rt_kind: str
+    ws: Worksheet,
+    responses: Sequence[Response],
+    flags: Sequence[RtFlag],
+    rt_kind: str,
 ) -> None:
     """One row per trial, plus a code legend (legacy 'Pressed Keys' sheet)."""
     headers = [
         "Trial", "Audio filename", "Played (true)", "Pressed (chosen)",
-        "Correct?", "RT onset (s)", "RT offset (s)", "Replays",
+        "Correct?", "RT onset (s)", "RT offset (s)", "Replays", "RT flag",
     ]
     for j, h in enumerate(headers, start=1):
         _header(ws.cell(row=1, column=j, value=h))
 
-    for i, r in enumerate(responses, start=1):
+    for i, (r, flag) in enumerate(zip(responses, flags), start=1):
         ws.cell(row=i + 1, column=1, value=i)
         ws.cell(row=i + 1, column=2, value=r.stimulus.filename)
         ws.cell(row=i + 1, column=3, value=int(r.true_emotion))
@@ -180,16 +183,17 @@ def _write_pressed_keys(
         c7 = ws.cell(row=i + 1, column=7, value=r.rt_offset)
         c6.number_format = c7.number_format = "0.000"
         ws.cell(row=i + 1, column=8, value=r.n_replays)
+        ws.cell(row=i + 1, column=9, value=RT_FLAG_LABEL[flag] or None)
 
-    # Legend (column J), explaining the integer codes used above.
-    _header(ws.cell(row=1, column=10, value="Legend"))
+    # Legend (column K), explaining the integer codes used above.
+    _header(ws.cell(row=1, column=11, value="Legend"))
     for k, emo in enumerate(EMOTIONS_IN_ORDER, start=2):
-        ws.cell(row=k, column=10, value=f"{int(emo)}: {emo.label}")
+        ws.cell(row=k, column=11, value=f"{int(emo)}: {emo.label}")
 
     ws.column_dimensions["B"].width = 18
-    for col in ("C", "D", "E", "F", "G"):
+    for col in ("C", "D", "E", "F", "G", "I"):
         ws.column_dimensions[col].width = 14
-    ws.column_dimensions["J"].width = 14
+    ws.column_dimensions["K"].width = 14
     ws.freeze_panes = "A2"
 
 
@@ -214,7 +218,7 @@ def write_excel_report(
         info: Session metadata for the header sheet; defaults to blanks.
         rt_kind: RT basis for the summary if it must be computed ("offset" default).
     """
-    summary = summary or summarize(responses, rt_kind=rt_kind)
+    summary, flags = prepare_summary(responses, summary=summary, rt_kind=rt_kind)
     info = info or SessionInfo(rt_kind=rt_kind)
 
     wb = Workbook()
@@ -223,7 +227,7 @@ def write_excel_report(
     _write_session_info(info_ws, info, summary, len(responses))
     _write_confusion(wb.create_sheet("Confusion Matrix"), summary)
     _write_percentages(wb.create_sheet("Percentages"), summary)
-    _write_pressed_keys(wb.create_sheet("Pressed Keys"), responses, rt_kind)
+    _write_pressed_keys(wb.create_sheet("Pressed Keys"), responses, flags, rt_kind)
 
     wb.save(path)
     return path

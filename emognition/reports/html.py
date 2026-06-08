@@ -26,16 +26,18 @@ from __future__ import annotations
 from collections.abc import Sequence
 from html import escape
 
-from ..core import EMOTIONS_IN_ORDER, Gender, Response, SessionSummary, summarize
+from ..core import EMOTIONS_IN_ORDER, Gender, Response, RtFlag, SessionSummary
 from ..core.scoring import DEFAULT_RT_KIND, GroupStats
 from .common import (
     EMPTY,
+    RT_FLAG_LABEL,
     STAT_COLUMNS,
     SessionInfo,
     fmt_datetime,
     fmt_pct,
     fmt_replays,
     fmt_seconds,
+    prepare_summary,
 )
 
 # --------------------------------------------------------------------------
@@ -151,12 +153,16 @@ def _stats_section(summary: SessionSummary) -> str:
     </section>"""
 
 
-def _trials_section(responses: Sequence[Response]) -> str:
+def _trials_section(responses: Sequence[Response], flags: Sequence[RtFlag]) -> str:
     rows = []
-    for i, r in enumerate(responses, start=1):
+    for i, (r, flag) in enumerate(zip(responses, flags), start=1):
         chosen = r.responded.label if r.responded else EMPTY
         cls = "ok" if r.is_correct else ("miss" if r.answered else "blank")
         mark = "✓" if r.is_correct else ("✗" if r.answered else EMPTY)
+        flag_label = RT_FLAG_LABEL[flag]
+        flag_html = (
+            f"<span class='flag'>{escape(flag_label)}</span>" if flag_label else ""
+        )
         rows.append(
             f"<tr class='{cls}'>"
             f"<td>{i}</td>"
@@ -167,15 +173,28 @@ def _trials_section(responses: Sequence[Response]) -> str:
             f"<td>{fmt_seconds(r.rt_onset)}</td>"
             f"<td>{fmt_seconds(r.rt_offset)}</td>"
             f"<td class='center'>{r.n_replays}</td>"
+            f"<td class='flagcell'>{flag_html}</td>"
             f"</tr>"
+        )
+
+    n_anti = sum(1 for f in flags if f is RtFlag.ANTICIPATORY)
+    n_slow = sum(1 for f in flags if f is RtFlag.SLOW_OUTLIER)
+    note = ""
+    if n_anti or n_slow:
+        note = (
+            f"<p class='muted'>Reaction-time means exclude "
+            f"{n_anti} anticipatory and {n_slow} slow-outlier trial(s); "
+            f"accuracy uses all answered trials.</p>"
         )
     return f"""
     <section>
       <h2>Per-trial detail</h2>
+      {note}
       <table class='trials'>
         <thead><tr>
           <th>#</th><th>Audio file</th><th>Played</th><th>Chosen</th>
           <th>OK</th><th>RT onset (s)</th><th>RT offset (s)</th><th>Replays</th>
+          <th>Flag</th>
         </tr></thead>
         <tbody>{''.join(rows)}</tbody>
       </table>
@@ -215,6 +234,9 @@ _CSS = """
   tr.total th, tr.total td { font-weight:700; background:#20254d; }
   tr.group td, tr.group th { color:#cdd2ff; }
   tr.ok td:nth-child(5) { color:#5ad17a; } tr.miss td:nth-child(5) { color:#ff7b7b; }
+  .flagcell { text-align:left; }
+  .flag { background:#3a2140; color:#ffb38a; border:1px solid #6b3f54;
+          border-radius:6px; padding:1px 7px; font-size:11px; white-space:nowrap; }
   footer { color:var(--muted); font-size:12px; margin-top:36px;
            border-top:1px solid var(--line); padding-top:12px; }
   @media print {
@@ -233,7 +255,7 @@ def render_html_report(
     rt_kind: str = DEFAULT_RT_KIND,
 ) -> str:
     """Render the full report as a self-contained HTML document string."""
-    summary = summary or summarize(responses, rt_kind=rt_kind)
+    summary, flags = prepare_summary(responses, summary=summary, rt_kind=rt_kind)
     info = info or SessionInfo(rt_kind=rt_kind)
 
     title = "Emognition — Session Report"
@@ -243,7 +265,7 @@ def render_html_report(
         _cards_section(summary),
         _confusion_section(summary),
         _stats_section(summary),
-        _trials_section(responses),
+        _trials_section(responses, flags),
     ])
     return f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8">

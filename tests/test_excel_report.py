@@ -89,5 +89,5 @@ def test_pressed_keys_rows(workbook):
     assert ws.cell(row=5, column=2).value == "04_ang_m.wav"
     assert ws.cell(row=5, column=4).value is None      # no pressed key
     assert ws.cell(row=5, column=5).value is False     # not correct
-    # Legend present in column J.
-    assert ws.cell(row=2, column=10).value == "1: Happy"
+    # Legend present in column K (col J is now the RT-flag column).
+    assert ws.cell(row=2, column=11).value == "1: Happy"
