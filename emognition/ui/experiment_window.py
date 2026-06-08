@@ -46,12 +46,19 @@ from ..runtime import configure_prefs, harden_psychopy
 configure_prefs()
 harden_psychopy()
 
+import numpy as np  # noqa: E402
 import psychtoolbox as ptb  # noqa: E402  (low-level clock: ptb.GetSecs)
+import soundfile as sf  # noqa: E402
 from psychopy import core, event, sound, visual  # noqa: E402
 
 from ..core import EMOTIONS_IN_ORDER, Emotion, Response, Stimulus, reaction_time  # noqa: E402
 from ..core.timing import ReactionTime  # noqa: E402
-from .assets import Caption, emoticon_path  # noqa: E402
+from .assets import Caption, emoticon_path, replay_button_path  # noqa: E402
+
+# Sentinel returned by the response loop when the participant asks to replay.
+_REPLAY = "__replay__"
+# Frames per second for the amplitude envelope driving the LED.
+_ENVELOPE_FPS = 60
 
 # Map the number keys to emotions, matching the original button tags
 # (1=Happy .. 5=Angry) and our canonical Emotion ordering.
@@ -137,17 +144,25 @@ class TestExperiment:
         *,
         caption: Caption = Caption.NONE,
         button_size: float = 0.16,
+        allow_replays: bool = False,
+        amp_visualizer: bool = False,
     ) -> None:
         self.win = win
         self.mouse = event.Mouse(win=win, visible=True)
+        self.allow_replays = allow_replays
+        self.amp_visualizer = amp_visualizer
         # One clock, reset at each clip's audio onset; every RT is measured
         # against it (keyboard via psychopy.event, mouse via this clock).
         self.clock = core.Clock()
+        # Amplitude envelope of the current clip (normalised 0..1, _ENVELOPE_FPS
+        # samples/sec), used to drive the LED during playback.
+        self._envelope: np.ndarray = np.zeros(0)
 
         # One reusable audio stream. We swap the buffer per clip with setSound();
         # constructing a new Sound per clip opens a new (exclusive) device stream
         # and fails on the 2nd clip -- learned the hard way during the spike.
         self._sound: sound.Sound | None = None
+        self._progress_text = ""
 
         # Lay the five faces out as a vertical column on the right, top→bottom in
         # canonical order (Happy, Scared, Neutral, Sad, Angry) -- same order the
@@ -168,6 +183,18 @@ class TestExperiment:
             height=0.045,
             color="white",
             wrapWidth=0.6,
+        )
+
+        # Amplitude "LED": a green dot that brightens with the audio level during
+        # playback (revives volumeLED.m). Drawn only when amp_visualizer is on.
+        self.led = visual.Circle(
+            win, radius=0.03, pos=(-0.45, -0.36), edges=32,
+            fillColor=(-1, -1, -1), lineColor=(-0.4, -0.4, -0.4),
+        )
+        # Replay button (shown after offset when replays are allowed); 'r' also
+        # replays. Re-plays the clip and re-zeros the RT clock to the new onset.
+        self.replay_button = visual.ImageStim(
+            win, image=replay_button_path(), pos=(-0.45, -0.05), size=(0.12, 0.12),
         )
 
     # -- public API -------------------------------------------------------
@@ -194,22 +221,29 @@ class TestExperiment:
     # -- internals --------------------------------------------------------
 
     def _present_trial(self, stim: Stimulus, index: int, total: int) -> Response:
-        """Present one clip and block until the participant responds."""
+        """Present one clip (with optional replays) and collect the response."""
         assert self._sound is not None
-        self._sound.setSound(stim.path)
+        self._load_clip(stim.path)
         duration = self._sound.getDuration()
+        self._progress_text = f"{index} / {total}"
 
-        # Draw the response screen once so it's visible as the audio begins
-        # (greyed -- responses aren't allowed until the clip finishes).
-        self._draw_scene(progress=f"{index} / {total}", enabled=False)
+        # Greyed pre-roll frame, then play and gate responses until offset.
+        self._draw_scene(enabled=False)
         self.win.flip()
 
-        onset = self._start_audio_and_zero_clock()
-        self._wait_until_offset(duration)   # buttons greyed; ignore early presses
-        press = self._await_response()
+        n_replays = 0
+        self._play_and_wait_offset(duration)
+        while True:
+            outcome = self._await_response()
+            if outcome is _REPLAY:
+                n_replays += 1
+                self._play_and_wait_offset(duration)  # re-zeros the clock
+                continue
+            press = outcome
+            break
 
         rt: ReactionTime = reaction_time(
-            press_time=press.rt_onset,  # already measured from onset (t=0)
+            press_time=press.rt_onset,   # measured from the latest playback's onset
             onset_time=0.0,
             clip_duration=duration,
         )
@@ -219,69 +253,87 @@ class TestExperiment:
             responded=press.emotion,
             rt_onset=rt.from_onset,
             rt_offset=rt.from_offset,
-            n_replays=0,  # replays come in Phase 2
+            n_replays=n_replays,
         )
 
-    def _start_audio_and_zero_clock(self) -> float:
-        """Schedule the clip and reset the keyboard clock to its onset (t=0)."""
+    def _load_clip(self, path: str) -> None:
+        """Point the reusable stream at *path* and (re)compute its LED envelope."""
+        assert self._sound is not None
+        self._sound.setSound(path)
+        self._envelope = self._compute_envelope(path) if self.amp_visualizer else np.zeros(0)
+
+    @staticmethod
+    def _compute_envelope(path: str, fps: int = _ENVELOPE_FPS) -> np.ndarray:
+        """Return a normalised (0..1) short-time RMS envelope at *fps* samples/sec."""
+        data, rate = sf.read(path)
+        mono = data if data.ndim == 1 else data.mean(axis=1)
+        hop = max(1, rate // fps)
+        frames = [
+            float(np.sqrt(np.mean(mono[i:i + hop] ** 2)))
+            for i in range(0, len(mono), hop)
+        ]
+        env = np.asarray(frames, dtype=float)
+        peak = env.max() if env.size else 0.0
+        return env / peak if peak > 0 else env
+
+    def _amplitude_at(self, t: float) -> float:
+        """LED level for playback time *t* (0 if past the envelope / no envelope)."""
+        if self._envelope.size == 0:
+            return 0.0
+        idx = int(t * _ENVELOPE_FPS)
+        return float(self._envelope[idx]) if 0 <= idx < self._envelope.size else 0.0
+
+    def _play_and_wait_offset(self, duration: float) -> None:
+        """Schedule the clip, zero the clock at onset, and hold (greyed, LED live)
+        until the clip finishes. Escape quits; early key presses are discarded."""
         assert self._sound is not None
         event.clearEvents("keyboard")
         now = ptb.GetSecs()
         onset = now + _ONSET_LEAD_SECONDS
-        self._sound.play(when=onset)            # sample-accurate scheduled start
-        while ptb.GetSecs() < onset:            # brief spin to the exact instant
+        self._sound.play(when=onset)             # sample-accurate scheduled start
+        while ptb.GetSecs() < onset:             # brief spin to the exact instant
             pass
-        self.clock.reset()                       # now t=0 is the audio onset
+        self.clock.reset()                        # t = 0 is the audio onset
         self.mouse.clickReset()
-        return onset
 
-    def _wait_until_offset(self, duration: float) -> None:
-        """Hold responses off (buttons greyed) until the clip finishes playing.
-
-        Restores the original program's behaviour -- you can only answer after
-        hearing the whole clip -- which also guarantees a non-negative offset RT.
-        Any key pressed during playback is drained and discarded (Escape still
-        quits); the keyboard buffer is cleared at offset so the next real press
-        is timed from a clean slate.
-        """
         while self.clock.getTime() < duration:
-            if "escape" in event.getKeys():      # drains & discards early presses
+            if "escape" in event.getKeys():       # drains & discards early presses
                 raise ExperimentAborted()
-            self._draw_scene(progress=None, enabled=False)
+            self._draw_scene(enabled=False, amplitude=self._amplitude_at(self.clock.getTime()))
             self.win.flip()
         event.clearEvents()
 
-    def _await_response(self) -> _Press:
-        """Spin the draw/flip loop, polling input, until a response arrives."""
+    def _await_response(self) -> "_Press | str":
+        """Poll input until a response (or a replay request) arrives."""
+        keys = list(KEY_TO_EMOTION) + ["escape"]
+        if self.allow_replays:
+            keys.append("r")
         mouse_was_down = self.mouse.getPressed()[0] == 1  # ignore a held-over click
         while True:
-            # 1) Keyboard: pyglet events, time-stamped against our onset-zeroed
-            #    clock (event time is the press as dispatched at the last flip).
-            for name, t in event.getKeys(
-                keyList=list(KEY_TO_EMOTION) + ["escape"], timeStamped=self.clock
-            ):
+            for name, t in event.getKeys(keyList=keys, timeStamped=self.clock):
                 if name == "escape":
                     raise ExperimentAborted()
+                if name == "r":
+                    return _REPLAY
                 return _Press(KEY_TO_EMOTION[name], t, "key")
 
-            # 2) Mouse: accept only a *fresh* press (edge), so a click held from
-            #    the previous trial doesn't auto-trigger.
             mouse_down = self.mouse.getPressed()[0] == 1
             if mouse_down and not mouse_was_down:
+                if self.allow_replays and self.replay_button.contains(self.mouse.getPos()):
+                    return _REPLAY
                 for button in self.buttons:
                     if button.clicked_by(self.mouse):
                         return _Press(button.emotion, self.clock.getTime(), "mouse")
             mouse_was_down = mouse_down
 
-            # 3) Keep the window alive and frame-lock the polling.
-            self._draw_scene(progress=None)
+            self._draw_scene(enabled=True)
             self.win.flip()
 
-    def _draw_scene(self, progress: str | None, enabled: bool = True) -> None:
-        """Draw one frame: prompt, buttons, and (optionally) the progress text.
+    def _draw_scene(self, *, enabled: bool = True, amplitude: float = 0.0) -> None:
+        """Draw one frame: prompt, buttons, progress, LED, and replay button.
 
-        ``enabled`` dims the buttons while a clip is still playing (responses
-        not yet allowed).
+        ``enabled`` dims the buttons while a clip is still playing (responses not
+        yet allowed); ``amplitude`` (0..1) sets the LED brightness during playback.
         """
         self.prompt.text = (
             "Listen, then choose the emotion you heard."
@@ -290,6 +342,12 @@ class TestExperiment:
         self.prompt.draw()
         for button in self.buttons:
             button.draw(enabled)
-        if progress is not None:
-            self.progress.text = f"Progress: {progress}"
+        self.progress.text = f"Progress: {self._progress_text}"
         self.progress.draw()
+
+        if self.amp_visualizer:
+            green = -1.0 + 2.0 * max(0.0, min(1.0, amplitude))  # -1 (off)..+1 (full)
+            self.led.fillColor = (-1.0, green, -1.0)
+            self.led.draw()
+        if self.allow_replays and enabled:        # replay only offered after offset
+            self.replay_button.draw()

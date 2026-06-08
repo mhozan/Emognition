@@ -99,7 +99,12 @@ def _run_session(args: argparse.Namespace) -> int:
         size=(1280, 800), color=(-0.3, -0.3, -0.3), units="height",
         fullscr=args.fullscreen,
     )
-    experiment = TestExperiment(win, caption=Caption(_caption_value(args.caption)))
+    experiment = TestExperiment(
+        win,
+        caption=Caption(_caption_value(args.caption)),
+        allow_replays=args.allow_replays,
+        amp_visualizer=args.amp_visualizer,
+    )
     aborted = False
     try:
         responses = experiment.run(trials)
@@ -157,6 +162,10 @@ def main(argv: list[str] | None = None) -> int:
                         help="run the experiment window full screen")
     parser.add_argument("--no-shuffle", action="store_true",
                         help="present clips in folder order instead of shuffled")
+    parser.add_argument("--allow-replays", action="store_true",
+                        help="show a replay button (and 'r' key) to replay each clip")
+    parser.add_argument("--amp-visualizer", action="store_true",
+                        help="show a green amplitude LED during playback")
     parser.add_argument("--save-dir", default=None,
                         help="folder for output reports (default: ./save_location)")
     args = parser.parse_args(argv)
