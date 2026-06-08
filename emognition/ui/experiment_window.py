@@ -60,12 +60,6 @@ _REPLAY = "__replay__"
 # Frames per second for the amplitude envelope driving the LED.
 _ENVELOPE_FPS = 60
 
-# Map the number keys to emotions, matching the original button tags
-# (1=Happy .. 5=Angry) and our canonical Emotion ordering.
-KEY_TO_EMOTION: dict[str, Emotion] = {
-    str(int(emo)): emo for emo in EMOTIONS_IN_ORDER
-}
-
 # How far in the future to schedule each clip's onset. PsychoToolbox needs a
 # small lead time to arm the sound for a sample-accurate start; 200 ms is plenty
 # and imperceptible.
@@ -97,21 +91,24 @@ class EmotionButton:
         self,
         win: visual.Window,
         emotion: Emotion,
+        number: int,
         pos: tuple[float, float],
         size: float,
         caption: Caption,
     ) -> None:
         self.emotion = emotion
+        self.number = number
         self.stim = visual.ImageStim(
             win,
             image=emoticon_path(emotion, caption),
             pos=pos,
             size=(size, size),  # square; window 'height' units keep aspect honest
         )
-        # A small key-hint label to the left of the face ("1".."5").
+        # A small key-hint label to the left of the face (1..N for the buttons
+        # actually shown, not the emotion's canonical code).
         self.label = visual.TextStim(
             win,
-            text=str(int(emotion)),
+            text=str(number),
             pos=(pos[0] - size * 0.85, pos[1]),
             height=size * 0.45,
             color="white",
@@ -143,6 +140,7 @@ class TestExperiment:
         win: visual.Window,
         *,
         caption: Caption = Caption.NONE,
+        emotions: list[Emotion] | None = None,
         button_size: float = 0.16,
         allow_replays: bool = False,
         amp_visualizer: bool = False,
@@ -154,48 +152,62 @@ class TestExperiment:
         # One clock, reset at each clip's audio onset; every RT is measured
         # against it (keyboard via psychopy.event, mouse via this clock).
         self.clock = core.Clock()
-        # Amplitude envelope of the current clip (normalised 0..1, _ENVELOPE_FPS
-        # samples/sec), used to drive the LED during playback.
-        self._envelope: np.ndarray = np.zeros(0)
+        self._envelope: np.ndarray = np.zeros(0)   # current clip's 0..1 RMS envelope
+        self._sound: sound.Sound | None = None     # one reusable audio stream
+        self._progress_frac = 0.0
+        self._close_requested = False              # set when the window's X is clicked
 
-        # One reusable audio stream. We swap the buffer per clip with setSound();
-        # constructing a new Sound per clip opens a new (exclusive) device stream
-        # and fails on the 2nd clip -- learned the hard way during the spike.
-        self._sound: sound.Sound | None = None
-        self._progress_text = ""
-
-        # Lay the five faces out as a vertical column on the right, top→bottom in
-        # canonical order (Happy, Scared, Neutral, Sad, Angry) -- same order the
-        # original stacked them.
-        ys = [0.34, 0.17, 0.0, -0.17, -0.34]
+        # Show only the emotions being tested, in canonical order, laid out as a
+        # vertically-centred column on the right and renumbered 1..N. (Happy-vs-Sad
+        # -> two centred buttons keyed 1 and 2.) The number keys map to THESE.
+        active = [e for e in EMOTIONS_IN_ORDER if emotions is None or e in set(emotions)]
+        n = len(active)
+        spacing = 0.18
+        ys = [((n - 1) / 2 - i) * spacing for i in range(n)]
         self.buttons = [
-            EmotionButton(win, emo, pos=(0.45, y), size=button_size, caption=caption)
-            for emo, y in zip(EMOTIONS_IN_ORDER, ys)
+            EmotionButton(win, emo, number=i + 1, pos=(0.45, y),
+                          size=button_size, caption=caption)
+            for i, (emo, y) in enumerate(zip(active, ys))
         ]
+        self.key_map: dict[str, Emotion] = {str(i + 1): emo for i, emo in enumerate(active)}
 
-        self.progress = visual.TextStim(
-            win, text="", pos=(0.0, 0.45), height=0.05, color="white"
+        # Progress BAR (no text): a grey track with a green fill proportional to
+        # how far through the block we are.
+        self._progress_track = visual.Rect(
+            win, width=0.6, height=0.022, pos=(0.0, 0.44),
+            fillColor=(-0.4, -0.4, -0.4), lineColor=None,
+        )
+        self._progress_fill = visual.Rect(
+            win, width=0.0, height=0.022, pos=(-0.3, 0.44),
+            fillColor=(-0.2, 0.5, -0.2), lineColor=None, anchor="left",
         )
         self.prompt = visual.TextStim(
-            win,
-            text="Listen, then choose the emotion you heard.",
-            pos=(-0.2, 0.0),
-            height=0.045,
-            color="white",
-            wrapWidth=0.6,
+            win, text="Listen, then choose the emotion you heard.",
+            pos=(-0.15, 0.05), height=0.05, color="white", wrapWidth=0.7,
         )
 
-        # Amplitude "LED": a green dot that brightens with the audio level during
-        # playback (revives volumeLED.m). Drawn only when amp_visualizer is on.
+        # Amplitude "LED": top-left, brightens with the audio level; shown only
+        # DURING playback when amp_visualizer is on (revives volumeLED.m).
         self.led = visual.Circle(
-            win, radius=0.03, pos=(-0.45, -0.36), edges=32,
+            win, radius=0.03, pos=(-0.45, 0.4), edges=32,
             fillColor=(-1, -1, -1), lineColor=(-0.4, -0.4, -0.4),
         )
-        # Replay button (shown after offset when replays are allowed); 'r' also
-        # replays. Re-plays the clip and re-zeros the RT clock to the new onset.
+        # Replay button: bottom-left, shown only after offset when replays are
+        # allowed ('r' also replays). Re-zeros the RT clock to the new onset.
         self.replay_button = visual.ImageStim(
-            win, image=replay_button_path(), pos=(-0.45, -0.05), size=(0.12, 0.12),
+            win, image=replay_button_path(), pos=(-0.42, -0.38), size=(0.12, 0.12),
         )
+
+        # Make the window's X (close) button quit the session, like Escape. In
+        # fullscreen there is no titlebar/X, so this only matters when windowed.
+        try:
+            self.win.winHandle.on_close = self._request_close
+        except Exception:
+            pass
+
+    def _request_close(self) -> None:
+        """Window X clicked: flag for the loops to abort (don't destroy the GL win)."""
+        self._close_requested = True
 
     # -- public API -------------------------------------------------------
 
@@ -225,7 +237,7 @@ class TestExperiment:
         assert self._sound is not None
         self._load_clip(stim.path)
         duration = self._sound.getDuration()
-        self._progress_text = f"{index} / {total}"
+        self._progress_frac = index / total
 
         # Greyed pre-roll frame, then play and gate responses until offset.
         self._draw_scene(enabled=False)
@@ -297,7 +309,7 @@ class TestExperiment:
         self.mouse.clickReset()
 
         while self.clock.getTime() < duration:
-            if "escape" in event.getKeys():       # drains & discards early presses
+            if "escape" in event.getKeys() or self._close_requested:  # drains presses
                 raise ExperimentAborted()
             self._draw_scene(enabled=False, amplitude=self._amplitude_at(self.clock.getTime()))
             self.win.flip()
@@ -305,17 +317,19 @@ class TestExperiment:
 
     def _await_response(self) -> "_Press | str":
         """Poll input until a response (or a replay request) arrives."""
-        keys = list(KEY_TO_EMOTION) + ["escape"]
+        keys = list(self.key_map) + ["escape"]
         if self.allow_replays:
             keys.append("r")
         mouse_was_down = self.mouse.getPressed()[0] == 1  # ignore a held-over click
         while True:
+            if self._close_requested:
+                raise ExperimentAborted()
             for name, t in event.getKeys(keyList=keys, timeStamped=self.clock):
                 if name == "escape":
                     raise ExperimentAborted()
                 if name == "r":
                     return _REPLAY
-                return _Press(KEY_TO_EMOTION[name], t, "key")
+                return _Press(self.key_map[name], t, "key")
 
             mouse_down = self.mouse.getPressed()[0] == 1
             if mouse_down and not mouse_was_down:
@@ -342,12 +356,17 @@ class TestExperiment:
         self.prompt.draw()
         for button in self.buttons:
             button.draw(enabled)
-        self.progress.text = f"Progress: {self._progress_text}"
-        self.progress.draw()
 
-        if self.amp_visualizer:
+        # Progress bar (no text): green fill = fraction of the block completed.
+        self._progress_track.draw()
+        self._progress_fill.width = max(0.0, min(1.0, self._progress_frac)) * 0.6
+        self._progress_fill.draw()
+
+        # Amplitude LED: only while a clip is playing (i.e. responses disabled).
+        if self.amp_visualizer and not enabled:
             green = -1.0 + 2.0 * max(0.0, min(1.0, amplitude))  # -1 (off)..+1 (full)
             self.led.fillColor = (-1.0, green, -1.0)
             self.led.draw()
-        if self.allow_replays and enabled:        # replay only offered after offset
+        # Replay button: only after the clip has finished (response phase).
+        if self.allow_replays and enabled:
             self.replay_button.draw()

@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import os
 import sys
+from dataclasses import replace
 
 from PyQt6.QtCore import QProcess
 from PyQt6.QtGui import QColor, QPainter, QPixmap
@@ -239,12 +240,16 @@ class ConfigWindow(QWidget):
             self.status.setText("Select at least one emotion.")
             return
         try:
-            settings.save(self.settings_path)
+            settings.save(self.settings_path)   # persist what the experimenter set
         except Exception:
             pass
 
+        # Decide where the experiment runs: on an extended display (not the
+        # experimenter's), fullscreen; otherwise honour the Full-screen checkbox.
         self._participant = settings.participant
-        cmd = _experiment_command(settings.to_argv())
+        launch = replace(settings)
+        launch.screen, launch.fullscreen = self._choose_display(settings.fullscreen)
+        cmd = _experiment_command(launch.to_argv())
         self._proc = QProcess(self)
         # Re-show the setup window when the experiment process ends (normal exit,
         # crash, or failure to start) -- so the button can't fire twice and the
@@ -256,6 +261,22 @@ class ConfigWindow(QWidget):
 
         self.hide()                 # hide the setup window while the participant runs
         self._proc.start()
+
+    def _choose_display(self, user_fullscreen: bool) -> tuple[int, bool]:
+        """Pick (screen_index, fullscreen) for the experiment window.
+
+        With an extended display, run fullscreen on a screen OTHER than the one
+        the setup window is on. With a single display, honour the checkbox.
+        """
+        screens = QApplication.screens()
+        if len(screens) > 1:
+            try:
+                here = screens.index(self.screen())
+            except ValueError:
+                here = 0
+            other = next((i for i in range(len(screens)) if i != here), 0)
+            return other, True
+        return 0, user_fullscreen
 
     def _on_experiment_finished(self, *args) -> None:
         """Bring the setup window back once the experiment process has ended."""

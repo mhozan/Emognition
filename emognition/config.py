@@ -33,6 +33,7 @@ class ExperimentSettings:
     save_dir: str = ""           # "" -> default (./save_location)
     caption: str = "none"        # none | english | mandarin
     fullscreen: bool = False
+    screen: int = 0              # display index for the experiment window
     shuffle: bool = True
     allow_replays: bool = False
     amp_visualizer: bool = False
@@ -51,6 +52,8 @@ class ExperimentSettings:
             argv += ["--save-dir", self.save_dir]
         if self.fullscreen:
             argv.append("--fullscreen")
+        if self.screen:
+            argv += ["--screen", str(self.screen)]
         if not self.shuffle:
             argv.append("--no-shuffle")
         if self.allow_replays:

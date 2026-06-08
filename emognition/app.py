@@ -93,18 +93,22 @@ def _run_session(args: argparse.Namespace) -> int:
     if not stimuli:
         print(f"No audio stimuli found in {audio_folder}.", file=sys.stderr)
         return 1
-    trials = build_trial_list(
-        stimuli, emotions=_parse_emotions(args.emotions), shuffle=not args.no_shuffle
-    )
+    emotions = _parse_emotions(args.emotions)
+    trials = build_trial_list(stimuli, emotions=emotions, shuffle=not args.no_shuffle)
 
     started = datetime.now()
     win = visual.Window(
         size=(1280, 800), color=(-0.3, -0.3, -0.3), units="height",
-        fullscr=args.fullscreen,
+        fullscr=args.fullscreen, screen=args.screen,
     )
+    try:
+        win.winHandle.set_caption("Emognition")  # title bar (windowed only)
+    except Exception:
+        pass
     experiment = TestExperiment(
         win,
         caption=Caption(_caption_value(args.caption)),
+        emotions=emotions,
         allow_replays=args.allow_replays,
         amp_visualizer=args.amp_visualizer,
     )
@@ -188,6 +192,8 @@ def main(argv: list[str] | None = None) -> int:
                         default="none", help="emoticon caption language (default: none)")
     parser.add_argument("--fullscreen", action="store_true",
                         help="run the experiment window full screen")
+    parser.add_argument("--screen", type=int, default=0,
+                        help="display index for the experiment window (default 0)")
     parser.add_argument("--no-shuffle", action="store_true",
                         help="present clips in folder order instead of shuffled")
     parser.add_argument("--allow-replays", action="store_true",
