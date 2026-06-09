@@ -1,0 +1,162 @@
+name: Build executables
+
+# Build standalone PyInstaller bundles for Linux, macOS (Intel), and Windows.
+# Triggered automatically on version tags (v*) and manually from the Actions tab.
+#
+# PyInstaller does not cross-compile: each job runs on the target OS so that
+# the bundled shared libraries match the host ABI.
+#
+# On a version tag the "release" job picks up all three artifacts and publishes
+# them as a GitHub Release.
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:   # manual trigger from the Actions tab
+
+jobs:
+  # ── Linux ──────────────────────────────────────────────────────────────────
+  build-linux:
+    name: Build (Linux x86_64)
+    runs-on: ubuntu-22.04
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install system libraries
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            libglu1-mesa libgl1 libegl1 libgles2 \
+            libsndfile1 libportaudio2 libpulse0 libasound2-dev \
+            libxcb-cursor0 libxcb-xinerama0 libxkbcommon-x11-0 \
+            libdbus-1-3 libxrandr2 libxi6 libxcursor1 \
+            libegl-dev libgbm-dev libdrm-dev
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Install Python dependencies
+        run: pip install --no-deps -r requirements.txt
+
+      - name: Build with PyInstaller
+        run: python -m PyInstaller --noconfirm emognition.spec
+
+      - name: Smoke-test the bundle (headless)
+        run: ./dist/emognition/emognition --selfcheck
+
+      - name: Zip bundle
+        run: |
+          cd dist
+          zip -r ../emognition-linux-x86_64.zip emognition/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: emognition-linux-x86_64
+          path: emognition-linux-x86_64.zip
+
+  # ── macOS Intel ────────────────────────────────────────────────────────────
+  build-macos:
+    name: Build (macOS Intel x86_64)
+    runs-on: macos-13     # Intel runner — PTB wheels exist for x86_64
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install system libraries (Homebrew)
+        run: brew install portaudio
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Install Python dependencies
+        run: pip install --no-deps -r requirements.txt
+
+      - name: Build with PyInstaller
+        run: python -m PyInstaller --noconfirm emognition.spec
+
+      - name: Smoke-test the bundle (headless)
+        run: ./dist/emognition/emognition --selfcheck
+
+      - name: Zip bundle
+        run: |
+          cd dist
+          zip -r ../emognition-macos-x86_64.zip emognition/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: emognition-macos-x86_64
+          path: emognition-macos-x86_64.zip
+
+  # ── Windows ────────────────────────────────────────────────────────────────
+  build-windows:
+    name: Build (Windows x86_64)
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Install Python dependencies
+        run: pip install --no-deps -r requirements.txt
+
+      - name: Build with PyInstaller
+        run: python -m PyInstaller --noconfirm emognition.spec
+
+      - name: Smoke-test the bundle (headless)
+        run: .\dist\emognition\emognition.exe --selfcheck
+
+      - name: Zip bundle
+        run: Compress-Archive -Path dist\emognition -DestinationPath emognition-windows-x86_64.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: emognition-windows-x86_64
+          path: emognition-windows-x86_64.zip
+
+  # ── GitHub Release (tags only) ─────────────────────────────────────────────
+  release:
+    name: Create GitHub Release
+    needs: [build-linux, build-macos, build-windows]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts/
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: "Emognition ${{ github.ref_name }}"
+          body: |
+            ## Emognition ${{ github.ref_name }}
+
+            Pre-built standalone executables for Linux, macOS (Intel), and Windows.
+            No Python installation required — unzip and double-click.
+
+            | Platform | Download |
+            |---|---|
+            | Linux x86_64 | `emognition-linux-x86_64.zip` |
+            | macOS Intel  | `emognition-macos-x86_64.zip` |
+            | Windows      | `emognition-windows-x86_64.zip` |
+
+            > **macOS**: right-click → Open on first launch (Gatekeeper).
+            > **Linux**: `chmod +x emognition` if needed.
+
+            See [README](https://github.com/mhozan/Emognition/blob/port/psychopy/README.md) for full usage.
+          draft: false
+          prerelease: ${{ contains(github.ref_name, 'alpha') || contains(github.ref_name, 'beta') || contains(github.ref_name, 'dev') }}
+          files: |
+            artifacts/emognition-linux-x86_64/emognition-linux-x86_64.zip
+            artifacts/emognition-macos-x86_64/emognition-macos-x86_64.zip
+            artifacts/emognition-windows-x86_64/emognition-windows-x86_64.zip

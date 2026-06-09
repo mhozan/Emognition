@@ -28,6 +28,8 @@ for pkg in (
     "freetype",       # freetype-py, used by PsychoPy text
     "questplus",
     "json_tricks",
+    "openpyxl",       # ships .xlsx template files that static analysis misses
+    "fpdf2",          # ships bundled font files
 ):
     pkg_datas, pkg_binaries, pkg_hidden = collect_all(pkg)
     datas += pkg_datas
@@ -36,6 +38,12 @@ for pkg in (
 
 # The audio backend we actually use is imported lazily by PsychoPy.
 hiddenimports += ["psychopy.sound.backend_ptb"]
+# Report writers and naming module are imported lazily from app.py.
+hiddenimports += [
+    "emognition.reports",
+    "emognition.naming",
+    "emognition.audio",
+]
 
 # Our own package + its asset tree (audio clips, emoticon images, background).
 hiddenimports += collect_submodules("emognition")
