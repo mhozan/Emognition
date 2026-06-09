@@ -5,17 +5,14 @@ hears a short speech clip and identifies the conveyed emotion (happy, scared,
 neutral, sad, or angry). Responses and millisecond-accurate reaction times are
 recorded and exported as Excel, PDF, HTML, and CSV reports.
 
-This is a full Python / PsychoPy rewrite of the original MATLAB *Emognition 2*
-(Mohsen Hozan, Auditory Prostheses & Perception Lab, Boys Town National Research
-Hospital, 2014–2020), with feature parity plus a modern UX and cross-platform
-support. The original experiment supported research on emotional prosody in
-cochlear-implant users in Dr. Monita Chatterjee's
+A Python / PsychoPy rewrite of the original MATLAB *Emognition 2* (Auditory
+Prostheses & Perception Lab, Boys Town National Research Hospital, 2014–2020),
+with feature parity plus a modern UX and cross-platform support. The software
+was built for Dr. Monita Chatterjee's
 [APPLab](https://sites.northwestern.edu/monitachatterjee/) (now at Northwestern
-University) — see e.g. [Chatterjee et al., 2019,
-*Front. Psychol.*](https://doi.org/10.3389/fpsyg.2019.02190).
-
-> Original MATLAB sources live under [`matlab/`](matlab/) — preserved as reference
-> and homage.
+University) to support research on emotional prosody in cochlear-implant users.
+Original MATLAB sources are preserved under [`matlab/`](matlab/) as reference
+and homage.
 
 ---
 
@@ -39,7 +36,7 @@ University) — see e.g. [Chatterjee et al., 2019,
 
 ## Features
 
-| | |
+| Feature | Details |
 |---|---|
 | **Millisecond-accurate RTs** | PTB-scheduled audio onset; RT measured from both offset (default, matching legacy) and onset |
 | **Test mode** | Blind test — no feedback — full confusion-matrix report |
@@ -50,11 +47,13 @@ University) — see e.g. [Chatterjee et al., 2019,
 | **Reports** | Self-contained HTML, PDF (confusion heatmap + RT charts), Excel (4 sheets), CSV |
 | **Multi-display** | Experiment auto-routes to the participant's screen; setup stays on the experimenter's |
 | **Stimulus flexibility** | Legacy `01_ang_f.wav` and BIDS-style `speaker-01_emotion-angry_sex-f.wav` both accepted |
-| **FOSS** | AGPL-3.0-or-later; no MATLAB, no proprietary toolboxes |
+| **Open source** | AGPL-3.0-or-later; no MATLAB, no proprietary toolboxes |
 
 ---
 
-## Quick start — Linux
+## Installation
+
+**Linux — quick start (pre-built)**
 
 ```bash
 # Download emognition-linux-x86_64.zip from the Releases page, then:
@@ -63,10 +62,8 @@ chmod +x emognition/emognition
 ./emognition/emognition
 ```
 
----
-
 <details>
-<summary><strong>Installing on Windows (no technical knowledge needed)</strong></summary>
+<summary><strong>Windows — pre-built (no Python needed)</strong></summary>
 
 **No Python, no installation program — just unzip and run.**
 
@@ -103,18 +100,15 @@ chmod +x emognition/emognition
 </details>
 
 <details>
-<summary><strong>Running from source — Windows (PowerShell, step by step)</strong></summary>
+<summary><strong>Windows — from source</strong></summary>
 
 PsychoPy requires **Python 3.10 exactly** — 3.11 and later are not compatible.
-
-All commands below are for **PowerShell**. Do not use Command Prompt — the
-activation script will not work there.
+All commands below are for **PowerShell**; do not use Command Prompt.
 
 **Step 1 — Open PowerShell**
 
-- **Windows 11:** press `Win + X` → click **Terminal** (or **Terminal (Admin)**).
-- **Windows 10:** press `Win`, type `PowerShell`, right-click
-  **Windows PowerShell** → **Run as administrator**.
+- **Windows 11:** press `Win + X` → click **Terminal**.
+- **Windows 10:** press `Win`, type `PowerShell`, right-click → **Run as administrator**.
 
 > **"Running scripts is disabled"?** Run this once in an administrator PowerShell, then reopen:
 > ```powershell
@@ -154,7 +148,7 @@ python -m emognition
 </details>
 
 <details>
-<summary><strong>Running from source — macOS (step by step)</strong></summary>
+<summary><strong>macOS — from source</strong></summary>
 
 **Step 1 — Install Python 3.10**
 
@@ -190,7 +184,7 @@ python -m emognition
 </details>
 
 <details>
-<summary><strong>Running from source — Linux / Ubuntu (step by step)</strong></summary>
+<summary><strong>Linux — from source</strong></summary>
 
 **Step 1 — Install system libraries**
 
@@ -240,7 +234,7 @@ normalize loudness and inspect file naming.
 
 The app accepts two naming conventions:
 
-**Legacy** (Emognition 2 / rename-it):
+**Legacy** (Emognition 2):
 ```
 01_ang_f.wav   02_hap_m.wav   03_neu_f.wav ...
  ^  ^   ^
@@ -268,62 +262,27 @@ After each session, four reports are written to your chosen save folder:
   (by sex), Pressed Keys (with RT + quality flags + recording ID)
 - `.csv` — per-trial raw data + summary
 
----
+<details>
+<summary><strong>Reaction-time definition</strong></summary>
 
-## CLI reference
+Reaction times are measured **two ways**, matching the original tool:
 
-```
-python -m emognition [OPTIONS]
+- **From audio offset** *(default, matches legacy `reactiontime.m`)* — time from
+  when the clip *ends* to the response. Positive = answered after the clip.
+- **From audio onset** — time from when the clip *starts*. Both are included in
+  the Excel and HTML reports.
 
-Options:
-  (no args)          Open the experimenter setup window
-  --setup            Same as above
-  --calibrate        Open the Calibration window
-  --selfcheck        Headless import test — use to verify a frozen bundle
-  --participant ID   Participant label [Participant01]
-  --experimenter ID  Experimenter name [APPstaff]
-  --audio-dir PATH   Folder of .wav stimuli (default: bundled reference clips)
-  --save-dir PATH    Output folder for reports [./save_location]
-  --mode MODE        test | passive | active  [test]
-  --emotions TAGS    Comma-separated subset, e.g. hap,sad,ang  [all five]
-  --caption LANG     none | english | mandarin  [none]
-  --volume FLOAT     Playback volume 0–1  [0.8]
-  --fullscreen       Run the experiment window fullscreen
-  --screen INT       Display index for the experiment window [0]
-  --no-shuffle       Present clips in folder order instead of shuffled
-  --allow-replays    Show a replay button (and 'r' key)
-  --amp-visualizer   Show a green amplitude LED during playback
-  --version          Print version and exit
-```
+The RT quality flags `anticipatory` (< 100 ms from onset) and `outlier`
+(> 3 × IQR) are marked in the reports and excluded from summary statistics.
 
----
-
-## Building a standalone executable
-
-Requires PyInstaller (included in the dev environment):
-
-```bash
-scripts/build_executable.sh       # Linux / macOS
-scripts\build_executable.bat      # Windows
-```
-
-Output: `dist/emognition/` (~0.5 GB folder; zip to distribute).
-
-Verify the bundle without a display:
-
-```bash
-./dist/emognition/emognition --selfcheck
-```
-
-Per-OS binaries are also built automatically by
-[GitHub Actions](.github/workflows/build.yml) on every tagged release.
+</details>
 
 ---
 
 ## Development
 
 ```bash
-pytest                 # 88 tests, no display/audio required
+pytest                           # 88 tests, no display/audio required
 pytest -v tests/test_timing.py   # just the timing tests
 ```
 
@@ -352,19 +311,57 @@ Implement a `write_XYZ_report(responses, path, *, info)` function in
 and call it in `emognition/app.py`. The test fixtures in `tests/conftest.py`
 generate a `responses` list you can use.
 
----
+<details>
+<summary><strong>Building a standalone executable</strong></summary>
 
-## Reaction-time definition
+Requires PyInstaller (included in the dev environment):
 
-Reaction times are measured **two ways**, matching the original tool:
+```bash
+scripts/build_executable.sh       # Linux / macOS
+scripts\build_executable.bat      # Windows
+```
 
-- **From audio offset** *(default, matches legacy `reactiontime.m`)* — time from
-  when the clip *ends* to the response. Positive = answered after the clip.
-- **From audio onset** — time from when the clip *starts*. Both are included in
-  the Excel and HTML reports.
+Output: `dist/emognition/` (~0.5 GB folder; zip to distribute).
 
-The RT quality flags `anticipatory` (< 100 ms from onset) and `outlier`
-(> 3 × IQR) are marked in the reports and excluded from summary statistics.
+Verify the bundle without a display:
+
+```bash
+./dist/emognition/emognition --selfcheck
+```
+
+Per-OS binaries are also built automatically by
+[GitHub Actions](.github/workflows/build.yml) on every tagged release.
+
+</details>
+
+<details>
+<summary><strong>CLI reference</strong></summary>
+
+```
+python -m emognition [OPTIONS]
+
+Options:
+  (no args)          Open the experimenter setup window
+  --setup            Same as above
+  --calibrate        Open the Calibration window
+  --selfcheck        Headless import test — use to verify a frozen bundle
+  --participant ID   Participant label [Participant01]
+  --experimenter ID  Experimenter name [APPstaff]
+  --audio-dir PATH   Folder of .wav stimuli (default: bundled reference clips)
+  --save-dir PATH    Output folder for reports [./save_location]
+  --mode MODE        test | passive | active  [test]
+  --emotions TAGS    Comma-separated subset, e.g. hap,sad,ang  [all five]
+  --caption LANG     none | english | mandarin  [none]
+  --volume FLOAT     Playback volume 0–1  [0.8]
+  --fullscreen       Run the experiment window fullscreen
+  --screen INT       Display index for the experiment window [0]
+  --no-shuffle       Present clips in folder order instead of shuffled
+  --allow-replays    Show a replay button (and 'r' key)
+  --amp-visualizer   Show a green amplitude LED during playback
+  --version          Print version and exit
+```
+
+</details>
 
 ---
 
@@ -425,12 +422,10 @@ Emognition 3 builds on the shoulders of:
 - **pyloudnorm** — ITU-R BS.1770 loudness normalization
 - **openpyxl**, **fpdf2**, **matplotlib** — report generation
 - **soundfile / libsndfile** — audio I/O
-- The original **Emognition 2** design and MATLAB implementation (Mohsen Hozan,
-  Auditory Prostheses & Perception Lab, Boys Town National Research Hospital,
-  2014–2020)
+- The original **Emognition 2** design and MATLAB implementation (Auditory
+  Prostheses & Perception Lab, Boys Town National Research Hospital, 2014–2020)
 - **Dr. Monita Chatterjee** and the
   [APPLab](https://sites.northwestern.edu/monitachatterjee/) (now at
   Northwestern University, Dept. of Communication Sciences and Disorders),
   whose research program on emotional prosody in cochlear-implant users this
   software was built for
-
