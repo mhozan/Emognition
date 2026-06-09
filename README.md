@@ -19,6 +19,15 @@ University) — see e.g. [Chatterjee et al., 2019,
 
 ---
 
+## Screenshots
+
+| Experimenter setup | Live monitor | Calibration |
+|:---:|:---:|:---:|
+| ![Experimenter setup panel](docs/screenshots/setup.png) | ![Live monitor during a session](docs/screenshots/monitor.png) | ![Calibration window](docs/screenshots/calibration.png) |
+| Configure participant, audio folder, mode, and emotions before each session. | Accuracy and reaction time update trial-by-trial on the experimenter's screen. | Inspect, normalize, and rename stimulus files before running. |
+
+---
+
 ## Features
 
 | | |

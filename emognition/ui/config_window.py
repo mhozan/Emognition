@@ -89,6 +89,12 @@ def default_settings_path() -> str:
     return os.path.join(base, "settings.json")
 
 
+def _default_save_dir() -> str:
+    """Default report output folder: save_location/ beside the exe (or cwd)."""
+    base = os.path.dirname(sys.executable) if getattr(sys, "frozen", False) else os.getcwd()
+    return os.path.join(base, "save_location")
+
+
 def _experiment_command(argv: list[str]) -> list[str]:
     """Command to launch a session in a separate process (frozen or from source)."""
     if getattr(sys, "frozen", False):          # PyInstaller bundle: the exe itself
