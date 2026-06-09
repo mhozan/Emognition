@@ -46,6 +46,8 @@ from ..config import ALL_EMOTION_TAGS, ExperimentSettings
 from .assets import background_path
 
 _CAPTIONS = ["none", "english", "mandarin"]
+_MODES = ["test", "passive", "active"]
+_MODE_LABELS = {"test": "Test", "passive": "Passive Training", "active": "Active Training"}
 _EMOTION_LABELS = {"hap": "Happy", "sca": "Scared", "neu": "Neutral",
                    "sad": "Sad", "ang": "Angry"}
 
@@ -132,6 +134,8 @@ class ConfigWindow(QWidget):
         self.audio_dir = QLineEdit()
         self.save_dir = QLineEdit()
         self.caption = QComboBox(); self.caption.addItems(_CAPTIONS)
+        self.mode = QComboBox()
+        self.mode.addItems([_MODE_LABELS[m] for m in _MODES])
         self.fullscreen = QCheckBox("Full screen")
         self.shuffle = QCheckBox("Shuffle order"); self.shuffle.setChecked(True)
         self.allow_replays = QCheckBox("Allow replays")
@@ -160,6 +164,7 @@ class ConfigWindow(QWidget):
         grid.addWidget(QLabel("Save folder"), r, 0); grid.addWidget(self.save_dir, r, 1)
         grid.addWidget(self._browse_button(self.save_dir), r, 2); r += 1
         grid.addWidget(QLabel("Caption"), r, 0); grid.addWidget(self.caption, r, 1); r += 1
+        grid.addWidget(QLabel("Mode"), r, 0); grid.addWidget(self.mode, r, 1); r += 1
 
         self.volume = QDoubleSpinBox()
         self.volume.setRange(0.0, 1.0); self.volume.setSingleStep(0.05); self.volume.setValue(0.8)
@@ -184,9 +189,12 @@ class ConfigWindow(QWidget):
         calib.setObjectName("browse")
         calib.clicked.connect(self._open_calibration)
         grid.addWidget(calib, r, 1)
-        proceed = QPushButton("Proceed to Test")
-        proceed.clicked.connect(self._on_proceed)
-        grid.addWidget(proceed, r, 2); r += 1
+        self.proceed_btn = QPushButton("Proceed")
+        self.proceed_btn.clicked.connect(self._on_proceed)
+        # Update the button label when mode changes.
+        self.mode.currentTextChanged.connect(self._update_proceed_label)
+        self._update_proceed_label(self.mode.currentText())
+        grid.addWidget(self.proceed_btn, r, 2); r += 1
 
         panel = self._panel(); panel.setLayout(grid)
         outer = QVBoxLayout(self)
@@ -194,6 +202,14 @@ class ConfigWindow(QWidget):
         row = QHBoxLayout(); row.addStretch(1); row.addWidget(panel); row.addStretch(1)
         outer.addLayout(row)
         outer.addStretch(1)
+
+    def _update_proceed_label(self, mode_label: str) -> None:
+        labels = {
+            "Test": "Proceed to Test",
+            "Passive Training": "Start Passive Training",
+            "Active Training": "Start Active Training",
+        }
+        self.proceed_btn.setText(labels.get(mode_label, "Proceed"))
 
     def _browse_button(self, target: QLineEdit) -> QPushButton:
         button = QPushButton("Browse...")
@@ -209,6 +225,8 @@ class ConfigWindow(QWidget):
     # -- settings <-> form ----------------------------------------------
 
     def settings_from_form(self) -> ExperimentSettings:
+        mode_label = self.mode.currentText()
+        mode_key = next((k for k, v in _MODE_LABELS.items() if v == mode_label), "test")
         return ExperimentSettings(
             participant=self.participant.text().strip() or "Participant01",
             experimenter=self.experimenter.text().strip() or "APPstaff",
@@ -221,6 +239,7 @@ class ConfigWindow(QWidget):
             amp_visualizer=self.amp_visualizer.isChecked(),
             volume=self.volume.value(),
             emotions=[t for t, b in self.emotion_boxes.items() if b.isChecked()],
+            mode=mode_key,
         )
 
     def apply_settings(self, s: ExperimentSettings) -> None:
@@ -237,6 +256,8 @@ class ConfigWindow(QWidget):
         self.volume.setValue(s.volume)
         for tag, box in self.emotion_boxes.items():
             box.setChecked(tag in s.emotions)
+        if s.mode in _MODE_LABELS:
+            self.mode.setCurrentText(_MODE_LABELS[s.mode])
 
     # -- actions ---------------------------------------------------------
 

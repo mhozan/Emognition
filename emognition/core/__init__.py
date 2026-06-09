@@ -32,6 +32,7 @@ from .scoring import (
     summarize,
 )
 from .quality import RtFlag, flag_responses, scrub_flagged_rts
+from .modes import SessionMode
 
 __all__ = [
     # emotions / stimuli
@@ -61,4 +62,6 @@ __all__ = [
     "RtFlag",
     "flag_responses",
     "scrub_flagged_rts",
+    # session mode
+    "SessionMode",
 ]

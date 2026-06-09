@@ -12,6 +12,9 @@ The experimenter config window (PyQt6) edits an :class:`ExperimentSettings`, the
 launches the experiment in a *separate process* via ``to_argv()`` -- which keeps
 Qt and the pyglet experiment window out of each other's process (they crash if
 they share one). Settings also persist to JSON ("keep previous settings").
+
+The ``mode`` field maps to :class:`~emognition.core.SessionMode` string values
+(``"test"`` / ``"passive"`` / ``"active"``).
 """
 
 from __future__ import annotations
@@ -42,6 +45,7 @@ class ExperimentSettings:
     amp_visualizer: bool = False
     volume: float = DEFAULT_VOLUME
     emotions: list[str] = field(default_factory=lambda: list(ALL_EMOTION_TAGS))
+    mode: str = "test"           # "test" | "passive" | "active"
 
     def to_argv(self) -> list[str]:
         """Build the ``emognition`` CLI arguments to run a session with these."""
@@ -69,6 +73,8 @@ class ExperimentSettings:
         # Only pass an explicit subset if it isn't the full set (order-insensitive).
         if set(self.emotions) != set(ALL_EMOTION_TAGS):
             argv += ["--emotions", ",".join(self.emotions)]
+        if self.mode != "test":
+            argv += ["--mode", self.mode]
         return argv
 
     def save(self, path: str) -> str:

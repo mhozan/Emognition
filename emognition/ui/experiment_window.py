@@ -6,24 +6,34 @@
 # as published by the Free Software Foundation, either version 3 of the
 # License, or (at your option) any later version. See the LICENSE file.
 
-"""The Test-mode experiment window: play a clip, collect a response + RT.
+"""The experiment window: play clips, collect responses, optionally give feedback.
 
 This is the first piece that touches PsychoPy's drawing/timing machinery. It is
 deliberately thin: it *presents* stimuli and *captures* responses, then hands
 plain :class:`~emognition.core.Response` objects to the UI-free core for scoring.
 No statistics live here.
 
-The trial loop, conceptually::
+Three session modes (see :class:`~emognition.core.SessionMode`):
+
+* **TEST** -- standard. Clips play, participant responds, no feedback.
+* **PASSIVE_TRAINING** -- clips play, correct answer glows for ``feedback_duration``
+  seconds, participant does not respond. Use before a test block to teach the
+  emotion-face mapping.
+* **ACTIVE_TRAINING** -- participant responds, then the correct answer glows green
+  and (if wrong) their choice glows orange for ``feedback_duration`` seconds.
+  Responses are recorded so a learning-curve is available in the report.
+
+The trial loop (Test mode)::
 
     for each clip:
-        show the 5 emoticon buttons
+        show the N emoticon buttons (greyed)
         schedule the audio to start at a known instant  -> that instant is t=0
         spin the draw/flip loop, polling keyboard + mouse, until a response
         RT = (response time) - (t=0); offset RT = onset RT - clip duration
 
 Two response modalities, one shared clock (reset at audio onset):
-  * number keys 1-5  -> pyglet keyboard via psychopy.event
-  * clicking a face  -> mouse, faithful to the original GUI
+  * number keys 1..N  -> pyglet keyboard via psychopy.event
+  * clicking a face   -> mouse, faithful to the original GUI
 Both are timed at frame resolution against a clock zeroed at the (precisely
 scheduled) audio onset; we store which modality produced each RT.
 
@@ -51,7 +61,7 @@ import psychtoolbox as ptb  # noqa: E402  (low-level clock: ptb.GetSecs)
 import soundfile as sf  # noqa: E402
 from psychopy import core, event, sound, visual  # noqa: E402
 
-from ..core import EMOTIONS_IN_ORDER, Emotion, Response, Stimulus, reaction_time  # noqa: E402
+from ..core import EMOTIONS_IN_ORDER, Emotion, Response, SessionMode, Stimulus, reaction_time  # noqa: E402
 from ..core.timing import ReactionTime  # noqa: E402
 from .assets import Caption, emoticon_path, replay_button_path  # noqa: E402
 
@@ -113,10 +123,45 @@ class EmotionButton:
             height=size * 0.45,
             color="white",
         )
+        # Training-feedback glow: a filled circle drawn *behind* the face image.
+        # Left colourless/invisible until _show_feedback() activates it.
+        # Green = correct answer; orange = participant's wrong choice.
+        self._ring = visual.Circle(
+            win,
+            radius=size * 0.58,
+            pos=pos,
+            edges=32,
+            fillColor=None,
+            lineColor=None,
+        )
 
-    def draw(self, enabled: bool = True) -> None:
-        """Draw the face; dim it when disabled (response not yet allowed)."""
+    def draw(self, enabled: bool = True, highlight: str | None = None) -> None:
+        """Draw the face; dim it while a clip is playing or during feedback.
+
+        Args:
+            enabled:   Full opacity when True (response phase); 0.3 when False
+                       (playback phase, buttons not yet active).
+            highlight: Training-feedback state for *this* button:
+                       ``"correct"`` -- green glow, full opacity;
+                       ``"wrong"``   -- orange glow, full opacity (bad choice);
+                       ``"dim"``     -- almost invisible (not the focus);
+                       ``None``      -- normal enabled/disabled rendering.
+        """
         opacity = 1.0 if enabled else 0.3
+
+        if highlight == "correct":
+            self._ring.fillColor = (-1.0, 1.0, -1.0)   # bright green
+            self._ring.opacity = 0.55
+            self._ring.draw()
+            opacity = 1.0
+        elif highlight == "wrong":
+            self._ring.fillColor = (1.0, 0.2, -1.0)    # orange-red
+            self._ring.opacity = 0.55
+            self._ring.draw()
+            opacity = 1.0
+        elif highlight == "dim":
+            opacity = 0.12   # nearly invisible; draws attention to the highlighted button
+
         self.stim.opacity = opacity
         self.label.opacity = opacity
         self.stim.draw()
@@ -145,12 +190,16 @@ class TestExperiment:
         allow_replays: bool = False,
         amp_visualizer: bool = False,
         volume: float = 0.8,
+        mode: SessionMode = SessionMode.TEST,
+        feedback_duration: float = 1.5,
     ) -> None:
         self.win = win
         self.mouse = event.Mouse(win=win, visible=True)
         self.allow_replays = allow_replays
         self.amp_visualizer = amp_visualizer
         self.volume = max(0.0, min(1.0, volume))
+        self.mode = mode
+        self.feedback_duration = max(0.3, feedback_duration)
         # One clock, reset at each clip's audio onset; every RT is measured
         # against it (keyboard via psychopy.event, mouse via this clock).
         self.clock = core.Clock()
@@ -158,6 +207,13 @@ class TestExperiment:
         self._sound: sound.Sound | None = None     # one reusable audio stream
         self._progress_frac = 0.0
         self._close_requested = False              # set when the window's X is clicked
+
+        # Mode-specific "listen" prompt (shown during playback, before response).
+        self._listen_prompt = {
+            SessionMode.TEST:             "Listen...",
+            SessionMode.PASSIVE_TRAINING: "Listen carefully.",
+            SessionMode.ACTIVE_TRAINING:  "Listen, then choose.",
+        }[mode]
 
         # Show only the emotions being tested, in canonical order, laid out as a
         # vertically-centred column on the right and renumbered 1..N. (Happy-vs-Sad
@@ -214,19 +270,23 @@ class TestExperiment:
     # -- public API -------------------------------------------------------
 
     def run(self, trials: list[Stimulus]) -> list[Response]:
-        """Present every trial in order; return one Response per trial.
+        """Present every trial in order; return one Response per responding trial.
+
+        Passive training returns no responses (the list will be empty). Active
+        training and Test return one Response per trial.
 
         Raises:
             ExperimentAborted: if Escape is pressed; the responses collected so
                 far are attached on the exception's ``.partial`` attribute.
         """
-        # Prime the reusable stream with the first clip's format.
         self._sound = sound.Sound(trials[0].path, stereo=True)
 
         responses: list[Response] = []
         try:
             for i, stim in enumerate(trials, start=1):
-                responses.append(self._present_trial(stim, i, len(trials)))
+                result = self._present_trial(stim, i, len(trials))
+                if result is not None:       # passive training produces no response
+                    responses.append(result)
         except ExperimentAborted as abort:
             abort.partial = responses  # type: ignore[attr-defined]
             raise
@@ -234,14 +294,48 @@ class TestExperiment:
 
     # -- internals --------------------------------------------------------
 
-    def _present_trial(self, stim: Stimulus, index: int, total: int) -> Response:
-        """Present one clip (with optional replays) and collect the response."""
+    def _present_trial(
+        self, stim: Stimulus, index: int, total: int
+    ) -> "Response | None":
+        """Dispatch to the mode-appropriate trial implementation."""
+        if self.mode == SessionMode.PASSIVE_TRAINING:
+            return self._present_passive_trial(stim, index, total)
+        return self._present_responding_trial(stim, index, total)
+
+    def _present_passive_trial(
+        self, stim: Stimulus, index: int, total: int
+    ) -> None:
+        """Passive training: play the clip, reveal the correct label, advance.
+
+        No response is collected. The correct button glows green for
+        ``self.feedback_duration`` seconds so the participant learns the mapping.
+        Returns ``None`` (caller skips it when building the response list).
+        """
         assert self._sound is not None
         self._load_clip(stim.path)
         duration = self._sound.getDuration()
         self._progress_frac = index / total
 
-        # Greyed pre-roll frame, then play and gate responses until offset.
+        self._draw_scene(enabled=False)
+        self.win.flip()
+        self._play_and_wait_offset(duration)
+        self._show_feedback(stim.emotion, chosen=None)
+        self._sound.stop()
+        return None
+
+    def _present_responding_trial(
+        self, stim: Stimulus, index: int, total: int
+    ) -> Response:
+        """Test / Active-training: play, collect response, optionally show feedback.
+
+        Active training adds a visual feedback phase after the response:
+        correct button = green, wrong choice = orange (if the participant erred).
+        """
+        assert self._sound is not None
+        self._load_clip(stim.path)
+        duration = self._sound.getDuration()
+        self._progress_frac = index / total
+
         self._draw_scene(enabled=False)
         self.win.flip()
 
@@ -251,16 +345,21 @@ class TestExperiment:
             outcome = self._await_response()
             if outcome is _REPLAY:
                 n_replays += 1
-                self._play_and_wait_offset(duration)  # re-zeros the clock
+                self._play_and_wait_offset(duration)   # re-zeros the clock
                 continue
             press = outcome
             break
 
         rt: ReactionTime = reaction_time(
-            press_time=press.rt_onset,   # measured from the latest playback's onset
+            press_time=press.rt_onset,    # measured from the latest playback's onset
             onset_time=0.0,
             clip_duration=duration,
         )
+
+        # Active training: flash feedback before moving on.
+        if self.mode == SessionMode.ACTIVE_TRAINING:
+            self._show_feedback(stim.emotion, chosen=press.emotion)
+
         self._sound.stop()
         return Response(
             stimulus=stim,
@@ -269,6 +368,36 @@ class TestExperiment:
             rt_offset=rt.from_offset,
             n_replays=n_replays,
         )
+
+    def _show_feedback(self, correct: Emotion, chosen: "Emotion | None") -> None:
+        """Highlight the correct button (and the wrong choice if any) for a beat.
+
+        Drives the training feedback display:
+        * Passive training  -- ``chosen`` is None; only the correct button glows.
+        * Active training   -- correct glows green; if ``chosen != correct`` the
+          participant's choice also glows orange so they see what they got wrong.
+        All other buttons dim to near-invisible so the focus is clear.
+        """
+        correct_name = correct.name.capitalize()
+        if chosen is None:
+            prompt = f"This was: {correct_name}"
+        elif chosen == correct:
+            prompt = "Correct!"
+        else:
+            prompt = f"Correct answer: {correct_name}"
+
+        countdown = core.CountdownTimer(self.feedback_duration)
+        while countdown.getTime() > 0:
+            if "escape" in event.getKeys() or self._close_requested:
+                raise ExperimentAborted()
+            self._draw_scene(
+                enabled=False,
+                feedback_correct=correct,
+                feedback_chosen=chosen,
+                prompt_override=prompt,
+            )
+            self.win.flip()
+        event.clearEvents()
 
     def _load_clip(self, path: str) -> None:
         """Point the reusable stream at *path* and (re)compute its LED envelope."""
@@ -349,26 +478,57 @@ class TestExperiment:
             self._draw_scene(enabled=True)
             self.win.flip()
 
-    def _draw_scene(self, *, enabled: bool = True, amplitude: float = 0.0) -> None:
+    def _draw_scene(
+        self,
+        *,
+        enabled: bool = True,
+        amplitude: float = 0.0,
+        feedback_correct: "Emotion | None" = None,
+        feedback_chosen: "Emotion | None" = None,
+        prompt_override: str | None = None,
+    ) -> None:
         """Draw one frame: prompt, buttons, progress, LED, and replay button.
 
-        ``enabled`` dims the buttons while a clip is still playing (responses not
-        yet allowed); ``amplitude`` (0..1) sets the LED brightness during playback.
+        Args:
+            enabled:          Dim buttons (False) while a clip plays; full (True)
+                              when awaiting response.
+            amplitude:        0..1 LED level, driven by the RMS envelope.
+            feedback_correct: When set (training modes), the button for this
+                              emotion gets a green glow.
+            feedback_chosen:  When set and different from *feedback_correct*, this
+                              button gets an orange glow (wrong choice).
+            prompt_override:  Replace the default prompt text for this frame
+                              (used during the feedback phase).
         """
-        self.prompt.text = (
-            "Listen, then choose the emotion you heard."
-            if enabled else "Listen..."
-        )
+        # Determine prompt text for this frame.
+        if prompt_override is not None:
+            self.prompt.text = prompt_override
+        elif enabled:
+            self.prompt.text = "Listen, then choose the emotion you heard."
+        else:
+            self.prompt.text = self._listen_prompt
+
         self.prompt.draw()
+
+        # Buttons: apply feedback highlights when in a training feedback phase.
         for button in self.buttons:
-            button.draw(enabled)
+            if feedback_correct is not None:
+                if button.emotion == feedback_correct:
+                    hl: "str | None" = "correct"
+                elif feedback_chosen is not None and button.emotion == feedback_chosen:
+                    hl = "wrong"
+                else:
+                    hl = "dim"
+            else:
+                hl = None
+            button.draw(enabled, highlight=hl)
 
         # Progress bar (no text): green fill = fraction of the block completed.
         self._progress_track.draw()
         self._progress_fill.width = max(0.0, min(1.0, self._progress_frac)) * 0.6
         self._progress_fill.draw()
 
-        # Amplitude LED: only while a clip is playing (i.e. responses disabled).
+        # Amplitude LED: only while a clip is playing (responses disabled).
         if self.amp_visualizer and not enabled:
             green = -1.0 + 2.0 * max(0.0, min(1.0, amplitude))  # -1 (off)..+1 (full)
             self.led.fillColor = (-1.0, green, -1.0)

@@ -76,7 +76,7 @@ def _run_session(args: argparse.Namespace) -> int:
 
     from psychopy import core, visual
 
-    from .core import build_trial_list
+    from .core import SessionMode, build_trial_list
     from .io import open_path
     from .naming import scan_stimuli
     from .reports import (
@@ -106,6 +106,7 @@ def _run_session(args: argparse.Namespace) -> int:
         win.winHandle.set_caption("Emognition")  # title bar (windowed only)
     except Exception:
         pass
+    mode = SessionMode(args.mode)
     experiment = TestExperiment(
         win,
         caption=Caption(_caption_value(args.caption)),
@@ -113,6 +114,7 @@ def _run_session(args: argparse.Namespace) -> int:
         allow_replays=args.allow_replays,
         amp_visualizer=args.amp_visualizer,
         volume=args.volume,
+        mode=mode,
     )
     aborted = False
     try:
@@ -123,7 +125,10 @@ def _run_session(args: argparse.Namespace) -> int:
         win.close()
 
     if not responses:
-        print("No responses recorded.")
+        if mode == SessionMode.PASSIVE_TRAINING:
+            print(f"Passive training session complete ({len(trials)} clips presented).")
+        else:
+            print("No responses recorded.")
         core.quit()
         return 0
 
@@ -135,7 +140,7 @@ def _run_session(args: argparse.Namespace) -> int:
     info = SessionInfo(
         participant=args.participant,
         experimenter=args.experimenter,
-        mode="Test" + (" (aborted)" if aborted else ""),
+        mode=mode.label + (" (aborted)" if aborted else ""),
         audio_folder=audio_folder,
         started_at=started, finished_at=datetime.now(),
         app_version=__version__,
@@ -250,6 +255,10 @@ def main(argv: list[str] | None = None) -> int:
                         help="playback volume 0.0-1.0 (experimenter-set; default 0.8)")
     parser.add_argument("--save-dir", default=None,
                         help="folder for output reports (default: ./save_location)")
+    parser.add_argument("--mode", choices=["test", "passive", "active"],
+                        default="test",
+                        help="session mode: test (default), passive training, "
+                             "or active training with feedback")
     raw = sys.argv[1:] if argv is None else list(argv)
     args = parser.parse_args(raw)
 
