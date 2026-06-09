@@ -14,7 +14,6 @@
 # Result: dist/emognition/emognition   (run with --selfcheck to verify the bundle)
 
 import os
-import subprocess
 import sys
 
 from PyInstaller.utils.hooks import collect_all, collect_submodules
@@ -24,20 +23,17 @@ binaries = []
 hiddenimports = []
 
 # psychtoolbox's PsychHID links against libusb, which PyInstaller won't find
-# automatically when it comes from Homebrew (not a Python package).
-# We locate it via `brew --prefix libusb` and bundle the dylib explicitly.
+# automatically for Homebrew-installed dylibs.  We add it to binaries so it
+# lands in the bundle; the CI workflow then runs install_name_tool to rewrite
+# the rpath in PsychHID (PyInstaller doesn't do that for manually-added libs).
 if sys.platform == "darwin":
-    try:
-        _prefix = subprocess.check_output(
-            ["brew", "--prefix", "libusb"], text=True, stderr=subprocess.DEVNULL
-        ).strip()
-        for _name in ("libusb-1.0.0.dylib", "libusb-1.0.dylib"):
-            _candidate = os.path.join(_prefix, "lib", _name)
-            if os.path.exists(_candidate):
-                binaries.append((_candidate, "."))
-                break
-    except Exception:
-        pass
+    for _candidate in (
+        "/opt/homebrew/lib/libusb-1.0.0.dylib",  # Homebrew Apple Silicon
+        "/usr/local/lib/libusb-1.0.0.dylib",       # Homebrew Intel
+    ):
+        if os.path.exists(_candidate):
+            binaries.append((_candidate, "psychtoolbox"))  # place next to PsychHID
+            break
 
 # Packages PyInstaller can't figure out on its own -> grab everything.
 for pkg in (
