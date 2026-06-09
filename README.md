@@ -21,10 +21,19 @@ University) — see e.g. [Chatterjee et al., 2019,
 
 ## Screenshots
 
-| Experimenter setup | Live monitor | Calibration |
+| Experimenter setup | Live monitor |
+|:---:|:---:|
+| ![Experimenter setup panel](docs/screenshots/setup.png) | ![Live monitor during a session](docs/screenshots/monitor.png) |
+| Configure participant, audio folder, mode, and emotions before each session. | Accuracy and reaction time update trial-by-trial on the experimenter's screen. |
+
+<details>
+<summary><strong>Calibration window (3 tabs)</strong></summary>
+
+| Stimuli / naming | Loudness & trim | SPL tone |
 |:---:|:---:|:---:|
-| ![Experimenter setup panel](docs/screenshots/setup.png) | ![Live monitor during a session](docs/screenshots/monitor.png) | ![Calibration window](docs/screenshots/calibration.png) |
-| Configure participant, audio folder, mode, and emotions before each session. | Accuracy and reaction time update trial-by-trial on the experimenter's screen. | Inspect, normalize, and rename stimulus files before running. |
+| ![Stimuli tab](docs/screenshots/calibration_stimuli.png) | ![Loudness tab](docs/screenshots/calibration_loudness.png) | ![SPL tone tab](docs/screenshots/calibration_tone.png) |
+
+</details>
 
 ---
 
