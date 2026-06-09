@@ -54,7 +54,19 @@ University) — see e.g. [Chatterjee et al., 2019,
 
 ---
 
-## Installing on Windows (no technical knowledge needed)
+## Quick start — Linux
+
+```bash
+# Download emognition-linux-x86_64.zip from the Releases page, then:
+unzip emognition-linux-x86_64.zip
+chmod +x emognition/emognition
+./emognition/emognition
+```
+
+---
+
+<details>
+<summary><strong>Installing on Windows (no technical knowledge needed)</strong></summary>
 
 **No Python, no installation program — just unzip and run.**
 
@@ -88,36 +100,15 @@ University) — see e.g. [Chatterjee et al., 2019,
 > **Slow first launch** — the first start can take 10–20 seconds while Windows
 > scans the bundle. Subsequent launches are faster.
 
----
+</details>
 
-## Quick start — Linux
-
-```bash
-# Download emognition-linux-x86_64.zip from the Releases page, then:
-unzip emognition-linux-x86_64.zip
-chmod +x emognition/emognition
-./emognition/emognition
-```
-
----
-
-## Running from source
-
-> **Most users should use the pre-built executable above.** Running from source
-> is for researchers who want to modify the code or run it on a system where the
-> pre-built bundle does not work.
+<details>
+<summary><strong>Running from source — Windows (PowerShell, step by step)</strong></summary>
 
 PsychoPy requires **Python 3.10 exactly** — 3.11 and later are not compatible.
-Follow the steps for your operating system below.
-
----
-
-### Windows — step by step
 
 All commands below are for **PowerShell**. Do not use Command Prompt — the
 activation script will not work there.
-
----
 
 **Step 1 — Open PowerShell**
 
@@ -125,133 +116,54 @@ activation script will not work there.
 - **Windows 10:** press `Win`, type `PowerShell`, right-click
   **Windows PowerShell** → **Run as administrator**.
 
-You should see a blue (or dark) window with a prompt ending in `>`.
-
-> **"Running scripts is disabled"?** If you ever see this error, run the
-> following line **once** in an administrator PowerShell, then close and reopen:
+> **"Running scripts is disabled"?** Run this once in an administrator PowerShell, then reopen:
 > ```powershell
 > Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
 > ```
-> To open an administrator PowerShell: press `Win`, type `PowerShell`,
-> right-click → **Run as administrator**, click Yes.
-
----
 
 **Step 2 — Install Python 3.10**
 
-1. Go to [python.org/downloads/release/python-31011](https://www.python.org/downloads/release/python-31011/)
-   and download **Windows installer (64-bit)** — the file is called
-   `python-3.10.11-amd64.exe`.
-2. Run the installer. On the **very first screen**, tick
-   **"Add Python 3.10 to PATH"** before clicking Install Now.
-   This checkbox is easy to miss; without it nothing will work.
-3. When it finishes, verify in PowerShell:
-   ```powershell
-   python --version
-   ```
-   You should see `Python 3.10.11`. If you see a different version or an error,
-   close PowerShell, reopen it, and try again.
+Download **Windows installer (64-bit)** from
+[python.org/downloads/release/python-31011](https://www.python.org/downloads/release/python-31011/)
+(`python-3.10.11-amd64.exe`). On the first screen, tick **"Add Python 3.10 to PATH"** before clicking Install Now.
 
----
+Verify: `python --version` → should print `Python 3.10.11`.
 
 **Step 3 — Install Git**
 
-If you don't already have Git, download it from
-[git-scm.com/download/win](https://git-scm.com/download/win) and run the
-installer with the default options. When it finishes, close and reopen
-PowerShell so the new `git` command is available.
+Download from [git-scm.com/download/win](https://git-scm.com/download/win), run with default options, then reopen PowerShell.
 
----
+**Step 4 — Download and set up**
 
-**Step 4 — Choose a folder and open PowerShell there**
-
-Decide where you want to keep the project (e.g. `Documents`). The easiest way
-to open PowerShell directly in that folder:
-
-1. Open **File Explorer** and navigate to the folder (e.g. `Documents`).
-2. Hold **Shift** and **right-click** an empty area inside the folder.
-3. Click **"Open PowerShell window here"** (Windows 10) or
-   **"Open in Terminal"** (Windows 11).
-
-Alternatively, navigate there from any PowerShell window:
 ```powershell
 cd "$HOME\Documents"
-```
-
----
-
-**Step 5 — Download Emognition**
-
-```powershell
 git clone https://github.com/mhozan/Emognition.git
 cd Emognition
-```
-
----
-
-**Step 6 — Create a virtual environment**
-
-```powershell
 python -m venv .venv
-```
-
-This creates a self-contained `.venv` folder inside `Emognition`. It only needs
-to be done once.
-
----
-
-**Step 7 — Activate the virtual environment**
-
-```powershell
 .venv\Scripts\Activate.ps1
-```
-
-Your prompt will change to start with `(.venv)` — this confirms it worked.
-You must do this every time you open a new PowerShell window before running the
-app.
-
----
-
-**Step 8 — Install dependencies**
-
-```powershell
 pip install --no-deps -r requirements.txt
-```
-
-This downloads PsychoPy and all required libraries. It takes several minutes
-the first time. You only need to do this once (or after a `git pull` that
-updates `requirements.txt`).
-
----
-
-**Step 9 — Launch**
-
-```powershell
 python -m emognition
 ```
 
-> **Next time you want to run the app**, open PowerShell in the `Emognition`
-> folder (Step 4), then just run Steps 7 and 9:
+> **Next time:** open PowerShell in the `Emognition` folder, then:
 > ```powershell
 > .venv\Scripts\Activate.ps1
 > python -m emognition
 > ```
 
----
+</details>
 
-### macOS — step by step
+<details>
+<summary><strong>Running from source — macOS (step by step)</strong></summary>
 
 **Step 1 — Install Python 3.10**
 
-Option A (recommended — simpler): download the macOS installer from
-[python.org/downloads/release/python-31011](https://www.python.org/downloads/release/python-31011/).
-Download **macOS 64-bit universal2 installer** and run it.
+Option A (simpler): download **macOS 64-bit universal2 installer** from
+[python.org/downloads/release/python-31011](https://www.python.org/downloads/release/python-31011/) and run it.
 
-Option B (for developers already using Homebrew):
+Option B (Homebrew):
 ```bash
-brew install pyenv
-pyenv install 3.10.11
-pyenv local 3.10.11
+brew install pyenv && pyenv install 3.10.11 && pyenv local 3.10.11
 ```
 
 **Step 2 — Install PortAudio** (required for PsychoPy audio)
@@ -260,35 +172,25 @@ pyenv local 3.10.11
 brew install portaudio
 ```
 
-If you don't have Homebrew: [brew.sh](https://brew.sh) — run the one-line
-install command shown there, then come back and run the above.
+No Homebrew? Install it first: [brew.sh](https://brew.sh).
 
-**Step 3 — Download Emognition**
+**Step 3 — Download and set up**
 
 ```bash
 git clone https://github.com/mhozan/Emognition.git
 cd Emognition
-```
-
-**Step 4 — Create a virtual environment and install dependencies**
-
-```bash
 python3.10 -m venv .venv
 source .venv/bin/activate
 pip install --no-deps -r requirements.txt
-```
-
-**Step 5 — Launch**
-
-```bash
 python -m emognition
 ```
 
 > Run `source .venv/bin/activate` at the start of each new terminal session.
 
----
+</details>
 
-### Linux (Ubuntu / Debian) — step by step
+<details>
+<summary><strong>Running from source — Linux / Ubuntu (step by step)</strong></summary>
 
 **Step 1 — Install system libraries**
 
@@ -301,30 +203,21 @@ sudo apt-get install -y \
   git
 ```
 
-> On Ubuntu 22.04 `python3.10` is the default system Python. On Ubuntu 24.04 or
-> later you may need to add the deadsnakes PPA first:
+> Ubuntu 24.04+: add the deadsnakes PPA first:
 > `sudo add-apt-repository ppa:deadsnakes/ppa && sudo apt-get update`
 
-**Step 2 — Download Emognition**
+**Step 2 — Download and set up**
 
 ```bash
 git clone https://github.com/mhozan/Emognition.git
 cd Emognition
-```
-
-**Step 3 — Create a virtual environment and install dependencies**
-
-```bash
 python3.10 -m venv .venv
 source .venv/bin/activate
 pip install --no-deps -r requirements.txt
-```
-
-**Step 4 — Launch**
-
-```bash
 python -m emognition
 ```
+
+</details>
 
 ---
 
