@@ -343,7 +343,7 @@ uimenu(S.quit,'Label','Quit',...
                 set(S.edcalib(2),'enable','on')
                 set(S.edcalib(3),'enable','on')
             otherwise
-                disp('45654322165464')
+                disp('why are we here?')
                 %do nothing                
         end
         
