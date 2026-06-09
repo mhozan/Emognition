@@ -72,7 +72,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install system libraries (Homebrew)
-        run: brew install portaudio
+        run: brew install portaudio libusb
 
       - uses: actions/setup-python@v5
         with:
@@ -108,7 +108,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install system libraries (Homebrew)
-        run: brew install portaudio
+        run: brew install portaudio libusb
 
       - uses: actions/setup-python@v5
         with:
