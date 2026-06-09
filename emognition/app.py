@@ -62,6 +62,16 @@ def _default_save_dir() -> str:
     return os.path.join(base, "save_location")
 
 
+def _psychopy_quit() -> None:
+    # psychopy.core.quit() imports psychopy.iohub which needs pythoncom on
+    # Windows; fall back to sys.exit so the process always exits cleanly.
+    try:
+        from psychopy import core
+        core.quit()
+    except (ImportError, ModuleNotFoundError):
+        sys.exit(0)
+
+
 def _run_session(args: argparse.Namespace) -> int:
     """Run a Test block from CLI settings, then write and open the reports.
 
@@ -157,7 +167,7 @@ def _run_session(args: argparse.Namespace) -> int:
             print(f"Passive training session complete ({len(trials)} clips presented).")
         else:
             print("No responses recorded.")
-        core.quit()
+        _psychopy_quit()
         return 0
 
     save_dir = args.save_dir or _default_save_dir()
@@ -180,7 +190,7 @@ def _run_session(args: argparse.Namespace) -> int:
     print(f"Reports saved to: {base}.(html|pdf|xlsx|csv)")
     open_path(html)
 
-    core.quit()
+    _psychopy_quit()
     return 0
 
 
@@ -239,7 +249,7 @@ def _play_tone(rms: float, seconds: float) -> int:
     snd.play()
     core.wait(seconds + 0.2)
     snd.stop()
-    core.quit()
+    _psychopy_quit()
     return 0
 
 

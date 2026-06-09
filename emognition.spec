@@ -45,6 +45,8 @@ for pkg in (
 
 # The audio backend we actually use is imported lazily by PsychoPy.
 hiddenimports += ["psychopy.sound.backend_ptb"]
+# psychopy.core.quit() -> psychopy.iohub -> pythoncom (Windows COM; pywin32).
+hiddenimports += ["pythoncom", "pywintypes"]
 # Report writers and naming module are imported lazily from app.py.
 hiddenimports += [
     "emognition.reports",
