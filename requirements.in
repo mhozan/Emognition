@@ -17,6 +17,7 @@ psychopy==2026.1.3            # installed separately with --no-deps; see note ab
 
 # --- Report generation (replaces MATLAB's print -dpdf / writematrix) ---
 fpdf2                          # PDF reports  (was: MATLAB print -dpdf)
+defusedxml                     # optional fpdf2 dep: SVG sanitization (silences a warning)
 openpyxl                       # Excel reports (was: MATLAB writecell/writematrix)
 matplotlib                     # confusion-matrix figure for the PDF
 
