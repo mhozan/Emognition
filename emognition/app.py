@@ -22,6 +22,7 @@ Two modes:
 from __future__ import annotations
 
 import argparse
+import json as _json
 import os
 import sys
 from datetime import datetime
@@ -116,13 +117,40 @@ def _run_session(args: argparse.Namespace) -> int:
         volume=args.volume,
         mode=mode,
     )
+
+    def _emit(data: dict) -> None:
+        """Write a JSON status line to stdout for the experimenter monitor."""
+        print(_json.dumps(data), flush=True)
+
+    def _on_trial(response, index: int, total: int) -> None:
+        if response is not None:
+            _emit({
+                "status": "trial",
+                "index": index,
+                "total": total,
+                "emotion": response.true_emotion.name.lower(),
+                "sex": response.sex.name.lower(),
+                "responded": response.responded.name.lower() if response.responded else None,
+                "correct": response.is_correct,
+                "rt_ms": round(response.rt_offset * 1000) if response.rt_offset is not None else None,
+            })
+        else:
+            # Passive training: clip was shown but no response collected.
+            _emit({"status": "trial", "index": index, "total": total,
+                   "responded": None, "correct": None, "rt_ms": None})
+
+    _emit({"status": "start", "total": len(trials), "mode": args.mode,
+           "participant": args.participant})
     aborted = False
     try:
-        responses = experiment.run(trials)
+        responses = experiment.run(trials, on_trial=_on_trial)
     except ExperimentAborted as abort:
         responses, aborted = getattr(abort, "partial", []), True
     finally:
         win.close()
+    n_correct = sum(1 for r in responses if r.is_correct)
+    _emit({"status": "done", "n_correct": n_correct, "n_trials": len(responses),
+           "aborted": aborted})
 
     if not responses:
         if mode == SessionMode.PASSIVE_TRAINING:

@@ -269,11 +269,22 @@ class TestExperiment:
 
     # -- public API -------------------------------------------------------
 
-    def run(self, trials: list[Stimulus]) -> list[Response]:
+    def run(
+        self,
+        trials: list[Stimulus],
+        *,
+        on_trial: "callable | None" = None,
+    ) -> list[Response]:
         """Present every trial in order; return one Response per responding trial.
 
         Passive training returns no responses (the list will be empty). Active
         training and Test return one Response per trial.
+
+        Args:
+            on_trial: Optional callback invoked after each trial with
+                ``(response_or_none, index, total)``. Used by the experimenter
+                monitor window to display live progress without coupling the
+                experiment window to Qt.
 
         Raises:
             ExperimentAborted: if Escape is pressed; the responses collected so
@@ -287,6 +298,11 @@ class TestExperiment:
                 result = self._present_trial(stim, i, len(trials))
                 if result is not None:       # passive training produces no response
                     responses.append(result)
+                if on_trial is not None:
+                    try:
+                        on_trial(result, i, len(trials))
+                    except Exception:
+                        pass   # monitor errors must never crash the experiment
         except ExperimentAborted as abort:
             abort.partial = responses  # type: ignore[attr-defined]
             raise

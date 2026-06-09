@@ -19,6 +19,7 @@ settings persist to JSON between launches ("keep previous settings").
 
 from __future__ import annotations
 
+import json
 import os
 import sys
 from dataclasses import replace
@@ -102,6 +103,8 @@ class ConfigWindow(QWidget):
         self.settings_path = settings_path or default_settings_path()
         self._bg = QPixmap(background_path())
         self._proc: QProcess | None = None
+        self._monitor: "MonitorWindow | None" = None
+        self._log_fh = None   # open file handle for the session log
         self.setWindowTitle("Emognition - Setup")
         self.setStyleSheet(_STYLE)
         self.resize(760, 620)
@@ -281,21 +284,23 @@ class ConfigWindow(QWidget):
         launch.screen, launch.fullscreen = self._choose_display(settings.fullscreen)
         cmd = _experiment_command(launch.to_argv())
         self._proc = QProcess(self)
-        # Re-show the setup window when the experiment process ends (normal exit,
-        # crash, or failure to start) -- so the button can't fire twice and the
-        # experimenter gets the window back automatically.
         self._proc.finished.connect(self._on_experiment_finished)
         self._proc.errorOccurred.connect(lambda _err: self._on_experiment_finished())
         self._proc.setProgram(cmd[0])
         self._proc.setArguments(cmd[1:])
-        # Capture the experiment's stdout+stderr to a log so failures are visible
-        # (QProcess otherwise swallows the child's output).
+        # Merge stdout + stderr so both land in our read slot and the log.
+        self._proc.setProcessChannelMode(QProcess.ProcessChannelMode.MergedChannels)
+        # We read output ourselves (not setStandardOutputFile) so we can parse
+        # JSON status lines for the monitor AND write everything to the log.
         self._log_path = os.path.join(os.path.dirname(self.settings_path),
                                       "last_session.log")
-        self._proc.setProcessChannelMode(QProcess.ProcessChannelMode.MergedChannels)
-        self._proc.setStandardOutputFile(self._log_path)
+        self._log_fh = open(self._log_path, "w", encoding="utf-8")
+        self._proc.readyReadStandardOutput.connect(self._on_proc_output)
 
-        self.hide()                 # hide the setup window while the participant runs
+        # Open the monitor window on the experimenter's screen.
+        self._open_monitor(settings.participant, settings.mode)
+
+        self.hide()
         self._proc.start()
 
     def _choose_display(self, user_fullscreen: bool) -> tuple[int, bool]:
@@ -314,6 +319,45 @@ class ConfigWindow(QWidget):
             return other, True
         return 0, user_fullscreen
 
+    def _open_monitor(self, participant: str, mode: str) -> None:
+        """Open the experimenter monitor on the same screen as this window."""
+        from .monitor_window import MonitorWindow
+
+        if self._monitor is not None:
+            self._monitor.close()
+        self._monitor = MonitorWindow()
+        # Seed it with the start event so the header is populated immediately.
+        self._monitor.handle_event({"status": "start", "total": 0,
+                                    "mode": mode, "participant": participant})
+        # Position the monitor near the config window (top-right corner).
+        my_geo = self.frameGeometry()
+        self._monitor.move(my_geo.right() + 12, my_geo.top())
+        self._monitor.show()
+
+    def _on_proc_output(self) -> None:
+        """Read stdout lines from the experiment process.
+
+        Each line is written to the session log. Lines that look like JSON
+        status events are also forwarded to the monitor window.
+        """
+        if self._proc is None:
+            return
+        data = self._proc.readAllStandardOutput()
+        text = bytes(data).decode("utf-8", errors="replace")
+        if self._log_fh is not None:
+            try:
+                self._log_fh.write(text)
+                self._log_fh.flush()
+            except Exception:
+                pass
+        for line in text.splitlines():
+            line = line.strip()
+            if line.startswith("{") and self._monitor is not None:
+                try:
+                    self._monitor.handle_event(json.loads(line))
+                except Exception:
+                    pass
+
     def _open_calibration(self) -> None:
         from .calibration_window import CalibrationWindow
 
@@ -322,6 +366,17 @@ class ConfigWindow(QWidget):
 
     def _on_experiment_finished(self, *args) -> None:
         """Bring the setup window back once the experiment process has ended."""
+        # Flush and close the log file.
+        if self._log_fh is not None:
+            try:
+                self._log_fh.close()
+            except Exception:
+                pass
+            self._log_fh = None
+        # Close the monitor window.
+        if self._monitor is not None:
+            self._monitor.close()
+            self._monitor = None
         if self.isVisible():
             return
         self.show()
