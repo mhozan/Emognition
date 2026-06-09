@@ -96,6 +96,42 @@ jobs:
           name: emognition-macos-x86_64
           path: emognition-macos-x86_64.zip
 
+  # ── macOS Apple Silicon ────────────────────────────────────────────────────
+  build-macos-arm:
+    name: Build (macOS Apple Silicon arm64)
+    runs-on: macos-14     # Apple Silicon (M1+) runner
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install system libraries (Homebrew)
+        run: brew install portaudio
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Install Python dependencies
+        run: |
+          pip install --no-deps -r requirements.txt
+          pip install pyinstaller
+
+      - name: Build with PyInstaller
+        run: python -m PyInstaller --noconfirm emognition.spec
+
+      - name: Smoke-test the bundle (headless)
+        run: ./dist/emognition/emognition --selfcheck
+
+      - name: Zip bundle
+        run: |
+          cd dist
+          zip -r ../emognition-macos-arm64.zip emognition/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: emognition-macos-arm64
+          path: emognition-macos-arm64.zip
+
   # ── Windows ────────────────────────────────────────────────────────────────
   build-windows:
     name: Build (Windows x86_64)
@@ -130,7 +166,7 @@ jobs:
   # ── GitHub Release (tags only) ─────────────────────────────────────────────
   release:
     name: Create GitHub Release
-    needs: [build-linux, build-macos, build-windows]
+    needs: [build-linux, build-macos, build-macos-arm, build-windows]
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/v')
     permissions:
@@ -148,22 +184,24 @@ jobs:
           body: |
             ## Emognition ${{ github.ref_name }}
 
-            Pre-built standalone executables for Linux, macOS (Intel), and Windows.
+            Pre-built standalone executables for Linux, macOS, and Windows.
             No Python installation required — unzip and double-click.
 
             | Platform | Download |
             |---|---|
-            | Linux x86_64 | `emognition-linux-x86_64.zip` |
-            | macOS Intel  | `emognition-macos-x86_64.zip` |
-            | Windows      | `emognition-windows-x86_64.zip` |
+            | Linux x86_64        | `emognition-linux-x86_64.zip` |
+            | macOS Intel x86_64  | `emognition-macos-x86_64.zip` |
+            | macOS Apple Silicon | `emognition-macos-arm64.zip` |
+            | Windows x86_64      | `emognition-windows-x86_64.zip` |
 
             > **macOS**: right-click → Open on first launch (Gatekeeper).
             > **Linux**: `chmod +x emognition` if needed.
 
-            See [README](https://github.com/mhozan/Emognition/blob/port/psychopy/README.md) for full usage.
+            See [README](https://github.com/mhozan/Emognition/blob/master/README.md) for full usage.
           draft: false
           prerelease: ${{ contains(github.ref_name, 'alpha') || contains(github.ref_name, 'beta') || contains(github.ref_name, 'dev') }}
           files: |
             artifacts/emognition-linux-x86_64/emognition-linux-x86_64.zip
             artifacts/emognition-macos-x86_64/emognition-macos-x86_64.zip
+            artifacts/emognition-macos-arm64/emognition-macos-arm64.zip
             artifacts/emognition-windows-x86_64/emognition-windows-x86_64.zip

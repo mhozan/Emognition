@@ -38,9 +38,10 @@ Download the latest release for your OS from
 
 | Platform | File |
 |---|---|
-| Linux | `emognition-linux-x86_64.zip` |
-| macOS (Intel) | `emognition-macos-x86_64.zip` |
-| Windows | `emognition-windows-x86_64.zip` |
+| Linux x86_64 | `emognition-linux-x86_64.zip` |
+| macOS Intel | `emognition-macos-x86_64.zip` |
+| macOS Apple Silicon (M1/M2/M3/M4) | `emognition-macos-arm64.zip` |
+| Windows x86_64 | `emognition-windows-x86_64.zip` |
 
 Unzip and double-click `emognition` (Linux/macOS) or `emognition.exe` (Windows).
 No Python install needed.
