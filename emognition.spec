@@ -22,17 +22,17 @@ datas = []
 binaries = []
 hiddenimports = []
 
-# psychtoolbox's PsychHID links against libusb, which PyInstaller won't find
-# automatically for Homebrew-installed dylibs.  We add it to binaries so it
-# lands in the bundle; the CI workflow then runs install_name_tool to rewrite
-# the rpath in PsychHID (PyInstaller doesn't do that for manually-added libs).
+# PsychHID was compiled with -flat_namespace, so it resolves libusb symbols
+# against the global dyld namespace rather than a hard rpath.  The runtime
+# hook scripts/rthook_libusb.py pre-loads libusb with RTLD_GLOBAL before any
+# psychtoolbox import; we place the dylib here so the hook can find it.
 if sys.platform == "darwin":
     for _candidate in (
         "/opt/homebrew/lib/libusb-1.0.0.dylib",  # Homebrew Apple Silicon
         "/usr/local/lib/libusb-1.0.0.dylib",       # Homebrew Intel
     ):
         if os.path.exists(_candidate):
-            binaries.append((_candidate, "psychtoolbox"))  # place next to PsychHID
+            binaries.append((_candidate, "psychtoolbox"))
             break
 
 # Packages PyInstaller can't figure out on its own -> grab everything.
@@ -72,7 +72,7 @@ a = Analysis(
     datas=datas,
     hiddenimports=hiddenimports,
     hookspath=[],
-    runtime_hooks=[],
+    runtime_hooks=["scripts/rthook_libusb.py"],
     # Drop heavyweight packages PsychoPy only imports lazily for features we
     # don't use (movies, camera, the Coder IDE, Arrow/HDF5 data export). This
     # is the difference between a ~1.1 GB and a ~0.4 GB bundle. wxPython is

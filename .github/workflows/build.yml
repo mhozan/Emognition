@@ -86,23 +86,17 @@ jobs:
       - name: Build with PyInstaller
         run: python -m PyInstaller --noconfirm emognition.spec
 
-      - name: Patch libusb rpath in bundle
+      - name: Copy libusb into bundle for runtime hook
         run: |
-          PSYCH_HID="dist/emognition/_internal/psychtoolbox/PsychHID.cpython-310-darwin.so"
           LIBUSB_SRC="$(brew --prefix libusb)/lib/libusb-1.0.0.dylib"
           LIBUSB_DST="dist/emognition/_internal/psychtoolbox/libusb-1.0.0.dylib"
-          if [ -f "$PSYCH_HID" ] && [ -f "$LIBUSB_SRC" ]; then
-            OLD_NAME=$(otool -L "$PSYCH_HID" | grep libusb | awk '{print $1}')
-            if [ -n "$OLD_NAME" ]; then
-              cp -f "$LIBUSB_SRC" "$LIBUSB_DST"
-              install_name_tool -change "$OLD_NAME" "@loader_path/libusb-1.0.0.dylib" "$PSYCH_HID"
-              codesign --force --sign - "$LIBUSB_DST" "$PSYCH_HID" 2>/dev/null || true
-              echo "Patched: $OLD_NAME -> @loader_path/libusb-1.0.0.dylib"
-            else
-              echo "No libusb reference found in PsychHID — already resolved or not present"
-            fi
+          if [ -f "$LIBUSB_DST" ]; then
+            echo "libusb already in bundle (spec placed it there)"
+          elif [ -f "$LIBUSB_SRC" ]; then
+            cp "$LIBUSB_SRC" "$LIBUSB_DST"
+            echo "Copied $LIBUSB_SRC -> $LIBUSB_DST"
           else
-            echo "WARN: $PSYCH_HID or $LIBUSB_SRC not found"
+            echo "WARN: libusb not found at $LIBUSB_SRC"
           fi
 
       - name: Smoke-test the bundle (headless)
@@ -141,23 +135,17 @@ jobs:
       - name: Build with PyInstaller
         run: python -m PyInstaller --noconfirm emognition.spec
 
-      - name: Patch libusb rpath in bundle
+      - name: Copy libusb into bundle for runtime hook
         run: |
-          PSYCH_HID="dist/emognition/_internal/psychtoolbox/PsychHID.cpython-310-darwin.so"
           LIBUSB_SRC="$(brew --prefix libusb)/lib/libusb-1.0.0.dylib"
           LIBUSB_DST="dist/emognition/_internal/psychtoolbox/libusb-1.0.0.dylib"
-          if [ -f "$PSYCH_HID" ] && [ -f "$LIBUSB_SRC" ]; then
-            OLD_NAME=$(otool -L "$PSYCH_HID" | grep libusb | awk '{print $1}')
-            if [ -n "$OLD_NAME" ]; then
-              cp -f "$LIBUSB_SRC" "$LIBUSB_DST"
-              install_name_tool -change "$OLD_NAME" "@loader_path/libusb-1.0.0.dylib" "$PSYCH_HID"
-              codesign --force --sign - "$LIBUSB_DST" "$PSYCH_HID" 2>/dev/null || true
-              echo "Patched: $OLD_NAME -> @loader_path/libusb-1.0.0.dylib"
-            else
-              echo "No libusb reference found in PsychHID — already resolved or not present"
-            fi
+          if [ -f "$LIBUSB_DST" ]; then
+            echo "libusb already in bundle (spec placed it there)"
+          elif [ -f "$LIBUSB_SRC" ]; then
+            cp "$LIBUSB_SRC" "$LIBUSB_DST"
+            echo "Copied $LIBUSB_SRC -> $LIBUSB_DST"
           else
-            echo "WARN: $PSYCH_HID or $LIBUSB_SRC not found"
+            echo "WARN: libusb not found at $LIBUSB_SRC"
           fi
 
       - name: Smoke-test the bundle (headless)
