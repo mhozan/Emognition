@@ -38,13 +38,14 @@ from PyQt6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QMessageBox,
     QPushButton,
     QVBoxLayout,
     QWidget,
 )
 
 from ..config import ALL_EMOTION_TAGS, ExperimentSettings
-from .assets import background_path
+from .assets import audio_dir as _bundled_audio_dir, background_path
 
 _CAPTIONS = ["none", "english", "mandarin"]
 _MODES = ["test", "passive", "active"]
@@ -104,6 +105,7 @@ class ConfigWindow(QWidget):
         self._bg = QPixmap(background_path())
         self._proc: QProcess | None = None
         self._monitor: "MonitorWindow | None" = None
+        self._calib: "CalibrationWindow | None" = None
         self._log_fh = None   # open file handle for the session log
         self.setWindowTitle("Emognition - Setup")
         self.setStyleSheet(_STYLE)
@@ -114,6 +116,12 @@ class ConfigWindow(QWidget):
                 self.apply_settings(ExperimentSettings.load(self.settings_path))
             except Exception:
                 pass  # corrupt/old settings -> just start from defaults
+        # First-run defaults: pre-fill any folder that is still blank so the
+        # experimenter can click Proceed without hunting for paths first.
+        if not self.audio_dir.text():
+            self.audio_dir.setText(_bundled_audio_dir())
+        if not self.save_dir.text():
+            self.save_dir.setText(_default_save_dir())
 
     # -- layout ----------------------------------------------------------
 
@@ -298,7 +306,10 @@ class ConfigWindow(QWidget):
         self._proc.readyReadStandardOutput.connect(self._on_proc_output)
 
         # Open the monitor window on the experimenter's screen.
-        self._open_monitor(settings.participant, settings.mode)
+        # On a single-display setup the monitor would overlay the experiment,
+        # so ask the experimenter whether they want it.
+        if self._should_open_monitor():
+            self._open_monitor(settings.participant, settings.mode)
 
         self.hide()
         self._proc.start()
@@ -318,6 +329,29 @@ class ConfigWindow(QWidget):
             other = next((i for i in range(len(screens)) if i != here), 0)
             return other, True
         return 0, user_fullscreen
+
+    def _should_open_monitor(self) -> bool:
+        """Return True if the monitor window should be opened.
+
+        With multiple screens the monitor always opens (it lives on the
+        experimenter's screen while the experiment runs on another).  With a
+        single screen, opening the monitor would overlay the experiment window,
+        so we ask first.
+        """
+        if len(QApplication.screens()) > 1:
+            return True
+        dlg = QMessageBox(self)
+        dlg.setWindowTitle("Single monitor detected")
+        dlg.setText(
+            "Only one monitor is connected.\n\n"
+            "The monitoring window will appear on the same screen as the "
+            "experiment.\n\nOpen the monitoring window anyway?"
+        )
+        dlg.setStandardButtons(
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+        )
+        dlg.setDefaultButton(QMessageBox.StandardButton.No)
+        return dlg.exec() == QMessageBox.StandardButton.Yes
 
     def _open_monitor(self, participant: str, mode: str) -> None:
         """Open the experimenter monitor on the same screen as this window."""
@@ -361,8 +395,27 @@ class ConfigWindow(QWidget):
     def _open_calibration(self) -> None:
         from .calibration_window import CalibrationWindow
 
-        self._calib = CalibrationWindow()   # keep a reference so it isn't GC'd
+        self._calib = CalibrationWindow()
+        self._calib.destroyed.connect(self._on_calibration_closed)
+        self.hide()
         self._calib.show()
+
+    def _on_calibration_closed(self) -> None:
+        self._calib = None
+        self.show()
+        self.raise_()
+        self.activateWindow()
+
+    def closeEvent(self, event) -> None:  # noqa: N802
+        if self._calib is not None:
+            self._calib.close()
+            self._calib = None
+        if self._monitor is not None:
+            self._monitor.close()
+            self._monitor = None
+        if self._proc is not None and self._proc.state() != QProcess.ProcessState.NotRunning:
+            self._proc.terminate()
+        super().closeEvent(event)
 
     def _on_experiment_finished(self, *args) -> None:
         """Bring the setup window back once the experiment process has ended."""
