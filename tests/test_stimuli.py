@@ -17,6 +17,7 @@ import os
 import pytest
 
 from emognition.core import Emotion, Sex, parse_stimulus_filename, scan_audio_dir
+from emognition.naming import scan_stimuli
 
 ASSETS_AUDIO = os.path.join(
     os.path.dirname(__file__), os.pardir, "assets", "audio"
@@ -70,7 +71,9 @@ def test_canonical_index_map():
 
 
 def test_scan_bundled_assets():
-    stimuli = scan_audio_dir(ASSETS_AUDIO)
+    # Bundled reference clips ship with canonical BIDS names; scan_stimuli
+    # accepts both canonical and legacy so this stays green through any rename.
+    stimuli = scan_stimuli(ASSETS_AUDIO)
     # The repo ships 10 reference clips (5 emotions x 2 genders).
     assert len(stimuli) == 10
     assert {s.emotion for s in stimuli} == set(Emotion)

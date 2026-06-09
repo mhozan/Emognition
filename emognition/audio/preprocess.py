@@ -98,7 +98,7 @@ def plan_batch(
     method: NormalizationMethod = NormalizationMethod.LUFS,
     target_db: float | None = None,
     threshold_db: float = -40.0,
-    pad_s: float = 0.04,
+    pad_s: float = 0.10,
     ceiling_db: float = DEFAULT_CEILING_DB,
 ) -> BatchPlan:
     """Analyse every clip and return what preprocessing *would* do (no writes)."""

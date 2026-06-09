@@ -85,12 +85,13 @@ def trim_samples(
     rate: int,
     onset_s: float,
     offset_s: float,
-    pad_s: float = 0.04,
+    pad_s: float = 0.10,
 ) -> np.ndarray:
     """Return the clip cut to ``[onset_s - pad, offset_s + pad]`` (clamped).
 
-    The padding keeps a little air around the speech so soft onsets/offsets
-    (e.g. fricatives) aren't clipped. Works for mono and multichannel.
+    100 ms is conservative: enough to protect soft-onset fricatives and
+    plosive release bursts without adding perceptible dead air. Works for
+    mono and multichannel.
     """
     n = samples.shape[0]
     start = max(0, int(round((onset_s - pad_s) * rate)))
