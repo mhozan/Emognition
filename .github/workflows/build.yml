@@ -32,7 +32,8 @@ jobs:
             libsndfile1 libportaudio2 libpulse0 libasound2-dev \
             libxcb-cursor0 libxcb-xinerama0 libxkbcommon-x11-0 \
             libdbus-1-3 libxrandr2 libxi6 libxcursor1 \
-            libegl-dev libgbm-dev libdrm-dev
+            libegl-dev libgbm-dev libdrm-dev \
+            xvfb
 
       - uses: actions/setup-python@v5
         with:
@@ -46,8 +47,8 @@ jobs:
       - name: Build with PyInstaller
         run: python -m PyInstaller --noconfirm emognition.spec
 
-      - name: Smoke-test the bundle (headless)
-        run: ./dist/emognition/emognition --selfcheck
+      - name: Smoke-test the bundle (virtual display)
+        run: xvfb-run -a ./dist/emognition/emognition --selfcheck
 
       - name: Zip bundle
         run: |
