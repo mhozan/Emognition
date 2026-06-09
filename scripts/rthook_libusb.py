@@ -1,24 +1,26 @@
 """
-PyInstaller runtime hook — pre-load libusb into the global symbol namespace.
+PyInstaller runtime hook — pre-load Homebrew dylibs into the global symbol namespace.
 
-psychtoolbox's PsychHID extension is compiled with macOS's -flat_namespace
-flag, which means it resolves symbols like _libusb_bulk_transfer against the
-*global* dynamic linker namespace at dlopen time.  On a live machine libusb is
-already loaded globally (via Homebrew or the system); inside a frozen bundle it
-is not, so the import fails with "symbol not found in flat namespace".
+Several psychtoolbox extensions (PsychHID, PsychPortAudio, ...) are compiled with
+macOS's -flat_namespace flag.  They resolve symbols like _libusb_bulk_transfer and
+_PaMacCore_GetBufferSizeRange against the *global* dyld namespace at dlopen time.
+On a live machine those symbols are already globally loaded (Homebrew); inside a
+frozen bundle they are not, so the imports fail with "symbol not found in flat
+namespace".
 
-Loading libusb via ctypes.RTLD_GLOBAL before any psychtoolbox import puts its
-symbols in the global table and makes PsychHID's flat-namespace resolution
-succeed.
+The spec places the required dylibs in _internal/psychtoolbox/ alongside the .so
+files.  This hook iterates that directory and loads every .dylib it finds with
+RTLD_GLOBAL before any psychtoolbox import, putting all symbols in the global table.
 """
 import ctypes
+import glob
 import os
 import sys
 
 if sys.platform == "darwin" and getattr(sys, "frozen", False):
-    _libusb = os.path.join(sys._MEIPASS, "psychtoolbox", "libusb-1.0.0.dylib")
-    if os.path.exists(_libusb):
+    _ptb_dir = os.path.join(sys._MEIPASS, "psychtoolbox")
+    for _dylib in sorted(glob.glob(os.path.join(_ptb_dir, "*.dylib"))):
         try:
-            ctypes.CDLL(_libusb, ctypes.RTLD_GLOBAL)
+            ctypes.CDLL(_dylib, ctypes.RTLD_GLOBAL)
         except OSError:
             pass

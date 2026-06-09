@@ -22,18 +22,25 @@ datas = []
 binaries = []
 hiddenimports = []
 
-# PsychHID was compiled with -flat_namespace, so it resolves libusb symbols
-# against the global dyld namespace rather than a hard rpath.  The runtime
-# hook scripts/rthook_libusb.py pre-loads libusb with RTLD_GLOBAL before any
-# psychtoolbox import; we place the dylib here so the hook can find it.
+# Several psychtoolbox extensions (PsychHID, PsychPortAudio, ...) are compiled
+# with -flat_namespace and resolve their C library symbols from the global dyld
+# namespace.  scripts/rthook_libusb.py loads every .dylib in _internal/psychtoolbox/
+# with RTLD_GLOBAL at startup; we place the required Homebrew dylibs there.
 if sys.platform == "darwin":
-    for _candidate in (
-        "/opt/homebrew/lib/libusb-1.0.0.dylib",  # Homebrew Apple Silicon
-        "/usr/local/lib/libusb-1.0.0.dylib",       # Homebrew Intel
-    ):
-        if os.path.exists(_candidate):
-            binaries.append((_candidate, "psychtoolbox"))
-            break
+    _ptb_dylibs = [
+        # (filename, Apple-Silicon path, Intel path)
+        ("libusb-1.0.0.dylib",
+         "/opt/homebrew/lib/libusb-1.0.0.dylib",
+         "/usr/local/lib/libusb-1.0.0.dylib"),
+        ("libportaudio.2.dylib",
+         "/opt/homebrew/lib/libportaudio.2.dylib",
+         "/usr/local/lib/libportaudio.2.dylib"),
+    ]
+    for _fname, _arm, _intel in _ptb_dylibs:
+        for _candidate in (_arm, _intel):
+            if os.path.exists(_candidate):
+                binaries.append((_candidate, "psychtoolbox"))
+                break
 
 # Packages PyInstaller can't figure out on its own -> grab everything.
 for pkg in (

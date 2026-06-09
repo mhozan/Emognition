@@ -86,18 +86,23 @@ jobs:
       - name: Build with PyInstaller
         run: python -m PyInstaller --noconfirm emognition.spec
 
-      - name: Copy libusb into bundle for runtime hook
+      - name: Copy Homebrew dylibs into bundle for runtime hook
         run: |
-          LIBUSB_SRC="$(brew --prefix libusb)/lib/libusb-1.0.0.dylib"
-          LIBUSB_DST="dist/emognition/_internal/psychtoolbox/libusb-1.0.0.dylib"
-          if [ -f "$LIBUSB_DST" ]; then
-            echo "libusb already in bundle (spec placed it there)"
-          elif [ -f "$LIBUSB_SRC" ]; then
-            cp "$LIBUSB_SRC" "$LIBUSB_DST"
-            echo "Copied $LIBUSB_SRC -> $LIBUSB_DST"
-          else
-            echo "WARN: libusb not found at $LIBUSB_SRC"
-          fi
+          PTB="dist/emognition/_internal/psychtoolbox"
+          copy_if_missing() {
+            local src="$1" dst="$PTB/$2"
+            if [ -f "$dst" ]; then
+              echo "already present: $2"
+            elif [ -f "$src" ]; then
+              cp "$src" "$dst" && echo "copied: $src -> $dst"
+            else
+              echo "WARN: not found: $src"
+            fi
+          }
+          copy_if_missing "$(brew --prefix libusb)/lib/libusb-1.0.0.dylib"   libusb-1.0.0.dylib
+          copy_if_missing "$(brew --prefix portaudio)/lib/libportaudio.2.dylib" libportaudio.2.dylib
+          echo "--- psychtoolbox dylibs in bundle ---"
+          ls -1 "$PTB"/*.dylib 2>/dev/null || echo "(none)"
 
       - name: Smoke-test the bundle (headless)
         run: ./dist/emognition/emognition --selfcheck
@@ -135,18 +140,23 @@ jobs:
       - name: Build with PyInstaller
         run: python -m PyInstaller --noconfirm emognition.spec
 
-      - name: Copy libusb into bundle for runtime hook
+      - name: Copy Homebrew dylibs into bundle for runtime hook
         run: |
-          LIBUSB_SRC="$(brew --prefix libusb)/lib/libusb-1.0.0.dylib"
-          LIBUSB_DST="dist/emognition/_internal/psychtoolbox/libusb-1.0.0.dylib"
-          if [ -f "$LIBUSB_DST" ]; then
-            echo "libusb already in bundle (spec placed it there)"
-          elif [ -f "$LIBUSB_SRC" ]; then
-            cp "$LIBUSB_SRC" "$LIBUSB_DST"
-            echo "Copied $LIBUSB_SRC -> $LIBUSB_DST"
-          else
-            echo "WARN: libusb not found at $LIBUSB_SRC"
-          fi
+          PTB="dist/emognition/_internal/psychtoolbox"
+          copy_if_missing() {
+            local src="$1" dst="$PTB/$2"
+            if [ -f "$dst" ]; then
+              echo "already present: $2"
+            elif [ -f "$src" ]; then
+              cp "$src" "$dst" && echo "copied: $src -> $dst"
+            else
+              echo "WARN: not found: $src"
+            fi
+          }
+          copy_if_missing "$(brew --prefix libusb)/lib/libusb-1.0.0.dylib"   libusb-1.0.0.dylib
+          copy_if_missing "$(brew --prefix portaudio)/lib/libportaudio.2.dylib" libportaudio.2.dylib
+          echo "--- psychtoolbox dylibs in bundle ---"
+          ls -1 "$PTB"/*.dylib 2>/dev/null || echo "(none)"
 
       - name: Smoke-test the bundle (headless)
         run: ./dist/emognition/emognition --selfcheck
