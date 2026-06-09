@@ -6,8 +6,13 @@ neutral, sad, or angry). Responses and millisecond-accurate reaction times are
 recorded and exported as Excel, PDF, HTML, and CSV reports.
 
 This is a full Python / PsychoPy rewrite of the original MATLAB *Emognition 2*
-(Mohsen Hozan, APP Lab, BTNRH / Allen Institute, 2014–2020), with feature parity
-plus a modern UX and cross-platform support.
+(Mohsen Hozan, Auditory Prostheses & Perception Lab, Boys Town National Research
+Hospital, 2014–2020), with feature parity plus a modern UX and cross-platform
+support. The original experiment supported research on emotional prosody in
+cochlear-implant users in Dr. Monita Chatterjee's
+[APPLab](https://sites.northwestern.edu/monitachatterjee/) (now at Northwestern
+University) — see e.g. [Chatterjee et al., 2019,
+*Front. Psychol.*](https://doi.org/10.3389/fpsyg.2019.02190).
 
 > Original MATLAB sources live under [`matlab/`](matlab/) — preserved as reference
 > and homage.
@@ -276,4 +281,21 @@ Emognition 3 builds on the shoulders of:
 - **openpyxl**, **fpdf2**, **matplotlib** — report generation
 - **soundfile / libsndfile** — audio I/O
 - The original **Emognition 2** design and MATLAB implementation (Mohsen Hozan,
-  APP Lab, Boys Town National Research Hospital, 2014–2020)
+  Auditory Prostheses & Perception Lab, Boys Town National Research Hospital,
+  2014–2020)
+- **Dr. Monita Chatterjee** and the
+  [APPLab](https://sites.northwestern.edu/monitachatterjee/) (now at
+  Northwestern University, Dept. of Communication Sciences and Disorders),
+  whose research program on emotional prosody in cochlear-implant users this
+  software was built for
+
+## Citing
+
+If this software contributes to your research, please cite a representative
+work produced with Emognition:
+
+> Chatterjee, M., Kulkarni, A. M., Siddiqui, R. M., Christensen, J. A.,
+> Hozan, M., Sis, J. L., & Damm, S. A. (2019). Acoustics of emotional prosody
+> produced by prelingually deaf children with cochlear implants.
+> *Frontiers in Psychology*, 10, 2190.
+> [doi:10.3389/fpsyg.2019.02190](https://doi.org/10.3389/fpsyg.2019.02190)
