@@ -25,8 +25,11 @@ never modified).
 from .loudness import NormalizationMethod, apply_gain, gain_db_to_target, measure
 from .endpoints import detect_endpoints, trim_samples
 from .preprocess import ClipPlan, BatchPlan, plan_batch, apply_plan
+from .tone import average_rms, calibration_tone
 
 __all__ = [
+    "average_rms",
+    "calibration_tone",
     "NormalizationMethod",
     "measure",
     "gain_db_to_target",

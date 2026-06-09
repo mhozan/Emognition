@@ -111,6 +111,7 @@ def _run_session(args: argparse.Namespace) -> int:
         emotions=emotions,
         allow_replays=args.allow_replays,
         amp_visualizer=args.amp_visualizer,
+        volume=args.volume,
     )
     aborted = False
     try:
@@ -172,6 +173,35 @@ def _open_config_ui() -> int:
     return run_config_ui()
 
 
+def _play_tone(rms: float, seconds: float) -> int:
+    """Play the SPL calibration tone, then exit (run as a subprocess, no window).
+
+    Kept out of the Qt process on purpose; the Calibration window starts/stops
+    this via QProcess so audio never shares the GUI process.
+    """
+    import tempfile
+
+    import soundfile as sf
+
+    from .runtime import bootstrap
+
+    bootstrap()
+    from psychopy import core, sound
+
+    from .audio import calibration_tone
+
+    rate = 44100
+    tone = calibration_tone(rms, seconds, rate=rate)
+    with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as fh:
+        sf.write(fh.name, tone, rate)
+        snd = sound.Sound(fh.name, stereo=False)
+    snd.play()
+    core.wait(seconds + 0.2)
+    snd.stop()
+    core.quit()
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="emognition", description="Speech Emotion Recognition")
     parser.add_argument("--version", action="version", version=f"Emognition {__version__}")
@@ -179,6 +209,12 @@ def main(argv: list[str] | None = None) -> int:
                         help="import/initialise everything and exit (headless build test)")
     parser.add_argument("--setup", action="store_true",
                         help="open the experimenter setup screen (config UI)")
+    parser.add_argument("--play-tone", action="store_true",
+                        help="play the SPL calibration tone and exit (used by the UI)")
+    parser.add_argument("--tone-rms", type=float, default=0.05,
+                        help="RMS amplitude of the calibration tone")
+    parser.add_argument("--tone-seconds", type=float, default=60.0,
+                        help="duration of the calibration tone (s)")
     parser.add_argument("--participant", default="Participant01",
                         help="participant label (default: Participant01)")
     parser.add_argument("--experimenter", default="APPstaff",
@@ -200,6 +236,8 @@ def main(argv: list[str] | None = None) -> int:
                         help="show a replay button (and 'r' key) to replay each clip")
     parser.add_argument("--amp-visualizer", action="store_true",
                         help="show a green amplitude LED during playback")
+    parser.add_argument("--volume", type=float, default=0.8,
+                        help="playback volume 0.0-1.0 (experimenter-set; default 0.8)")
     parser.add_argument("--save-dir", default=None,
                         help="folder for output reports (default: ./save_location)")
     raw = sys.argv[1:] if argv is None else list(argv)
@@ -207,6 +245,8 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.selfcheck:
         return _selfcheck()
+    if args.play_tone:
+        return _play_tone(args.tone_rms, args.tone_seconds)
     # Bare launch (no args) or explicit --setup opens the experimenter screen;
     # an explicit run (e.g. --participant ...) goes straight to the experiment.
     if args.setup or not raw:

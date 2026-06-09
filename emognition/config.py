@@ -22,6 +22,9 @@ from dataclasses import asdict, dataclass, field
 # The five emotion tags, default = all selected.
 ALL_EMOTION_TAGS: tuple[str, ...] = ("hap", "sca", "neu", "sad", "ang")
 
+# Default playback volume (the experimenter sets this; not a participant control).
+DEFAULT_VOLUME = 0.8
+
 
 @dataclass(slots=True)
 class ExperimentSettings:
@@ -37,6 +40,7 @@ class ExperimentSettings:
     shuffle: bool = True
     allow_replays: bool = False
     amp_visualizer: bool = False
+    volume: float = DEFAULT_VOLUME
     emotions: list[str] = field(default_factory=lambda: list(ALL_EMOTION_TAGS))
 
     def to_argv(self) -> list[str]:
@@ -60,6 +64,8 @@ class ExperimentSettings:
             argv.append("--allow-replays")
         if self.amp_visualizer:
             argv.append("--amp-visualizer")
+        if self.volume != DEFAULT_VOLUME:
+            argv += ["--volume", f"{self.volume:.2f}"]
         # Only pass an explicit subset if it isn't the full set (order-insensitive).
         if set(self.emotions) != set(ALL_EMOTION_TAGS):
             argv += ["--emotions", ",".join(self.emotions)]

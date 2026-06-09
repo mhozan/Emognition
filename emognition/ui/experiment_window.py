@@ -144,11 +144,13 @@ class TestExperiment:
         button_size: float = 0.16,
         allow_replays: bool = False,
         amp_visualizer: bool = False,
+        volume: float = 0.8,
     ) -> None:
         self.win = win
         self.mouse = event.Mouse(win=win, visible=True)
         self.allow_replays = allow_replays
         self.amp_visualizer = amp_visualizer
+        self.volume = max(0.0, min(1.0, volume))
         # One clock, reset at each clip's audio onset; every RT is measured
         # against it (keyboard via psychopy.event, mouse via this clock).
         self.clock = core.Clock()
@@ -299,6 +301,10 @@ class TestExperiment:
         """Schedule the clip, zero the clock at onset, and hold (greyed, LED live)
         until the clip finishes. Escape quits; early key presses are discarded."""
         assert self._sound is not None
+        try:
+            self._sound.volume = self.volume     # experimenter-set playback level
+        except Exception:
+            pass
         event.clearEvents("keyboard")
         now = ptb.GetSecs()
         onset = now + _ONSET_LEAD_SECONDS
