@@ -370,7 +370,7 @@ The RT quality flags `anticipatory` (< 100 ms from onset) and `outlier`
 
 ## Citation
 
-If you use Emognition in a publication, please cite:
+If you use Emognition in a publication, please cite the software:
 
 ```
 Hozan, M. (2026). Emognition 3: A cross-platform Speech Emotion Recognition
@@ -378,6 +378,24 @@ experiment (PsychoPy). GitHub. https://github.com/mhozan/Emognition
 ```
 
 > A methods paper describing the updated platform is in preparation.
+
+Representative peer-reviewed studies produced with Emognition:
+
+> Chatterjee, M., Kulkarni, A. M., Siddiqui, R. M., Christensen, J. A.,
+> Hozan, M., Sis, J. L., & Damm, S. A. (2019). Acoustics of emotional prosody
+> produced by prelingually deaf children with cochlear implants.
+> *Frontiers in Psychology*, 10, 2190.
+> [doi:10.3389/fpsyg.2019.02190](https://doi.org/10.3389/fpsyg.2019.02190)
+
+> Cannon, S. A., & Chatterjee, M. (2019). Voice emotion recognition by children
+> with mild-to-moderate hearing loss.
+> *Ear and Hearing*, 40(3), 477–492.
+> [doi:10.1097/AUD.0000000000000637](https://doi.org/10.1097/AUD.0000000000000637)
+
+> Christensen, J. A., Sis, J., Kulkarni, A. M., & Chatterjee, M. (2019).
+> Effects of age and hearing loss on the recognition of emotions in speech.
+> *Ear and Hearing*, 40(5), 1069–1083.
+> [doi:10.1097/AUD.0000000000000694](https://doi.org/10.1097/AUD.0000000000000694)
 
 ---
 
@@ -410,13 +428,3 @@ Emognition 3 builds on the shoulders of:
   whose research program on emotional prosody in cochlear-implant users this
   software was built for
 
-## Citing
-
-If this software contributes to your research, please cite a representative
-work produced with Emognition:
-
-> Chatterjee, M., Kulkarni, A. M., Siddiqui, R. M., Christensen, J. A.,
-> Hozan, M., Sis, J. L., & Damm, S. A. (2019). Acoustics of emotional prosody
-> produced by prelingually deaf children with cochlear implants.
-> *Frontiers in Psychology*, 10, 2190.
-> [doi:10.3389/fpsyg.2019.02190](https://doi.org/10.3389/fpsyg.2019.02190)
