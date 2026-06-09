@@ -29,6 +29,7 @@ from PyQt6.QtWidgets import (
     QApplication,
     QCheckBox,
     QComboBox,
+    QDoubleSpinBox,
     QFileDialog,
     QFrame,
     QGraphicsDropShadowEffect,
@@ -160,9 +161,12 @@ class ConfigWindow(QWidget):
         grid.addWidget(self._browse_button(self.save_dir), r, 2); r += 1
         grid.addWidget(QLabel("Caption"), r, 0); grid.addWidget(self.caption, r, 1); r += 1
 
+        self.volume = QDoubleSpinBox()
+        self.volume.setRange(0.0, 1.0); self.volume.setSingleStep(0.05); self.volume.setValue(0.8)
         opts = QHBoxLayout()
         for w in (self.fullscreen, self.shuffle, self.allow_replays, self.amp_visualizer):
             opts.addWidget(w)
+        opts.addWidget(QLabel("Volume")); opts.addWidget(self.volume)
         opts_w = QWidget(); opts_w.setLayout(opts)
         grid.addWidget(opts_w, r, 0, 1, 3); r += 1
 
@@ -175,9 +179,12 @@ class ConfigWindow(QWidget):
 
         self.status = QLabel("")
         self.status.setStyleSheet("color:#2e7d32;")
-        grid.addWidget(self.status, r, 0, 1, 2)
+        grid.addWidget(self.status, r, 0, 1, 1)
+        calib = QPushButton("Calibration...")
+        calib.setObjectName("browse")
+        calib.clicked.connect(self._open_calibration)
+        grid.addWidget(calib, r, 1)
         proceed = QPushButton("Proceed to Test")
-        proceed.setStyleSheet("font-weight:bold;padding:8px 16px;")
         proceed.clicked.connect(self._on_proceed)
         grid.addWidget(proceed, r, 2); r += 1
 
@@ -212,6 +219,7 @@ class ConfigWindow(QWidget):
             shuffle=self.shuffle.isChecked(),
             allow_replays=self.allow_replays.isChecked(),
             amp_visualizer=self.amp_visualizer.isChecked(),
+            volume=self.volume.value(),
             emotions=[t for t, b in self.emotion_boxes.items() if b.isChecked()],
         )
 
@@ -226,6 +234,7 @@ class ConfigWindow(QWidget):
         self.shuffle.setChecked(s.shuffle)
         self.allow_replays.setChecked(s.allow_replays)
         self.amp_visualizer.setChecked(s.amp_visualizer)
+        self.volume.setValue(s.volume)
         for tag, box in self.emotion_boxes.items():
             box.setChecked(tag in s.emotions)
 
@@ -277,6 +286,12 @@ class ConfigWindow(QWidget):
             other = next((i for i in range(len(screens)) if i != here), 0)
             return other, True
         return 0, user_fullscreen
+
+    def _open_calibration(self) -> None:
+        from .calibration_window import CalibrationWindow
+
+        self._calib = CalibrationWindow()   # keep a reference so it isn't GC'd
+        self._calib.show()
 
     def _on_experiment_finished(self, *args) -> None:
         """Bring the setup window back once the experiment process has ended."""

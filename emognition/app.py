@@ -173,6 +173,13 @@ def _open_config_ui() -> int:
     return run_config_ui()
 
 
+def _open_calibration_ui() -> int:
+    """Open the PyQt6 Calibration window."""
+    from .ui.calibration_window import run_calibration_ui
+
+    return run_calibration_ui()
+
+
 def _play_tone(rms: float, seconds: float) -> int:
     """Play the SPL calibration tone, then exit (run as a subprocess, no window).
 
@@ -209,6 +216,8 @@ def main(argv: list[str] | None = None) -> int:
                         help="import/initialise everything and exit (headless build test)")
     parser.add_argument("--setup", action="store_true",
                         help="open the experimenter setup screen (config UI)")
+    parser.add_argument("--calibrate", action="store_true",
+                        help="open the Calibration window (naming, loudness, SPL tone)")
     parser.add_argument("--play-tone", action="store_true",
                         help="play the SPL calibration tone and exit (used by the UI)")
     parser.add_argument("--tone-rms", type=float, default=0.05,
@@ -247,6 +256,8 @@ def main(argv: list[str] | None = None) -> int:
         return _selfcheck()
     if args.play_tone:
         return _play_tone(args.tone_rms, args.tone_seconds)
+    if args.calibrate:
+        return _open_calibration_ui()
     # Bare launch (no args) or explicit --setup opens the experimenter screen;
     # an explicit run (e.g. --participant ...) goes straight to the experiment.
     if args.setup or not raw:
