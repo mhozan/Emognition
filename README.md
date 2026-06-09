@@ -397,6 +397,12 @@ Representative peer-reviewed studies produced with Emognition:
 > *Ear and Hearing*, 40(5), 1069–1083.
 > [doi:10.1097/AUD.0000000000000694](https://doi.org/10.1097/AUD.0000000000000694)
 
+> Chatterjee, M., Gajre, S., Kulkarni, A. M., Barrett, K. C., & Limb, C. J. (2024).
+> Predictors of emotional prosody identification by school-age children with
+> cochlear implants and their peers with normal hearing.
+> *Ear and Hearing*, 45(2), 411–424.
+> [doi:10.1097/AUD.0000000000001436](https://doi.org/10.1097/AUD.0000000000001436)
+
 ---
 
 ## License
