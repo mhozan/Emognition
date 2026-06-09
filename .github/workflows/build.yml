@@ -63,45 +63,26 @@ jobs:
           name: emognition-linux-x86_64
           path: emognition-linux-x86_64.zip
 
-  # ── macOS (Intel; runs on Apple Silicon via Rosetta 2) ──────────────────────
-  # psychtoolbox publishes a prebuilt x86_64 wheel only — no native arm64 wheel
-  # exists.  That wheel is self-contained (libusb in .dylibs/, PortAudio linked
-  # statically), so no manual dylib bundling is needed.  Apple Silicon Macs run
-  # this Intel build transparently under Rosetta 2.
-  build-macos:
-    name: Build (macOS Intel x86_64)
-    runs-on: macos-13     # Intel runner — PTB wheels exist for x86_64
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install system libraries (Homebrew)
-        run: brew install portaudio
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.10"
-
-      - name: Install Python dependencies
-        run: |
-          pip install --no-deps -r requirements.txt
-          pip install pyinstaller
-
-      - name: Build with PyInstaller
-        run: python -m PyInstaller --noconfirm emognition.spec
-
-      - name: Smoke-test the bundle (headless)
-        run: ./dist/emognition/emognition --selfcheck
-
-      - name: Zip bundle
-        run: |
-          cd dist
-          zip -r ../emognition-macos-x86_64.zip emognition/
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: emognition-macos-x86_64
-          path: emognition-macos-x86_64.zip
+  # ── macOS — DISABLED (no macos-13 Intel runners available at this time) ─────
+  # Re-enable by uncommenting this job and adding build-macos back to
+  # release.needs once runners are available again.
+  # psychtoolbox has no native arm64 wheel; Apple Silicon runs the Intel build
+  # under Rosetta 2.  When re-enabling, runner should be macos-13 (Intel).
+  #
+  # build-macos:
+  #   name: Build (macOS Intel x86_64)
+  #   runs-on: macos-13
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #     - run: brew install portaudio
+  #     - uses: actions/setup-python@v5
+  #       with: { python-version: "3.10" }
+  #     - run: pip install --no-deps -r requirements.txt && pip install pyinstaller
+  #     - run: python -m PyInstaller --noconfirm emognition.spec
+  #     - run: ./dist/emognition/emognition --selfcheck
+  #     - run: cd dist && zip -r ../emognition-macos-x86_64.zip emognition/
+  #     - uses: actions/upload-artifact@v4
+  #       with: { name: emognition-macos-x86_64, path: emognition-macos-x86_64.zip }
 
   # ── Windows ────────────────────────────────────────────────────────────────
   build-windows:
@@ -137,7 +118,7 @@ jobs:
   # ── GitHub Release (tags only) ─────────────────────────────────────────────
   release:
     name: Create GitHub Release
-    needs: [build-linux, build-macos, build-windows]
+    needs: [build-linux, build-windows]
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/v')
     permissions:
@@ -155,23 +136,35 @@ jobs:
           body: |
             ## Emognition ${{ github.ref_name }}
 
-            Pre-built standalone executables for Linux, macOS, and Windows.
-            No Python installation required — unzip and double-click.
+            Pre-built standalone executables — **no Python or installation required**.
 
             | Platform | Download |
             |---|---|
-            | Linux x86_64                       | `emognition-linux-x86_64.zip` |
-            | macOS (Intel, or Apple Silicon via Rosetta 2) | `emognition-macos-x86_64.zip` |
-            | Windows x86_64                     | `emognition-windows-x86_64.zip` |
+            | **Windows** (10/11, 64-bit) | `emognition-windows-x86_64.zip` |
+            | Linux x86_64 | `emognition-linux-x86_64.zip` |
 
-            > **macOS**: right-click → Open on first launch (Gatekeeper).
-            > On Apple Silicon (M1/M2/M3/M4) the first launch installs Rosetta 2 if needed.
-            > **Linux**: `chmod +x emognition` if needed.
+            ### Windows — step-by-step
 
-            See [README](https://github.com/mhozan/Emognition/blob/master/README.md) for full usage.
+            1. Click **`emognition-windows-x86_64.zip`** above to download it.
+            2. Right-click the downloaded file → **Extract All…** → choose a location (e.g. your Desktop) → click **Extract**.
+            3. Open the extracted **`emognition`** folder.
+            4. Double-click **`emognition.exe`** to launch.
+
+            > **First launch:** Windows may show a SmartScreen warning ("Windows protected your PC").
+            > Click **More info** → **Run anyway** — this is expected for software not yet submitted to Microsoft's signing program.
+            > A small black terminal window may appear alongside the main window; this is normal and can be minimised.
+
+            ### Linux
+
+            ```bash
+            unzip emognition-linux-x86_64.zip
+            ./emognition/emognition
+            ```
+            (`chmod +x emognition/emognition` if needed.)
+
+            See the [README](https://github.com/mhozan/Emognition/blob/master/README.md) for full usage, stimulus folder setup, and report descriptions.
           draft: false
           prerelease: ${{ contains(github.ref_name, 'alpha') || contains(github.ref_name, 'beta') || contains(github.ref_name, 'dev') }}
           files: |
             artifacts/emognition-linux-x86_64/emognition-linux-x86_64.zip
-            artifacts/emognition-macos-x86_64/emognition-macos-x86_64.zip
             artifacts/emognition-windows-x86_64/emognition-windows-x86_64.zip
