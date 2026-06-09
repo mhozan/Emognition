@@ -39,14 +39,17 @@ Download the latest release for your OS from
 | Platform | File |
 |---|---|
 | Linux x86_64 | `emognition-linux-x86_64.zip` |
-| macOS Intel | `emognition-macos-x86_64.zip` |
-| macOS Apple Silicon (M1/M2/M3/M4) | `emognition-macos-arm64.zip` |
+| macOS (Intel, or Apple Silicon via Rosetta 2) | `emognition-macos-x86_64.zip` |
 | Windows x86_64 | `emognition-windows-x86_64.zip` |
 
 Unzip and double-click `emognition` (Linux/macOS) or `emognition.exe` (Windows).
 No Python install needed.
 
 > **macOS Gatekeeper** — on first launch right-click → Open and confirm.
+> **Apple Silicon (M1/M2/M3/M4)** — the macOS build is Intel x86_64 and runs
+> under Rosetta 2; macOS installs Rosetta automatically on first launch if
+> needed. PsychToolbox ships no native arm64 build, so this is the supported
+> path on Apple Silicon.
 > **Linux** — you may need `chmod +x emognition` the first time.
 
 ---

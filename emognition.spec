@@ -13,34 +13,18 @@
 #     pyinstaller emognition.spec
 # Result: dist/emognition/emognition   (run with --selfcheck to verify the bundle)
 
-import os
-import sys
-
 from PyInstaller.utils.hooks import collect_all, collect_submodules
 
 datas = []
 binaries = []
 hiddenimports = []
 
-# Several psychtoolbox extensions (PsychHID, PsychPortAudio, ...) are compiled
-# with -flat_namespace and resolve their C library symbols from the global dyld
-# namespace.  scripts/rthook_libusb.py loads every .dylib in _internal/psychtoolbox/
-# with RTLD_GLOBAL at startup; we place the required Homebrew dylibs there.
-if sys.platform == "darwin":
-    _ptb_dylibs = [
-        # (filename, Apple-Silicon path, Intel path)
-        ("libusb-1.0.0.dylib",
-         "/opt/homebrew/lib/libusb-1.0.0.dylib",
-         "/usr/local/lib/libusb-1.0.0.dylib"),
-        ("libportaudio.2.dylib",
-         "/opt/homebrew/lib/libportaudio.2.dylib",
-         "/usr/local/lib/libportaudio.2.dylib"),
-    ]
-    for _fname, _arm, _intel in _ptb_dylibs:
-        for _candidate in (_arm, _intel):
-            if os.path.exists(_candidate):
-                binaries.append((_candidate, "psychtoolbox"))
-                break
+# Note: the macOS Intel psychtoolbox wheel is "delocated" — it ships libusb in
+# psychtoolbox/.dylibs/ and statically links PortAudio — so collect_all() below
+# pulls everything PsychHID/PsychPortAudio need and PyInstaller rewrites their
+# @loader_path references automatically.  No manual dylib bundling is required.
+# (There is no native arm64 psychtoolbox wheel; Apple Silicon runs the Intel
+#  build under Rosetta 2.)
 
 # Packages PyInstaller can't figure out on its own -> grab everything.
 for pkg in (
@@ -79,7 +63,7 @@ a = Analysis(
     datas=datas,
     hiddenimports=hiddenimports,
     hookspath=[],
-    runtime_hooks=["scripts/rthook_libusb.py"],
+    runtime_hooks=[],
     # Drop heavyweight packages PsychoPy only imports lazily for features we
     # don't use (movies, camera, the Coder IDE, Arrow/HDF5 data export). This
     # is the difference between a ~1.1 GB and a ~0.4 GB bundle. wxPython is

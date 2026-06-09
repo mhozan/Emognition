@@ -63,7 +63,11 @@ jobs:
           name: emognition-linux-x86_64
           path: emognition-linux-x86_64.zip
 
-  # ── macOS Intel ────────────────────────────────────────────────────────────
+  # ── macOS (Intel; runs on Apple Silicon via Rosetta 2) ──────────────────────
+  # psychtoolbox publishes a prebuilt x86_64 wheel only — no native arm64 wheel
+  # exists.  That wheel is self-contained (libusb in .dylibs/, PortAudio linked
+  # statically), so no manual dylib bundling is needed.  Apple Silicon Macs run
+  # this Intel build transparently under Rosetta 2.
   build-macos:
     name: Build (macOS Intel x86_64)
     runs-on: macos-13     # Intel runner — PTB wheels exist for x86_64
@@ -72,7 +76,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install system libraries (Homebrew)
-        run: brew install portaudio libusb
+        run: brew install portaudio
 
       - uses: actions/setup-python@v5
         with:
@@ -85,24 +89,6 @@ jobs:
 
       - name: Build with PyInstaller
         run: python -m PyInstaller --noconfirm emognition.spec
-
-      - name: Copy Homebrew dylibs into bundle for runtime hook
-        run: |
-          PTB="dist/emognition/_internal/psychtoolbox"
-          copy_if_missing() {
-            local src="$1" dst="$PTB/$2"
-            if [ -f "$dst" ]; then
-              echo "already present: $2"
-            elif [ -f "$src" ]; then
-              cp "$src" "$dst" && echo "copied: $src -> $dst"
-            else
-              echo "WARN: not found: $src"
-            fi
-          }
-          copy_if_missing "$(brew --prefix libusb)/lib/libusb-1.0.0.dylib"   libusb-1.0.0.dylib
-          copy_if_missing "$(brew --prefix portaudio)/lib/libportaudio.2.dylib" libportaudio.2.dylib
-          echo "--- psychtoolbox dylibs in bundle ---"
-          ls -1 "$PTB"/*.dylib 2>/dev/null || echo "(none)"
 
       - name: Smoke-test the bundle (headless)
         run: ./dist/emognition/emognition --selfcheck
@@ -116,60 +102,6 @@ jobs:
         with:
           name: emognition-macos-x86_64
           path: emognition-macos-x86_64.zip
-
-  # ── macOS Apple Silicon ────────────────────────────────────────────────────
-  build-macos-arm:
-    name: Build (macOS Apple Silicon arm64)
-    runs-on: macos-14     # Apple Silicon (M1+) runner
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install system libraries (Homebrew)
-        run: brew install portaudio libusb
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.10"
-
-      - name: Install Python dependencies
-        run: |
-          pip install --no-deps -r requirements.txt
-          pip install pyinstaller
-
-      - name: Build with PyInstaller
-        run: python -m PyInstaller --noconfirm emognition.spec
-
-      - name: Copy Homebrew dylibs into bundle for runtime hook
-        run: |
-          PTB="dist/emognition/_internal/psychtoolbox"
-          copy_if_missing() {
-            local src="$1" dst="$PTB/$2"
-            if [ -f "$dst" ]; then
-              echo "already present: $2"
-            elif [ -f "$src" ]; then
-              cp "$src" "$dst" && echo "copied: $src -> $dst"
-            else
-              echo "WARN: not found: $src"
-            fi
-          }
-          copy_if_missing "$(brew --prefix libusb)/lib/libusb-1.0.0.dylib"   libusb-1.0.0.dylib
-          copy_if_missing "$(brew --prefix portaudio)/lib/libportaudio.2.dylib" libportaudio.2.dylib
-          echo "--- psychtoolbox dylibs in bundle ---"
-          ls -1 "$PTB"/*.dylib 2>/dev/null || echo "(none)"
-
-      - name: Smoke-test the bundle (headless)
-        run: ./dist/emognition/emognition --selfcheck
-
-      - name: Zip bundle
-        run: |
-          cd dist
-          zip -r ../emognition-macos-arm64.zip emognition/
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: emognition-macos-arm64
-          path: emognition-macos-arm64.zip
 
   # ── Windows ────────────────────────────────────────────────────────────────
   build-windows:
@@ -205,7 +137,7 @@ jobs:
   # ── GitHub Release (tags only) ─────────────────────────────────────────────
   release:
     name: Create GitHub Release
-    needs: [build-linux, build-macos, build-macos-arm, build-windows]
+    needs: [build-linux, build-macos, build-windows]
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/v')
     permissions:
@@ -228,12 +160,12 @@ jobs:
 
             | Platform | Download |
             |---|---|
-            | Linux x86_64        | `emognition-linux-x86_64.zip` |
-            | macOS Intel x86_64  | `emognition-macos-x86_64.zip` |
-            | macOS Apple Silicon | `emognition-macos-arm64.zip` |
-            | Windows x86_64      | `emognition-windows-x86_64.zip` |
+            | Linux x86_64                       | `emognition-linux-x86_64.zip` |
+            | macOS (Intel, or Apple Silicon via Rosetta 2) | `emognition-macos-x86_64.zip` |
+            | Windows x86_64                     | `emognition-windows-x86_64.zip` |
 
             > **macOS**: right-click → Open on first launch (Gatekeeper).
+            > On Apple Silicon (M1/M2/M3/M4) the first launch installs Rosetta 2 if needed.
             > **Linux**: `chmod +x emognition` if needed.
 
             See [README](https://github.com/mhozan/Emognition/blob/master/README.md) for full usage.
@@ -242,5 +174,4 @@ jobs:
           files: |
             artifacts/emognition-linux-x86_64/emognition-linux-x86_64.zip
             artifacts/emognition-macos-x86_64/emognition-macos-x86_64.zip
-            artifacts/emognition-macos-arm64/emognition-macos-arm64.zip
             artifacts/emognition-windows-x86_64/emognition-windows-x86_64.zip
