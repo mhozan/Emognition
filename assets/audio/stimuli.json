@@ -1,0 +1,66 @@
+{
+  "filename": {
+    "Description": "Audio file name within this folder."
+  },
+  "recording_id": {
+    "Description": "Free-form recording identifier (legacy prefix or the speaker entity)."
+  },
+  "speaker": {
+    "Description": "Speaker/actor identifier."
+  },
+  "emotion": {
+    "Description": "Intended emotion of the recording.",
+    "Levels": {
+      "happy": "Happy",
+      "scared": "Scared",
+      "neutral": "Neutral",
+      "sad": "Sad",
+      "angry": "Angry"
+    }
+  },
+  "sex": {
+    "Description": "Speaker sex.",
+    "Levels": {
+      "f": "Female",
+      "m": "Male",
+      "u": "Unknown"
+    }
+  },
+  "language": {
+    "Description": "Spoken language (e.g. en, zh)."
+  },
+  "intensity": {
+    "Description": "Emotion intensity.",
+    "Levels": {
+      "low": "low",
+      "med": "medium",
+      "high": "high"
+    }
+  },
+  "word": {
+    "Description": "Spoken word or sentence (transcript)."
+  },
+  "clipped": {
+    "Description": "Peak clipping detected in the audio.",
+    "Type": "boolean"
+  },
+  "trimmed": {
+    "Description": "Leading/trailing silence has been trimmed.",
+    "Type": "boolean"
+  },
+  "normalized": {
+    "Description": "Loudness has been normalized.",
+    "Type": "boolean"
+  },
+  "loudness_lufs": {
+    "Description": "Measured integrated loudness.",
+    "Units": "LUFS"
+  },
+  "include": {
+    "Description": "Whether to include this clip in the experiment.",
+    "Type": "boolean"
+  },
+  "notes": {
+    "Description": "Free-text notes (e.g. why excluded)."
+  }
+}

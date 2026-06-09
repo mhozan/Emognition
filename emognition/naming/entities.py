@@ -81,6 +81,22 @@ def parse_any(filename: str) -> Stimulus | None:
     return parse_canonical(filename) or _parse_legacy(filename)
 
 
+def scan_stimuli(directory: str, *, extensions: tuple[str, ...] = (".wav",)) -> list[Stimulus]:
+    """Every parseable stimulus in *directory* (canonical OR legacy), sorted.
+
+    Use this for the experiment instead of the legacy-only core.scan_audio_dir,
+    so a calibrated/renamed corpus (BIDS names) is found too.
+    """
+    exts = tuple(e.lower() for e in extensions)
+    stimuli: list[Stimulus] = []
+    for name in sorted(os.listdir(directory)):
+        if name.lower().endswith(exts):
+            stim = parse_any(os.path.join(directory, name))
+            if stim is not None:
+                stimuli.append(stim)
+    return stimuli
+
+
 def to_canonical_filename(
     emotion: Emotion,
     sex: Sex,

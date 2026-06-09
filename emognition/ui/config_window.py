@@ -267,6 +267,12 @@ class ConfigWindow(QWidget):
         self._proc.errorOccurred.connect(lambda _err: self._on_experiment_finished())
         self._proc.setProgram(cmd[0])
         self._proc.setArguments(cmd[1:])
+        # Capture the experiment's stdout+stderr to a log so failures are visible
+        # (QProcess otherwise swallows the child's output).
+        self._log_path = os.path.join(os.path.dirname(self.settings_path),
+                                      "last_session.log")
+        self._proc.setProcessChannelMode(QProcess.ProcessChannelMode.MergedChannels)
+        self._proc.setStandardOutputFile(self._log_path)
 
         self.hide()                 # hide the setup window while the participant runs
         self._proc.start()
@@ -295,12 +301,20 @@ class ConfigWindow(QWidget):
 
     def _on_experiment_finished(self, *args) -> None:
         """Bring the setup window back once the experiment process has ended."""
-        if not self.isVisible():
-            self.show()
-            self.raise_()
-            self.activateWindow()
+        if self.isVisible():
+            return
+        self.show()
+        self.raise_()
+        self.activateWindow()
+        code = self._proc.exitCode() if self._proc is not None else 0
+        who = getattr(self, "_participant", "")
+        if code == 0:
             self.status.setStyleSheet("color:#2e7d32;")
-            self.status.setText(f"Session for '{getattr(self, '_participant', '')}' finished.")
+            self.status.setText(f"Session for '{who}' finished.")
+        else:
+            self.status.setStyleSheet("color:#c62828;")
+            self.status.setText(f"Session FAILED (exit {code}). See "
+                                f"{getattr(self, '_log_path', 'last_session.log')}")
 
 
 def run_config_ui(settings_path: str | None = None) -> int:

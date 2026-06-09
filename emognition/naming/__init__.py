@@ -28,6 +28,7 @@ from .entities import (
     parse_any,
     parse_canonical,
     parse_entities,
+    scan_stimuli,
     to_canonical_filename,
 )
 from .manifest import (
@@ -49,6 +50,7 @@ __all__ = [
     "parse_entities",
     "parse_canonical",
     "parse_any",
+    "scan_stimuli",
     "to_canonical_filename",
     # manifest
     "StimulusRecord",

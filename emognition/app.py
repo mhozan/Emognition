@@ -76,8 +76,9 @@ def _run_session(args: argparse.Namespace) -> int:
 
     from psychopy import core, visual
 
-    from .core import build_trial_list, scan_audio_dir
+    from .core import build_trial_list
     from .io import open_path
+    from .naming import scan_stimuli
     from .reports import (
         SessionInfo,
         write_csv_report,
@@ -89,7 +90,7 @@ def _run_session(args: argparse.Namespace) -> int:
     from .ui.experiment_window import ExperimentAborted, TestExperiment
 
     audio_folder = args.audio_dir or audio_dir()
-    stimuli = scan_audio_dir(audio_folder)
+    stimuli = scan_stimuli(audio_folder)   # accepts canonical (BIDS) AND legacy names
     if not stimuli:
         print(f"No audio stimuli found in {audio_folder}.", file=sys.stderr)
         return 1

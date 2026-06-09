@@ -17,6 +17,7 @@ from emognition.naming import (
     parse_any,
     parse_canonical,
     read_manifest_tsv,
+    scan_stimuli,
     to_canonical_filename,
     validate_against_folder,
     write_data_dictionary,
@@ -46,6 +47,15 @@ def test_parse_canonical_accepts_legacy_tag_and_unknown_sex():
 
 def test_parse_canonical_requires_emotion_and_sex():
     assert parse_canonical("speaker-01_lang-en.wav") is None
+
+
+def test_scan_stimuli_handles_canonical_and_legacy(tmp_path):
+    _touch(tmp_path, "01_ang_f.wav")                       # legacy
+    _touch(tmp_path, "speaker-02_emotion-happy_sex-m.wav")  # canonical (calibrated)
+    _touch(tmp_path, "notes.wav")                           # unrecognized -> skipped
+    found = scan_stimuli(str(tmp_path))
+    assert len(found) == 2
+    assert {s.emotion for s in found} == {Emotion.ANGRY, Emotion.HAPPY}
 
 
 def test_parse_any_falls_back_to_legacy():
