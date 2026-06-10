@@ -18,10 +18,10 @@ and homage.
 
 ## Screenshots
 
-| Experimenter setup | Live monitor |
-|:---:|:---:|
-| ![Experimenter setup panel](docs/screenshots/setup.png) | ![Live monitor during a session](docs/screenshots/monitor.png) |
-| Configure participant, audio folder, mode, and emotions before each session. | Accuracy and reaction time update trial-by-trial on the experimenter's screen. |
+| Experimenter setup | Experiment screen | Live monitor |
+|:---:|:---:|:---:|
+| ![Experimenter setup panel](docs/screenshots/setup.png) | ![Experiment response screen](docs/screenshots/experiment.png) | ![Live monitor during a session](docs/screenshots/monitor.png) |
+| Configure participant, audio folder, mode, and emotions before each session. | Participant hears a clip, then clicks the perceived emotion. Buttons activate after the clip ends. | Accuracy and reaction time update trial-by-trial on the experimenter's screen. |
 
 <details>
 <summary><strong>Calibration window (3 tabs)</strong></summary>
