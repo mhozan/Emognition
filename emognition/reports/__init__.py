@@ -6,10 +6,11 @@
 # as published by the Free Software Foundation, either version 3 of the
 # License, or (at your option) any later version. See the LICENSE file.
 
-"""Emognition reports: turn a session's responses into Excel / PDF / HTML reports.
+"""Emognition reports: turn a session's responses into HTML / Excel / PDF / CSV reports.
 
 All writers consume the same inputs (a list of ``core.Response`` plus an optional
-``SessionSummary`` and ``SessionInfo``) so the three formats stay consistent.
+``SessionSummary`` and ``SessionInfo``) so the four formats (HTML, Excel, PDF,
+CSV) stay consistent; shared formatting lives in :mod:`.common`.
 """
 
 from .charts import reaction_time_svg

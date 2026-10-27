@@ -335,8 +335,11 @@ tests/         pytest suite
 
 Implement a `write_XYZ_report(responses, path, *, info)` function in
 `emognition/reports/XYZ.py`, import it in `emognition/reports/__init__.py`,
-and call it in `emognition/app.py`. The test fixtures in `tests/conftest.py`
-generate a `responses` list you can use.
+and add it to `_write_reports()` in `emognition/app.py` (each format is written
+in isolation, after the raw CSV). Every report test builds a small list of
+`Response` objects inline (see `tests/test_csv_report.py`); copy that pattern.
+`tests/test_report_info.py` and `tests/test_report_consistency.py` check that
+all formats show the same details and numbers.
 
 <details>
 <summary><strong>Building a standalone executable</strong></summary>
@@ -348,7 +351,7 @@ scripts/build_executable.sh       # Linux / macOS
 scripts\build_executable.bat      # Windows
 ```
 
-Output: `dist/emognition/` (~0.5 GB folder; zip to distribute).
+Output: `dist/emognition/` (about 0.55 GB unzipped; zip it to distribute).
 
 Verify the bundle without a display:
 
@@ -375,7 +378,8 @@ Options:
   --participant ID   Participant label [Participant01]
   --experimenter ID  Experimenter name [APPstaff]
   --audio-dir PATH   Folder of .wav stimuli (default: bundled reference clips)
-  --save-dir PATH    Output folder for reports [./save_location]
+  --save-dir PATH    Output folder for reports [save_location/ next to the app,
+                     or in the current folder when run from source]
   --mode MODE        test | passive | active  [test]
   --emotions TAGS    Comma-separated subset, e.g. hap,sad,ang  [all five]
   --caption LANG     none | english | mandarin  [none]

@@ -1,3 +1,11 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2014-2026 Mohsen Hozan
+#
+# This file is part of Emognition. It is free software: you can redistribute
+# it and/or modify it under the terms of the GNU Affero General Public License
+# as published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version. See the LICENSE file.
+
 """Capture a screenshot of the experiment response screen.
 
 Run with:  DISPLAY=:0 .venv/bin/python scripts/screenshot_experiment.py
@@ -13,9 +21,9 @@ from emognition.runtime import bootstrap
 bootstrap()
 
 from psychopy import visual
-from emognition.core.emotions import Emotion, EMOTIONS_IN_ORDER
-from emognition.ui.assets import Caption, emoticon_path, background_path
-from emognition.ui.experiment_window import TestExperiment, EmotionButton
+from emognition.core.emotions import EMOTIONS_IN_ORDER
+from emognition.ui.assets import Caption
+from emognition.ui.experiment_window import TestExperiment
 from emognition.core import SessionMode
 
 # Open a windowed (non-fullscreen) window at a fixed size.

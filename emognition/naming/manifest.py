@@ -26,7 +26,7 @@ import os
 from collections.abc import Sequence
 from dataclasses import dataclass
 
-from ..core.emotions import Emotion, Sex
+from ..core.emotions import Emotion
 from ..io.spreadsheet import neutralize, restore
 from .entities import (
     _EMOTION_VALUES,

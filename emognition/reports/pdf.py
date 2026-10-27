@@ -25,7 +25,7 @@ from collections.abc import Sequence
 
 from fpdf import FPDF
 
-from ..core import EMOTIONS_IN_ORDER, SEXES_IN_ORDER, Response, SessionSummary
+from ..core import SEXES_IN_ORDER, Response, SessionSummary
 from ..core.scoring import DEFAULT_RT_KIND, GroupStats
 from .charts_mpl import confusion_png, reaction_time_png
 from .common import (

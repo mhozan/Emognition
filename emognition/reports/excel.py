@@ -87,7 +87,7 @@ def _cell_fill(count: int, row_total: int, on_diagonal: bool) -> PatternFill | N
 # --------------------------------------------------------------------------
 
 def _write_session_info(
-    ws: Worksheet, info: SessionInfo, summary: SessionSummary, n_trials: int
+    ws: Worksheet, info: SessionInfo, summary: SessionSummary
 ) -> None:
     """Metadata + headline numbers (the modern addition to the legacy report)."""
     ws["A1"] = "Emognition — Session Report"
@@ -176,7 +176,6 @@ def _write_pressed_keys(
     ws: Worksheet,
     responses: Sequence[Response],
     flags: Sequence[RtFlag],
-    rt_kind: str,
 ) -> None:
     """One row per trial, plus a code legend (legacy 'Pressed Keys' sheet)."""
     headers = [
@@ -237,10 +236,10 @@ def write_excel_report(
     wb = Workbook()
     info_ws = wb.active
     info_ws.title = "Session Info"
-    _write_session_info(info_ws, info, summary, len(responses))
+    _write_session_info(info_ws, info, summary)
     _write_confusion(wb.create_sheet("Confusion Matrix"), summary)
     _write_percentages(wb.create_sheet("Percentages"), summary, n_rt_excluded(flags))
-    _write_pressed_keys(wb.create_sheet("Pressed Keys"), responses, flags, rt_kind)
+    _write_pressed_keys(wb.create_sheet("Pressed Keys"), responses, flags)
 
     wb.save(path)
     return path

@@ -26,7 +26,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from html import escape
 
-from ..core import EMOTIONS_IN_ORDER, SEXES_IN_ORDER, Response, RtFlag, SessionSummary
+from ..core import SEXES_IN_ORDER, Response, RtFlag, SessionSummary
 from ..core.scoring import DEFAULT_RT_KIND, GroupStats
 from .charts import reaction_time_svg
 from .common import (

@@ -36,7 +36,7 @@ for pkg in (
     "questplus",
     "json_tricks",
     "openpyxl",       # ships .xlsx template files that static analysis misses
-    "fpdf2",          # ships bundled font files
+    "fpdf",           # fpdf2's import name (data: an sRGB ICC profile for PDF/A)
 ):
     pkg_datas, pkg_binaries, pkg_hidden = collect_all(pkg)
     datas += pkg_datas
@@ -68,7 +68,7 @@ a = Analysis(
     runtime_hooks=[],
     # Drop heavyweight packages PsychoPy only imports lazily for features we
     # don't use (movies, camera, the Coder IDE, Arrow/HDF5 data export). This
-    # is the difference between a ~1.1 GB and a ~0.4 GB bundle. wxPython is
+    # is the difference between a ~1.1 GB and a ~0.55 GB bundle. wxPython is
     # likewise unused (we build the UI on PyQt6).
     excludes=[
         "wx",

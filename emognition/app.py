@@ -8,9 +8,10 @@
 
 """Application entry point -- what the double-click executable runs.
 
-For now this is a minimal launcher: a small setup dialog, a Test-mode block, and
-report output. The full configuration screen lands in Phase 2 (#12); this gives
-us something runnable to freeze and hand to colleagues today.
+Started with no arguments it opens the experimenter setup window; given session
+options (``--participant ...``) it runs one session in this process and writes
+the reports. The setup window launches sessions exactly that way, as a separate
+process, because a Qt window and the PsychoPy window must never share one.
 
 Two modes:
   * ``emognition``               run a session (GUI)
@@ -438,7 +439,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--volume", type=float, default=0.8,
                         help="playback volume 0.0-1.0 (experimenter-set; default 0.8)")
     parser.add_argument("--save-dir", default=None,
-                        help="folder for output reports (default: ./save_location)")
+                        help="folder for output reports (default: save_location/ next to "
+                             "the app, or in the current folder when run from source)")
     parser.add_argument("--mode", choices=["test", "passive", "active"],
                         default="test",
                         help="session mode: test (default), passive training, "

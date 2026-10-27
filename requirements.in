@@ -1,11 +1,11 @@
 # Emognition (PsychoPy port) — high-level, human-edited dependencies.
 # This is the "what we asked for"; requirements.txt is the "what we got" lockfile.
 #
-# Install order on a fresh machine (Linux/macOS/Windows), Python 3.10:
-#   1. pip install -r requirements.in        # pulls psychopy's real deps + our extras
-#   2. pip install --no-deps psychopy==2026.1.3
-# OR, to reproduce an exact known-good environment:
+# Reproduce the exact known-good environment (what CI and the builds use):
 #   pip install --no-deps -r requirements.txt
+# requirements.txt is the lockfile; this file is only the human-level intent.
+# Do NOT `pip install -r requirements.in`: resolving psychopy's metadata would
+# pull in wxPython (see below).
 #
 # Why psychopy is installed with --no-deps: its metadata hard-requires wxPython,
 # which (a) has no PyPI wheel on Linux, (b) is only used by the PsychoPy Builder/Coder
@@ -13,7 +13,7 @@
 # our own UI on PyQt6 (which PsychoPy already depends on), so wx is dead weight.
 
 # --- The experiment engine (timing, audio, visual, data) ---
-psychopy==2026.1.3            # installed separately with --no-deps; see note above
+# psychopy==2026.1.3          # pinned in requirements.txt; installed with --no-deps
 
 # --- Report generation (replaces MATLAB's print -dpdf / writematrix) ---
 fpdf2                          # PDF reports  (was: MATLAB print -dpdf)
