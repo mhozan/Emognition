@@ -125,3 +125,79 @@ def test_write_data_dictionary(tmp_path):
     spec = json.load(open(path, encoding="utf-8"))
     assert spec["sex"]["Levels"] == {"f": "Female", "m": "Male", "u": "Unknown"}
     assert "happy" in spec["emotion"]["Levels"]
+
+
+# --- rename / manifest safety (Phase 3) -----------------------------------------
+
+def _touch(folder, *names):
+    for name in names:
+        (folder / name).write_bytes(b"")
+
+
+def test_legacy_prefixes_with_underscores_survive_renaming(tmp_path):
+    from emognition.naming import apply_rename_plan, build_manifest, canonical_rename_plan, parse_any
+
+    _touch(tmp_path, "subjectA_recording12_hap_f.wav", "subjectA_recording13_hap_f.wav")
+    result = apply_rename_plan(str(tmp_path), canonical_rename_plan(build_manifest(str(tmp_path))))
+    assert len(result.applied) == 2 and not result.skipped          # no collision
+    ids = sorted(parse_any(str(tmp_path / new)).recording_id for _old, new in result.applied)
+    assert ids == ["subjectA-recording12", "subjectA-recording13"]
+    assert canonical_rename_plan(build_manifest(str(tmp_path))) == []   # idempotent
+
+
+def test_take_and_unknown_entities_are_kept():
+    from emognition.naming import StimulusRecord
+    from emognition.naming.manifest import canonical_filename_for
+
+    for name in ("speaker-01_emotion-happy_sex-f_take-2.wav",
+                 "speaker-01_emotion-happy_sex-f_session-b.wav"):
+        rec = StimulusRecord(filename=name, speaker="01", emotion="happy", sex="f")
+        assert canonical_filename_for(rec) == name
+
+
+def test_rename_reports_collisions_missing_and_unsafe_names(tmp_path):
+    from emognition.naming import apply_rename_plan
+
+    _touch(tmp_path, "a.wav", "taken.wav")
+    result = apply_rename_plan(str(tmp_path), [
+        ("a.wav", "taken.wav"),              # would overwrite
+        ("gone.wav", "x.wav"),               # source missing
+        ("../outside.wav", "y.wav"),         # not a bare name
+        ("a.wav", "sub/z.wav"),              # not a bare name
+    ])
+    reasons = [why for _o, _n, why in result.skipped]
+    assert result.applied == [] and len(reasons) == 4
+    assert "already exists" in reasons[0] and "not found" in reasons[1]
+    assert (tmp_path / "a.wav").exists() and (tmp_path / "taken.wav").exists()
+    assert "Skipped 4" in result.summary()
+
+
+def test_case_only_rename(tmp_path):
+    from emognition.naming import apply_rename_plan
+
+    _touch(tmp_path, "Clip_hap_f.wav")
+    result = apply_rename_plan(str(tmp_path), [("Clip_hap_f.wav", "clip_hap_f.wav")])
+    assert result.applied == [("Clip_hap_f.wav", "clip_hap_f.wav")]
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["clip_hap_f.wav"]
+
+
+def test_merge_keeps_hand_entered_columns_and_follows_renames():
+    from emognition.naming import StimulusRecord, merge_manifest
+
+    old = [StimulusRecord(filename="01_hap_f.wav", word="banana", notes="noisy", include=False)]
+    fresh = [StimulusRecord(filename="speaker-01_emotion-happy_sex-f.wav", speaker="01",
+                            emotion="happy", sex="f")]
+    (merged,) = merge_manifest(fresh, old, renamed=[("01_hap_f.wav", "speaker-01_emotion-happy_sex-f.wav")])
+    assert (merged.word, merged.notes, merged.include) == ("banana", "noisy", False)
+    assert merged.emotion == "happy"                                   # parsed fields stay fresh
+
+
+def test_manifest_reader_forgives_excel_edits(tmp_path):
+    from emognition.naming import read_manifest_tsv
+
+    path = tmp_path / "stimuli.tsv"
+    text = "filename\temotion\tsex\tloudness_lufs\tnotes\n01_hap_f.wav\thappy\tf\t-23,5\n02_sad_m.wav\n"
+    path.write_bytes(text.encode("utf-8-sig"))                         # BOM + short rows + comma
+    first, second = read_manifest_tsv(str(path))
+    assert first.filename == "01_hap_f.wav" and first.loudness_lufs == -23.5
+    assert second.filename == "02_sad_m.wav" and second.notes == ""

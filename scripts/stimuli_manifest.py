@@ -28,6 +28,8 @@ from emognition.naming import (  # noqa: E402
     apply_rename_plan,
     build_manifest,
     canonical_rename_plan,
+    merge_manifest,
+    read_manifest_tsv,
     write_data_dictionary,
     write_manifest,
 )
@@ -59,7 +61,10 @@ def main(argv: list[str] | None = None) -> int:
             print(f"    {old}  ->  {new}")
 
     if args.write:
-        tsv = write_manifest(records, os.path.join(args.folder, "stimuli.tsv"))
+        existing = os.path.join(args.folder, "stimuli.tsv")
+        if os.path.exists(existing):        # keep what people typed into it
+            records = merge_manifest(records, read_manifest_tsv(existing))
+        tsv = write_manifest(records, existing)
         js = write_data_dictionary(os.path.join(args.folder, "stimuli.json"))
         print(f"\n  wrote {tsv}\n  wrote {js}")
 
@@ -69,8 +74,8 @@ def main(argv: list[str] | None = None) -> int:
             if reply.strip().lower() not in ("y", "yes"):
                 print("Aborted; nothing renamed.")
                 return 0
-        applied = apply_rename_plan(args.folder, plan)
-        print(f"  renamed {len(applied)} file(s).")
+        result = apply_rename_plan(args.folder, plan)
+        print(f"  {result.summary()}")
     return 0
 
 

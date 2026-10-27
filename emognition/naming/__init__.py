@@ -34,10 +34,12 @@ from .entities import (
 from .manifest import (
     DATA_DICTIONARY,
     MANIFEST_COLUMNS,
+    RenameResult,
     StimulusRecord,
     apply_rename_plan,
     build_manifest,
     canonical_rename_plan,
+    merge_manifest,
     read_manifest_tsv,
     validate_against_folder,
     write_data_dictionary,
@@ -63,4 +65,6 @@ __all__ = [
     "validate_against_folder",
     "canonical_rename_plan",
     "apply_rename_plan",
+    "RenameResult",
+    "merge_manifest",
 ]

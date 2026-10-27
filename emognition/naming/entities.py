@@ -24,11 +24,13 @@ to the legacy ``..._EMO_G.wav`` parser, so old corpora keep working.
 from __future__ import annotations
 
 import os
+import re
 
 from ..core.emotions import Emotion, Sex, Stimulus, TAG_TO_EMOTION, TAG_TO_SEX
 from ..core.stimuli import parse_stimulus_filename as _parse_legacy
 
-# Entity keys we understand, in canonical filename order. Unknown keys are kept.
+# Entity keys we understand, in canonical filename order. Unknown keys are kept
+# (appended after these, in their original order, when a file is renamed).
 ENTITY_ORDER: tuple[str, ...] = ("speaker", "emotion", "sex", "lang", "intensity", "take")
 REQUIRED_ENTITIES: tuple[str, ...] = ("emotion", "sex")
 
@@ -97,6 +99,18 @@ def scan_stimuli(directory: str, *, extensions: tuple[str, ...] = (".wav",)) -> 
     return stimuli
 
 
+def entity_value(value: str) -> str:
+    """Make *value* safe inside a ``key-value`` entity.
+
+    ``_`` separates entities, so a legacy prefix such as ``subjectA_recording12``
+    used as a speaker label would be cut to ``subjectA`` when the new name is
+    parsed back -- and two recordings would then collide. Underscores, spaces
+    and path separators become ``-`` (the parser splits on the *first* dash, so
+    ``speaker-subjectA-recording12`` round-trips intact).
+    """
+    return re.sub(r"[_\s/\\]+", "-", value.strip()).strip("-")
+
+
 def to_canonical_filename(
     emotion: Emotion,
     sex: Sex,
@@ -105,18 +119,25 @@ def to_canonical_filename(
     language: str | None = None,
     intensity: str | None = None,
     take: str | None = None,
+    extra: dict[str, str] | None = None,
     extension: str = ".wav",
 ) -> str:
-    """Build a canonical filename from fields (full-word emotion, f/m/u sex)."""
+    """Build a canonical filename from fields (full-word emotion, f/m/u sex).
+
+    *extra* holds any other entities to keep (e.g. ``{"session": "b"}``); they
+    follow the known ones in the order given.
+    """
     parts: list[str] = []
     if speaker:
-        parts.append(f"speaker-{speaker}")
+        parts.append(f"speaker-{entity_value(speaker)}")
     parts.append(f"emotion-{emotion.name.lower()}")
     parts.append(f"sex-{sex.tag}")
     if language:
-        parts.append(f"lang-{language}")
+        parts.append(f"lang-{entity_value(language)}")
     if intensity:
-        parts.append(f"intensity-{intensity}")
+        parts.append(f"intensity-{entity_value(intensity)}")
     if take:
-        parts.append(f"take-{take}")
+        parts.append(f"take-{entity_value(take)}")
+    for key, value in (extra or {}).items():
+        parts.append(f"{entity_value(key)}-{entity_value(value)}")
     return "_".join(parts) + extension

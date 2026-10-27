@@ -48,6 +48,8 @@ from ..naming import (
     apply_rename_plan,
     build_manifest,
     canonical_rename_plan,
+    merge_manifest,
+    read_manifest_tsv,
     write_data_dictionary,
     write_manifest,
 )
@@ -134,10 +136,18 @@ class CalibrationWindow(QWidget):
         n_ok = sum(1 for r in recs if r.recognized)
         self.stim_status.setText(f"{n_ok}/{len(recs)} recognized.")
 
-    def _write_manifest(self) -> None:
+    def _write_manifest(self, renamed=()) -> None:
+        """(Re)write stimuli.tsv, keeping anything typed into an existing one."""
         folder = self.stim_dir.text()
+        path = os.path.join(folder, "stimuli.tsv")
         recs = self._records()
-        write_manifest(recs, os.path.join(folder, "stimuli.tsv"))
+        if os.path.exists(path):
+            try:
+                recs = merge_manifest(recs, read_manifest_tsv(path), renamed=renamed)
+            except (OSError, ValueError) as exc:
+                self.stim_status.setText(f"stimuli.tsv not updated (could not read it: {exc})")
+                return
+        write_manifest(recs, path)
         write_data_dictionary(os.path.join(folder, "stimuli.json"))
         self.stim_status.setText("Wrote stimuli.tsv + stimuli.json.")
 
@@ -147,9 +157,11 @@ class CalibrationWindow(QWidget):
         if not plan:
             self.stim_status.setText("Nothing to rename (already canonical).")
             return
-        applied = apply_rename_plan(folder, plan)
-        self.stim_status.setText(f"Renamed {len(applied)} file(s) to canonical names.")
+        result = apply_rename_plan(folder, plan)
+        if result.applied and os.path.exists(os.path.join(folder, "stimuli.tsv")):
+            self._write_manifest(renamed=result.applied)   # rows follow their files
         self._inspect_stimuli()
+        self.stim_status.setText(result.summary())
 
     # -- Loudness & trim --------------------------------------------------
 
