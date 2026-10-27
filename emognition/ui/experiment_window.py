@@ -23,9 +23,17 @@ Three session modes (see :class:`~emognition.core.SessionMode`):
   and (if wrong) their choice glows orange for ``feedback_duration`` seconds.
   Responses are recorded so a learning-curve is available in the report.
 
+A session runs in three steps, mirroring the original's "Begin Test" flow
+(proceed.m -> pb_beginner.m)::
+
+    prepare(trials)     open the audio stream, decode backgrounds, warm up the GPU
+    wait_for_begin()    background + a big "Begin" button; returns the start time
+    run(trials)         the trials themselves
+
 The trial loop (Test mode)::
 
     for each clip:
+        (between trials) switch the background picture if the plan says so
         show the N emoticon buttons (greyed)
         schedule the audio to start at a known instant  -> that instant is t=0
         spin the draw/flip loop, polling keyboard + mouse, until a response
@@ -42,11 +50,18 @@ corrupts the Python heap on this Linux stack -> random segfaults in the garbage
 collector. iohub (separate process) is crash-free but its keyboard event
 timestamps were unreliable here. The pyglet path is in-process, robust, and its
 ~refresh-rate resolution is dominated by audio-output latency anyway.
+
+Frame-loop hygiene: because RTs are sampled once per frame, anything slow inside
+the draw loop coarsens them. So nothing in :meth:`TestExperiment._draw_scene`
+rebuilds text or allocates colours: label variants, prompts and feedback rings
+are all built up front, and the few values that do change (progress, LED) are
+only assigned when they actually change.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 
 # Audio backend + TextStim race fix MUST be configured before importing
 # psychopy.sound / creating any TextStim. Doing it here guarantees the ordering
@@ -62,18 +77,54 @@ import soundfile as sf  # noqa: E402
 from psychopy import core, event, sound, visual  # noqa: E402
 
 from ..core import EMOTIONS_IN_ORDER, Emotion, Response, SessionMode, Stimulus, reaction_time  # noqa: E402
+from ..core.backgrounds import BackgroundPlan  # noqa: E402
 from ..core.timing import ReactionTime  # noqa: E402
 from .assets import Caption, emoticon_path, replay_button_path  # noqa: E402
+from .backgrounds import BackgroundLayer  # noqa: E402
+from .geometry import rounded_rect_vertices  # noqa: E402
 
 # Sentinel returned by the response loop when the participant asks to replay.
 _REPLAY = "__replay__"
 # Frames per second for the amplitude envelope driving the LED.
 _ENVELOPE_FPS = 60
+# The LED brightness is quantised so its colour is only re-assigned on a change.
+_LED_LEVELS = 32
 
 # How far in the future to schedule each clip's onset. PsychoToolbox needs a
 # small lead time to arm the sound for a sample-accurate start; 200 ms is plenty
 # and imperceptible.
 _ONSET_LEAD_SECONDS = 0.20
+
+# Opacity levels an emoticon button is drawn at (see EmotionButton.draw).
+_OPACITY_ENABLED = 1.0    # response phase
+_OPACITY_DISABLED = 0.3   # clip playing: not clickable yet
+_OPACITY_DIM = 0.12       # training feedback: not the button being taught
+_OPACITY_LEVELS = (_OPACITY_ENABLED, _OPACITY_DISABLED, _OPACITY_DIM)
+
+# Progress bar geometry ('height' units).
+_PROGRESS_WIDTH = 0.6
+_PROGRESS_Y = 0.44
+
+# The prompt line.
+_PROMPT_POS = (-0.15, 0.05)
+_PROMPT_HEIGHT = 0.05
+_PROMPT_WRAP = 0.7
+_RESPONSE_PROMPT = "Listen, then choose the emotion you heard."
+
+# Translucent panels behind the text when a picture is the background, so the
+# white prompt and key numbers stay readable over any photo.
+_PANEL_OPACITY = 0.45
+_PANEL_RADIUS = 0.03
+
+# The Begin screen: a big friendly target for children; Space/Enter for adults.
+_BEGIN_LABEL = "Begin"
+_BEGIN_KEYS = ("space", "return", "num_enter")
+_BEGIN_SIZE = (0.42, 0.14)
+_BEGIN_FILL = (242, 239, 255)          # rgb255: soft lavender-white
+_BEGIN_FILL_HOVER = (255, 255, 255)
+_BEGIN_TEXT = (42, 34, 80)             # the setup window's title colour
+# A short, calm pause after Begin before the first clip (hand away from the mouse).
+_BEGIN_SETTLE_SECONDS = 0.5
 
 
 class ExperimentAborted(Exception):
@@ -113,27 +164,29 @@ class EmotionButton:
             image=emoticon_path(emotion, caption),
             pos=pos,
             size=(size, size),  # square; window 'height' units keep aspect honest
+            autoLog=False,
         )
+        self._stim_opacity = 1.0
         # A small key-hint label to the left of the face (1..N for the buttons
-        # actually shown, not the emotion's canonical code).
-        self.label = visual.TextStim(
-            win,
-            text=str(number),
-            pos=(pos[0] - size * 0.85, pos[1]),
-            height=size * 0.45,
-            color="white",
-        )
-        # Training-feedback glow: a filled circle drawn *behind* the face image.
-        # Left colourless/invisible until _show_feedback() activates it.
+        # actually shown, not the emotion's canonical code) -- one per opacity
+        # level. Assigning TextStim.opacity makes PsychoPy rebuild the whole
+        # pyglet Label on the next draw (psychopy/visual/text.py), which used to
+        # happen for every button on every frame; switching variants is free.
+        self._labels = {
+            level: visual.TextStim(
+                win, text=str(number), pos=(pos[0] - size * 0.85, pos[1]),
+                height=size * 0.45, color="white", opacity=level, autoLog=False,
+            )
+            for level in _OPACITY_LEVELS
+        }
+        # Training-feedback glows: filled circles drawn *behind* the face image,
+        # pre-coloured (re-assigning fillColor allocates a Color every frame).
         # Green = correct answer; orange = participant's wrong choice.
-        self._ring = visual.Circle(
-            win,
-            radius=size * 0.58,
-            pos=pos,
-            edges=32,
-            fillColor=None,
-            lineColor=None,
-        )
+        ring = dict(radius=size * 0.58, pos=pos, edges=32, lineColor=None, opacity=0.55, autoLog=False)
+        self._rings = {
+            "correct": visual.Circle(win, fillColor=(-1.0, 1.0, -1.0), **ring),
+            "wrong": visual.Circle(win, fillColor=(1.0, 0.2, -1.0), **ring),
+        }
 
     def draw(self, enabled: bool = True, highlight: str | None = None) -> None:
         """Draw the face; dim it while a clip is playing or during feedback.
@@ -147,37 +200,92 @@ class EmotionButton:
                        ``"dim"``     -- almost invisible (not the focus);
                        ``None``      -- normal enabled/disabled rendering.
         """
-        opacity = 1.0 if enabled else 0.3
-
-        if highlight == "correct":
-            self._ring.fillColor = (-1.0, 1.0, -1.0)   # bright green
-            self._ring.opacity = 0.55
-            self._ring.draw()
-            opacity = 1.0
-        elif highlight == "wrong":
-            self._ring.fillColor = (1.0, 0.2, -1.0)    # orange-red
-            self._ring.opacity = 0.55
-            self._ring.draw()
-            opacity = 1.0
+        ring = self._rings.get(highlight or "")
+        if ring is not None:
+            ring.draw()
+            opacity = _OPACITY_ENABLED
         elif highlight == "dim":
-            opacity = 0.12   # nearly invisible; draws attention to the highlighted button
+            opacity = _OPACITY_DIM   # nearly invisible; draws attention to the highlighted button
+        else:
+            opacity = _OPACITY_ENABLED if enabled else _OPACITY_DISABLED
 
-        self.stim.opacity = opacity
-        self.label.opacity = opacity
+        if opacity != self._stim_opacity:   # cheap for an ImageStim, but skip the churn
+            self.stim.opacity = opacity
+            self._stim_opacity = opacity
         self.stim.draw()
-        self.label.draw()
+        self._labels[opacity].draw()
+
+    def warm_up(self) -> None:
+        """Draw every variant once (texture upload / display lists) before trial 1."""
+        for ring in self._rings.values():
+            ring.draw()
+        self.stim.draw()
+        for label in self._labels.values():
+            label.draw()
 
     def clicked_by(self, mouse: event.Mouse) -> bool:
         """True if the cursor is currently inside this face's bounds."""
         return bool(self.stim.contains(mouse.getPos()))
 
 
+class BeginButton:
+    """The large rounded "Begin" button of the start screen.
+
+    The original's "Begin Test" was a small dark button in the bottom-left corner
+    (proceed.m); this one is centred and big enough for a child to find and hit.
+    The rounded outline is computed once; ``contains`` tests that exact shape.
+    """
+
+    def __init__(self, win: visual.Window, label: str = _BEGIN_LABEL) -> None:
+        width, height = _BEGIN_SIZE
+        vertices = rounded_rect_vertices(width, height, height / 2.6)
+        self._shadow = visual.ShapeStim(
+            win, vertices=vertices, pos=(0.006, -0.010), fillColor=(-1, -1, -1),
+            lineColor=None, opacity=0.35, autoLog=False,
+        )
+        self._shape = visual.ShapeStim(
+            win, vertices=vertices, pos=(0.0, 0.0), fillColor=_BEGIN_FILL,
+            colorSpace="rgb255", lineColor=None, autoLog=False,
+        )
+        self._text = visual.TextStim(
+            win, text=label, pos=(0.0, 0.0), height=height * 0.46, color=_BEGIN_TEXT,
+            colorSpace="rgb255", bold=True, autoLog=False,
+        )
+        self._hover = False
+
+    def contains(self, mouse: event.Mouse) -> bool:
+        return bool(self._shape.contains(mouse.getPos()))
+
+    def set_hover(self, hover: bool) -> None:
+        """Brighten under the cursor (colour re-assigned only when the state changes)."""
+        if hover != self._hover:
+            self._shape.fillColor = _BEGIN_FILL_HOVER if hover else _BEGIN_FILL
+            self._hover = hover
+
+    def draw(self) -> None:
+        self._shadow.draw()
+        self._shape.draw()
+        self._text.draw()
+
+
+def _panel(win: visual.Window, left: float, right: float, bottom: float, top: float) -> visual.ShapeStim:
+    """A translucent dark rounded panel spanning the given 'height'-unit box."""
+    return visual.ShapeStim(
+        win,
+        vertices=rounded_rect_vertices(right - left, top - bottom, _PANEL_RADIUS),
+        pos=((left + right) / 2.0, (bottom + top) / 2.0),
+        fillColor=(-1, -1, -1), lineColor=None, opacity=_PANEL_OPACITY, autoLog=False,
+    )
+
+
 class TestExperiment:
-    """Runs Test mode: present each clip, collect a response, return the trials.
+    """Runs a session: present each clip, collect a response, return the trials.
 
     Construct it with an open :class:`~psychopy.visual.Window`, then call
-    :meth:`run` with the ordered stimuli. It does not create or close the window
-    (the caller owns that), which keeps this class focused and reusable.
+    :meth:`prepare`, :meth:`wait_for_begin` and :meth:`run` with the ordered
+    stimuli (``run`` prepares on its own if needed). It does not create or close
+    the window (the caller owns that), which keeps this class focused and
+    reusable; call :meth:`close` when done to stop its helper thread.
     """
 
     def __init__(
@@ -192,6 +300,7 @@ class TestExperiment:
         volume: float = 0.8,
         mode: SessionMode = SessionMode.TEST,
         feedback_duration: float = 1.5,
+        background: BackgroundPlan | None = None,
     ) -> None:
         self.win = win
         self.mouse = event.Mouse(win=win, visible=True)
@@ -204,9 +313,16 @@ class TestExperiment:
         # against it (keyboard via psychopy.event, mouse via this clock).
         self.clock = core.Clock()
         self._envelope: np.ndarray = np.zeros(0)   # current clip's 0..1 RMS envelope
+        self._envelopes: dict[str, np.ndarray] = {}  # per clip, computed in prepare()
         self._sound: sound.Sound | None = None     # one reusable audio stream
+        self._prepared = False
         self._progress_frac = 0.0
+        self._progress_width: float | None = None   # last width assigned to the fill
+        self._led_level: int | None = None          # last quantised LED level
         self._close_requested = False              # set when the window's X is clicked
+
+        # Background: None keeps the plain window colour (what scripts expect).
+        self.background = BackgroundLayer(win, background or BackgroundPlan(sources=()))
 
         # Mode-specific "listen" prompt (shown during playback, before response).
         self._listen_prompt = {
@@ -229,32 +345,48 @@ class TestExperiment:
         ]
         self.key_map: dict[str, Emotion] = {str(i + 1): emo for i, emo in enumerate(active)}
 
+        # Every prompt the session can show, built once (changing TextStim.text
+        # rebuilds its pyglet Label; switching between pre-built stims is free).
+        self._prompts: dict[str, visual.TextStim] = {}
+        for text in (self._listen_prompt, _RESPONSE_PROMPT, "Correct!",
+                     *(f"This was: {e.label}" for e in active),
+                     *(f"Correct answer: {e.label}" for e in active)):
+            self._prompt_stim(text)
+
+        # Panels behind the text, used only when a picture is the background.
+        label_left = 0.45 - button_size * 0.85 - button_size * 0.35
+        half = button_size / 2.0 + 0.025
+        self._panels = [
+            _panel(win, _PROMPT_POS[0] - _PROMPT_WRAP / 2 - 0.04, _PROMPT_POS[0] + _PROMPT_WRAP / 2 + 0.04,
+                   _PROMPT_POS[1] - 0.055, _PROMPT_POS[1] + 0.055),
+        ]
+        if ys:
+            self._panels.append(_panel(win, label_left, 0.45 + half, ys[-1] - half, ys[0] + half))
+
         # Progress BAR (no text): a grey track with a green fill proportional to
         # how far through the block we are.
         self._progress_track = visual.Rect(
-            win, width=0.6, height=0.022, pos=(0.0, 0.44),
-            fillColor=(-0.4, -0.4, -0.4), lineColor=None,
+            win, width=_PROGRESS_WIDTH, height=0.022, pos=(0.0, _PROGRESS_Y),
+            fillColor=(-0.4, -0.4, -0.4), lineColor=None, autoLog=False,
         )
         self._progress_fill = visual.Rect(
-            win, width=0.0, height=0.022, pos=(-0.3, 0.44),
-            fillColor=(-0.2, 0.5, -0.2), lineColor=None, anchor="left",
-        )
-        self.prompt = visual.TextStim(
-            win, text="Listen, then choose the emotion you heard.",
-            pos=(-0.15, 0.05), height=0.05, color="white", wrapWidth=0.7,
+            win, width=0.0, height=0.022, pos=(-_PROGRESS_WIDTH / 2, _PROGRESS_Y),
+            fillColor=(-0.2, 0.5, -0.2), lineColor=None, anchor="left", autoLog=False,
         )
 
         # Amplitude "LED": top-left, brightens with the audio level; shown only
         # DURING playback when amp_visualizer is on (revives volumeLED.m).
         self.led = visual.Circle(
             win, radius=0.03, pos=(-0.45, 0.4), edges=32,
-            fillColor=(-1, -1, -1), lineColor=(-0.4, -0.4, -0.4),
+            fillColor=(-1, -1, -1), lineColor=(-0.4, -0.4, -0.4), autoLog=False,
         )
         # Replay button: bottom-left, shown only after offset when replays are
         # allowed ('r' also replays). Re-zeros the RT clock to the new onset.
         self.replay_button = visual.ImageStim(
             win, image=replay_button_path(), pos=(-0.42, -0.38), size=(0.12, 0.12),
+            autoLog=False,
         )
+        self._begin_button = BeginButton(win)
 
         # Make the window's X (close) button quit the session, like Escape. In
         # fullscreen there is no titlebar/X, so this only matters when windowed.
@@ -268,6 +400,73 @@ class TestExperiment:
         self._close_requested = True
 
     # -- public API -------------------------------------------------------
+
+    def prepare(self, trials: list[Stimulus]) -> None:
+        """Get everything ready before the participant is asked to Begin.
+
+        Opens the single reusable audio stream (a second ``sound.Sound`` would
+        open a second exclusive ALSA stream and fail), computes the LED envelopes,
+        starts decoding the next background picture, and warms up the GPU. Safe to
+        call more than once; :meth:`run` calls it if you didn't.
+        """
+        if self._prepared:
+            return
+        if not trials:
+            raise ValueError("cannot prepare a session with no trials")
+        if self._sound is None:
+            self._sound = sound.Sound(trials[0].path, stereo=True)
+        if self.amp_visualizer:
+            for path in dict.fromkeys(t.path for t in trials):
+                self._envelopes[path] = self._compute_envelope(path)
+        self.background.prepare(len(trials))
+        self._warm_up()
+        self._prepared = True
+
+    def wait_for_begin(self) -> datetime:
+        """Show the Begin screen until the participant (or experimenter) starts.
+
+        A click on the button (press and release inside it) or Space/Enter begins;
+        Escape or closing the window raises :class:`ExperimentAborted`. Returns the
+        moment Begin was pressed -- the session start, as in the original, where
+        pb_beginner.m stamped ``S.pb_begin.UserData = clock`` for the report's
+        start/finish/duration.
+        """
+        try:
+            self.win.winHandle.activate()   # keyboard focus, so Space works straight away
+        except Exception:
+            pass
+        event.clearEvents()
+        self.mouse.clickReset()
+        keys = [*_BEGIN_KEYS, "escape"]
+        mouse_was_down = self.mouse.getPressed()[0] == 1
+        pressed_inside = False
+        while True:
+            if self._close_requested:
+                raise ExperimentAborted()
+            pressed = event.getKeys(keyList=keys)
+            if "escape" in pressed:
+                raise ExperimentAborted()
+            if pressed:
+                break
+            inside = self._begin_button.contains(self.mouse)
+            self._begin_button.set_hover(inside)
+            mouse_down = self.mouse.getPressed()[0] == 1
+            if mouse_down and not mouse_was_down:
+                pressed_inside = inside
+            elif mouse_was_down and not mouse_down:
+                if pressed_inside and inside:
+                    break                       # a complete click on the button
+                pressed_inside = False
+            mouse_was_down = mouse_down
+            self.background.draw()
+            self._begin_button.draw()
+            self.win.flip()
+
+        begun_at = datetime.now()
+        event.clearEvents()                     # the Begin press must not count as a response
+        self.mouse.clickReset()
+        self._settle(_BEGIN_SETTLE_SECONDS)
+        return begun_at
 
     def run(
         self,
@@ -290,11 +489,14 @@ class TestExperiment:
             ExperimentAborted: if Escape is pressed; the responses collected so
                 far are attached on the exception's ``.partial`` attribute.
         """
-        self._sound = sound.Sound(trials[0].path, stereo=True)
+        self.prepare(trials)
 
         responses: list[Response] = []
         try:
             for i, stim in enumerate(trials, start=1):
+                # Trial boundary: the only moment the background may change (one
+                # texture upload; the clip isn't scheduled yet, nothing is timed).
+                self.background.select(i)
                 result = self._present_trial(stim, i, len(trials))
                 if result is not None:       # passive training produces no response
                     responses.append(result)
@@ -308,7 +510,56 @@ class TestExperiment:
             raise
         return responses
 
+    def close(self) -> None:
+        """Release helper resources (the background prefetch thread)."""
+        self.background.close()
+
     # -- internals --------------------------------------------------------
+
+    def _prompt_stim(self, text: str) -> visual.TextStim:
+        """The pre-built TextStim showing *text* (built on first use otherwise)."""
+        stim = self._prompts.get(text)
+        if stim is None:
+            stim = visual.TextStim(
+                self.win, text=text, pos=_PROMPT_POS, height=_PROMPT_HEIGHT,
+                color="white", wrapWidth=_PROMPT_WRAP, autoLog=False,
+            )
+            self._prompts[text] = stim
+        return stim
+
+    def _warm_up(self) -> None:
+        """Draw every stimulus variant once, without showing anything.
+
+        A stim's first draw uploads its texture and compiles its display list;
+        doing it here -- then waiting for the GPU and clearing the back buffer
+        instead of flipping -- keeps those one-off costs out of trial 1.
+        """
+        from pyglet import gl
+
+        self.background.draw()
+        for panel in self._panels:
+            panel.draw()
+        self._progress_track.draw()
+        self._progress_fill.draw()
+        for prompt in self._prompts.values():
+            prompt.draw()
+        for button in self.buttons:
+            button.warm_up()
+        self.led.draw()
+        self.replay_button.draw()
+        self._begin_button.draw()
+        gl.glFinish()
+        self.win.clearBuffer()
+
+    def _settle(self, seconds: float) -> None:
+        """Hold the (greyed) trial screen briefly; Escape still quits."""
+        countdown = core.CountdownTimer(seconds)
+        while countdown.getTime() > 0:
+            if "escape" in event.getKeys(keyList=["escape"]) or self._close_requested:
+                raise ExperimentAborted()
+            self._draw_scene(enabled=False)
+            self.win.flip()
+        event.clearEvents()
 
     def _present_trial(
         self, stim: Stimulus, index: int, total: int
@@ -394,13 +645,12 @@ class TestExperiment:
           participant's choice also glows orange so they see what they got wrong.
         All other buttons dim to near-invisible so the focus is clear.
         """
-        correct_name = correct.name.capitalize()
         if chosen is None:
-            prompt = f"This was: {correct_name}"
+            prompt = f"This was: {correct.label}"
         elif chosen == correct:
             prompt = "Correct!"
         else:
-            prompt = f"Correct answer: {correct_name}"
+            prompt = f"Correct answer: {correct.label}"
 
         countdown = core.CountdownTimer(self.feedback_duration)
         while countdown.getTime() > 0:
@@ -416,22 +666,29 @@ class TestExperiment:
         event.clearEvents()
 
     def _load_clip(self, path: str) -> None:
-        """Point the reusable stream at *path* and (re)compute its LED envelope."""
+        """Point the reusable stream at *path* and pick up its LED envelope."""
         assert self._sound is not None
         self._sound.setSound(path)
-        self._envelope = self._compute_envelope(path) if self.amp_visualizer else np.zeros(0)
+        if self.amp_visualizer:
+            envelope = self._envelopes.get(path)
+            if envelope is None:                       # not seen in prepare()
+                envelope = self._envelopes[path] = self._compute_envelope(path)
+            self._envelope = envelope
+        else:
+            self._envelope = np.zeros(0)
 
     @staticmethod
     def _compute_envelope(path: str, fps: int = _ENVELOPE_FPS) -> np.ndarray:
         """Return a normalised (0..1) short-time RMS envelope at *fps* samples/sec."""
-        data, rate = sf.read(path)
-        mono = data if data.ndim == 1 else data.mean(axis=1)
+        data, rate = sf.read(path, dtype="float32", always_2d=True)
+        mono = data.mean(axis=1)
         hop = max(1, rate // fps)
-        frames = [
-            float(np.sqrt(np.mean(mono[i:i + hop] ** 2)))
-            for i in range(0, len(mono), hop)
-        ]
-        env = np.asarray(frames, dtype=float)
+        n_full = len(mono) // hop
+        frames = mono[: n_full * hop].reshape(n_full, hop)
+        env = np.sqrt(np.mean(frames.astype(np.float64) ** 2, axis=1))
+        tail = mono[n_full * hop:]                     # the last, partial frame
+        if tail.size:
+            env = np.append(env, np.sqrt(np.mean(tail.astype(np.float64) ** 2)))
         peak = env.max() if env.size else 0.0
         return env / peak if peak > 0 else env
 
@@ -494,6 +751,21 @@ class TestExperiment:
             self._draw_scene(enabled=True)
             self.win.flip()
 
+    def _set_progress(self, fraction: float) -> None:
+        """Size the progress fill (assigned only when it changes: Rect.width allocates)."""
+        width = max(0.0, min(1.0, fraction)) * _PROGRESS_WIDTH
+        if width != self._progress_width:
+            self._progress_fill.width = width
+            self._progress_width = width
+
+    def _set_led(self, amplitude: float) -> None:
+        """Set the LED brightness, quantised so the colour changes only on a step."""
+        level = round(max(0.0, min(1.0, amplitude)) * _LED_LEVELS)
+        if level != self._led_level:
+            green = -1.0 + 2.0 * level / _LED_LEVELS   # -1 (off) .. +1 (full)
+            self.led.fillColor = (-1.0, green, -1.0)
+            self._led_level = level
+
     def _draw_scene(
         self,
         *,
@@ -503,7 +775,7 @@ class TestExperiment:
         feedback_chosen: "Emotion | None" = None,
         prompt_override: str | None = None,
     ) -> None:
-        """Draw one frame: prompt, buttons, progress, LED, and replay button.
+        """Draw one frame: background, prompt, buttons, progress, LED, replay button.
 
         Args:
             enabled:          Dim buttons (False) while a clip plays; full (True)
@@ -516,15 +788,19 @@ class TestExperiment:
             prompt_override:  Replace the default prompt text for this frame
                               (used during the feedback phase).
         """
-        # Determine prompt text for this frame.
-        if prompt_override is not None:
-            self.prompt.text = prompt_override
-        elif enabled:
-            self.prompt.text = "Listen, then choose the emotion you heard."
-        else:
-            self.prompt.text = self._listen_prompt
+        self.background.draw()
+        if self.background.shows_picture:
+            for panel in self._panels:
+                panel.draw()
 
-        self.prompt.draw()
+        # Prompt: pick the pre-built stim for this frame's text.
+        if prompt_override is not None:
+            text = prompt_override
+        elif enabled:
+            text = _RESPONSE_PROMPT
+        else:
+            text = self._listen_prompt
+        self._prompt_stim(text).draw()
 
         # Buttons: apply feedback highlights when in a training feedback phase.
         for button in self.buttons:
@@ -541,13 +817,12 @@ class TestExperiment:
 
         # Progress bar (no text): green fill = fraction of the block completed.
         self._progress_track.draw()
-        self._progress_fill.width = max(0.0, min(1.0, self._progress_frac)) * 0.6
+        self._set_progress(self._progress_frac)
         self._progress_fill.draw()
 
         # Amplitude LED: only while a clip is playing (responses disabled).
         if self.amp_visualizer and not enabled:
-            green = -1.0 + 2.0 * max(0.0, min(1.0, amplitude))  # -1 (off)..+1 (full)
-            self.led.fillColor = (-1.0, green, -1.0)
+            self._set_led(amplitude)
             self.led.draw()
         # Replay button: only after the clip has finished (response phase).
         if self.allow_replays and enabled:
