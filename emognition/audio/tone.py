@@ -25,17 +25,26 @@ from collections.abc import Sequence
 import numpy as np
 import soundfile as sf
 
-from .loudness import to_mono
+# A sine's peak is sqrt(2) x its RMS, so above this RMS the tone would clip at
+# full scale (and a clipped calibration tone is both wrong and needlessly loud).
+MAX_TONE_RMS = 1.0 / math.sqrt(2.0)
+# The Calibration window offers up to 5 minutes; longer is almost certainly a typo.
+MAX_TONE_SECONDS = 300.0
 
 
 def average_rms(paths: Sequence[str]) -> float:
-    """Mean linear RMS across the given audio files (mono), 0.0 if none."""
+    """Mean linear RMS across the given audio files, 0.0 if none.
+
+    Each file's level is the mean of its *per-channel* RMS -- the level each ear
+    hears -- as the original computed it per channel. (Averaging the channels
+    first lowers the level of any stereo file whose channels differ.)
+    """
     rmss: list[float] = []
     for path in paths:
-        data, _ = sf.read(path)
-        mono = to_mono(data)
-        if mono.size:
-            rmss.append(float(np.sqrt(np.mean(mono ** 2))))
+        data, _ = sf.read(path, always_2d=True)       # (samples, channels)
+        if data.size:
+            per_channel = np.sqrt(np.mean(data.astype(np.float64) ** 2, axis=0))
+            rmss.append(float(per_channel.mean()))
     return float(np.mean(rmss)) if rmss else 0.0
 
 
@@ -54,17 +63,28 @@ def calibration_tone(
         seconds: Tone duration.
         freq: Frequency in Hz (1000 Hz is the speech-calibration convention).
         rate: Sample rate.
-        hann_ms: Total Hann window length; half fades in, half fades out.
+        hann_ms: Total Hann window length; half fades in, half fades out. A tone
+            shorter than the window gets a proportionally shorter fade.
+
+    Raises:
+        ValueError: if *rms* would clip (> 1/sqrt(2)) or isn't positive, or if
+            *seconds* is not in (0, 300].
     """
+    if not 0.0 < rms <= MAX_TONE_RMS:
+        raise ValueError(f"tone RMS must be in (0, {MAX_TONE_RMS:.3f}] to avoid clipping, got {rms}")
+    if not 0.0 < seconds <= MAX_TONE_SECONDS:
+        raise ValueError(f"tone length must be in (0, {MAX_TONE_SECONDS:g}] seconds, got {seconds}")
     n = max(1, int(seconds * rate))
     t = np.arange(n) / rate
     tone = math.sqrt(2.0) * rms * np.sin(2.0 * math.pi * freq * t)
 
     # Apply a Hann (raised-cosine) fade to each end, like the original.
-    nhann = int(hann_ms * rate / 1000.0)
+    # (A tone shorter than the window used to take the first samples of the
+    # full-length window, so it never rose above half amplitude.)
+    nhann = min(int(hann_ms * rate / 1000.0), n)
     if nhann > 1:
         window = np.sin(np.pi * np.arange(nhann) / (nhann - 1)) ** 2
-        half = min(len(window) // 2, n // 2)
+        half = nhann // 2
         if half > 0:
             tone[:half] *= window[:half]
             tone[-half:] *= window[-half:]

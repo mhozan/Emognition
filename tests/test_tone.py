@@ -29,10 +29,37 @@ def test_tone_length_and_rms():
 
 
 def test_tone_is_hann_faded_at_the_ends():
-    tone = calibration_tone(rms=0.2, seconds=0.5, rate=44100, hann_ms=100.0)
-    # The very first sample is faded to (near) zero, unlike the middle.
-    assert abs(tone[0]) < 0.02
-    assert np.max(np.abs(tone)) > 0.2  # full amplitude reached in the middle
+    rate, peak = 44100, 0.2 * math.sqrt(2)
+    tone = calibration_tone(rms=0.2, seconds=0.5, rate=rate, hann_ms=100.0)
+    # The first 10 ms of a 1 kHz sine hold 10 full cycles; with a 50 ms Hann
+    # fade-in they must stay below sin^2(pi*0.1) ~ 0.1 of the peak (an unfaded
+    # tone reaches the full peak there). The old check, tone[0] ~ 0, passed even
+    # without a fade, because sin(0) = 0.
+    head = np.abs(tone[: rate // 100])
+    assert head.max() < 0.12 * peak
+    assert np.max(np.abs(tone)) > 0.99 * peak        # full amplitude in the middle
+    assert np.abs(tone[-rate // 100:]).max() < 0.12 * peak   # and faded out
+
+
+def test_short_tone_gets_a_proportionally_short_fade():
+    rate, peak = 44100, 0.1 * math.sqrt(2)
+    tone = calibration_tone(rms=0.1, seconds=0.05, rate=rate, hann_ms=500.0)  # 50 ms tone, 500 ms window
+    assert np.max(np.abs(tone)) > 0.9 * peak         # still reaches (almost) full level
+
+
+@pytest.mark.parametrize("rms, seconds", [(0.8, 1.0), (0.0, 1.0), (0.1, 0.0), (0.1, 301.0)])
+def test_tone_rejects_clipping_or_absurd_settings(rms, seconds):
+    with pytest.raises(ValueError):
+        calibration_tone(rms=rms, seconds=seconds)
+
+
+def test_average_rms_is_per_channel(tmp_path):
+    import soundfile as sf
+
+    left = 0.2 * np.ones(1000)
+    sf.write(str(tmp_path / "s.wav"), np.stack([left, -left], axis=1), 8000, subtype="FLOAT")
+    # Averaging the channels first would give 0 for this out-of-phase file.
+    assert average_rms([str(tmp_path / "s.wav")]) == pytest.approx(0.2, abs=1e-6)
 
 
 def test_average_rms_of_bundled_clips_is_positive():

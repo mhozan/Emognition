@@ -381,13 +381,24 @@ def _play_tone(rms: float, seconds: float) -> int:
     from .audio import calibration_tone
 
     rate = 44100
-    tone = calibration_tone(rms, seconds, rate=rate)
+    try:
+        tone = calibration_tone(rms, seconds, rate=rate)
+    except ValueError as exc:                    # would clip, or an absurd length
+        print(str(exc), file=sys.stderr)
+        return 2
     with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as fh:
-        sf.write(fh.name, tone, rate)
-        snd = sound.Sound(fh.name, stereo=False)
-    snd.play()
-    core.wait(seconds + 0.2)
-    snd.stop()
+        wav = fh.name
+    try:
+        sf.write(wav, tone, rate)
+        snd = sound.Sound(wav, stereo=False)
+        snd.play()
+        core.wait(seconds + 0.2)
+        snd.stop()
+    finally:
+        try:
+            os.remove(wav)                        # ~5 MB per minute of tone used to leak
+        except OSError:
+            pass
     _psychopy_quit(0)
 
 
