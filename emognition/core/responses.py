@@ -40,6 +40,10 @@ class Response:
         background: The background picture on screen during the trial (its
             friendly name; "" for a plain window) -- lets an analysis check
             whether pictures affected performance.
+        n_pauses: How many times the experimenter paused (P) or nearly quit (Esc,
+            then "keep going") during this trial. Each time, the trial was
+            replayed from the start, so the RT is valid, but the participant
+            heard the clip more than once -- worth knowing in an analysis.
     """
 
     stimulus: Stimulus
@@ -48,6 +52,7 @@ class Response:
     rt_offset: float | None = None
     n_replays: int = 0
     background: str = ""
+    n_pauses: int = 0
 
     @property
     def true_emotion(self) -> Emotion:

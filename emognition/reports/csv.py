@@ -45,6 +45,7 @@ _TRIAL_FIELDS = [
     "sex",
     "rt_flag",
     "background",      # picture on screen during the trial ("" = plain)
+    "pauses",          # times the trial was paused/interrupted, then replayed
 ]
 
 _SUMMARY_FIELDS = [
@@ -99,6 +100,7 @@ def write_trials_csv(
                 "sex": r.sex.name.lower(),
                 "rt_flag": RT_FLAG_LABEL[flag] or "ok",
                 "background": neutralize(r.background),
+                "pauses": r.n_pauses,
             })
     return path
 

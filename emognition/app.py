@@ -393,6 +393,7 @@ def _run_session(args: argparse.Namespace) -> int:
             background=plan,
             first_trial=len(done) + 1,
         )
+        experiment.on_status = _emit             # "paused" / "resumed" -> the monitor
         # A resumed session tells the monitor what's already done, so its trial
         # counter and running accuracy carry on instead of restarting at zero.
         _emit({"status": "start", "total": len(trials), "mode": args.mode,
@@ -490,6 +491,7 @@ def _run_session(args: argparse.Namespace) -> int:
         "n_trials_planned": len(trials),
         "n_responses": len(responses),
         "n_answered": n_answered,
+        "n_pauses": sum(r.n_pauses for r in responses),   # each one replayed its trial
         "background": {"description": plan.describe(), "sources": list(plan.sources),
                        "every_n_trials": plan.every_n, "shuffled": plan.shuffled},
         "timing": timing,

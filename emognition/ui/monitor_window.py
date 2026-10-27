@@ -125,6 +125,7 @@ class MonitorWindow(QWidget):
         self._n_correct = 0
         self._n_responded = 0
         self._n_done = 0            # trials finished before a resume
+        self._held_text = ""        # the trial counter, while "Paused" replaces it
         self._build()
 
     # -- layout -----------------------------------------------------------
@@ -212,6 +213,15 @@ class MonitorWindow(QWidget):
             self._lbl_trial.setText("Waiting for Begin")
         elif kind == "begun":
             self._lbl_trial.setText(f"{self._n_done} / {evt.get('total', 0)}")
+        elif kind == "paused":
+            # P pauses; Escape asks the experimenter whether to quit (Y/N).
+            if not self._held_text:
+                self._held_text = self._lbl_trial.text()
+            self._lbl_trial.setText("Quit?" if evt.get("reason") == "quit" else "Paused")
+        elif kind == "resumed":
+            if self._held_text:
+                self._lbl_trial.setText(self._held_text)
+                self._held_text = ""
         elif kind == "trial":
             self._on_trial(evt)
         elif kind == "done":

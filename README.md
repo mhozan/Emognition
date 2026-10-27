@@ -1,6 +1,6 @@
 # Emognition 3
 
-**Speech Emotion Recognition** — a behavioral experiment in which a participant
+**Speech Emotion Recognition** — a behavioral experiment platform in which a participant
 hears a short speech clip and identifies the conveyed emotion (happy, scared,
 neutral, sad, or angry). Responses and millisecond-accurate reaction times are
 recorded and exported as Excel, PDF, HTML, and CSV reports.
@@ -44,6 +44,7 @@ and homage.
 | **Active training** | Participant responds, then correct (green) / wrong (orange) feedback before advancing |
 | **Begin screen** | The participant starts the session with a big **Begin** button (or Space/Enter); the report's start time and duration count from that press |
 | **Background pictures** | Calm, text-free backgrounds to keep children engaged: a soothing gradient by default, five bundled scenes, your own pictures via **Add picture…**, or a slideshow that changes every N trials |
+| **Pause and safe quit** | **P** pauses and resumes; **Esc** asks before quitting. A trial interrupted either way is replayed, and the per-trial CSV counts it |
 | **Crash-safe autosave** | Every trial is on disk the moment it ends; an interrupted session resumes at the next trial, in the same order |
 | **Calibration** | Per-corpus loudness normalization (LUFS), speech-endpoint trim, BIDS-style renaming |
 | **Experimenter monitor** | Live per-trial accuracy and RT on the experimenter's screen while the participant runs |
@@ -275,6 +276,21 @@ normalize loudness and inspect file naming.
 When the session starts, the participant window shows the background and a
 large **Begin** button. The session, and its recorded start time, begins when
 the participant clicks it, or when the experimenter presses Space or Enter.
+
+**Keys during a session**
+
+| Key | Who | What it does |
+|---|---|---|
+| Click a face, or **1**–**5** | participant | Answer (the numbers follow the faces shown) |
+| **R** | participant | Replay the clip (when replays are allowed) |
+| **P** | experimenter | Pause; **P** again resumes |
+| **Esc** | experimenter | Asks "Quit this session?": **Y** quits and saves the trials so far, **N** carries on |
+
+A clip or an answer interrupted by **P** or **Esc** is replayed from the start,
+because a reaction time that spans a pause would be meaningless. The `pauses`
+column of the per-trial CSV counts how often that happened on each trial, since
+the participant then heard the clip more than once. The experimenter monitor
+shows *Paused* or *Quit?* while the session waits.
 
 ### 2. Stimulus corpus
 

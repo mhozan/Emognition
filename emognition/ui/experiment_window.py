@@ -39,6 +39,12 @@ The trial loop (Test mode)::
         spin the draw/flip loop, polling keyboard + mouse, until a response
         RT = (response time) - (t=0); offset RT = onset RT - clip duration
 
+The experimenter's keys: **P** pauses (P again resumes) and **Escape** asks
+"Quit this session?" (Y quits, N carries on) -- one stray press, often a child's,
+used to end the session. A clip or an answer interrupted either way is replayed
+from the start (an RT that spans a pause would be meaningless) and counted in
+``Response.n_pauses``.
+
 Two response modalities, one shared clock (reset at audio onset):
   * number keys 1..N  -> pyglet keyboard via psychopy.event
   * clicking a face   -> mouse, faithful to the original GUI
@@ -61,6 +67,7 @@ only assigned when they actually change.
 from __future__ import annotations
 
 import sys
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
 
@@ -129,9 +136,24 @@ _BEGIN_TEXT = (42, 34, 80)             # the setup window's title colour
 # A short, calm pause after Begin before the first clip (hand away from the mouse).
 _BEGIN_SETTLE_SECONDS = 0.5
 
+# The experimenter's keys (see the module docstring), and what each overlay says.
+_PAUSE_KEY = "p"
+_QUIT_KEY = "escape"
+_CONFIRM_QUIT_KEYS = ("y",)
+_KEEP_GOING_KEYS = ("n", "escape")
+_OVERLAYS = {
+    "pause": ("Paused", "Press P to continue."),
+    "quit": ("Quit this session?", "Y: quit        N: keep going"),
+}
+_OVERLAY_PANEL_OPACITY = 1.0    # opaque: the prompt or Begin button mustn't show through
+
 
 class ExperimentAborted(Exception):
-    """Raised when the participant/experimenter quits early (Escape)."""
+    """Raised when the session is quit early (Escape, then Y; or the window closed)."""
+
+
+class _Interrupted(Exception):
+    """A clip or an answer was paused (or nearly quit): replay the trial from the start."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -409,6 +431,16 @@ class TestExperiment:
         )
         self._begin_button = BeginButton(win)
 
+        # Pause / quit overlays, built once: the screen dimmed, a panel, two lines.
+        self._overlay_dim = visual.Rect(
+            win, width=4.0, height=4.0, fillColor=(-1, -1, -1), lineColor=None,
+            opacity=0.55, autoLog=False,
+        )
+        self._overlays = {kind: self._build_overlay(*lines) for kind, lines in _OVERLAYS.items()}
+        # Called with {"status": "paused" | "resumed", ...} -- the session runner
+        # forwards these to the experimenter's monitor.
+        self.on_status: "Callable[[dict], None] | None" = None
+
         # Make the window's X (close) button quit the session, like Escape. In
         # fullscreen there is no titlebar/X, so this only matters when windowed.
         try:
@@ -447,7 +479,8 @@ class TestExperiment:
         """Show the Begin screen until the participant (or experimenter) starts.
 
         A click on the button (press and release inside it) or Space/Enter begins;
-        Escape or closing the window raises :class:`ExperimentAborted`. Returns the
+        Escape asks before quitting, and quitting (or closing the window) raises
+        :class:`ExperimentAborted`. Returns the
         moment Begin was pressed -- the session start, as in the original, where
         pb_beginner.m stamped ``S.pb_begin.UserData = clock`` for the report's
         start/finish/duration.
@@ -458,15 +491,17 @@ class TestExperiment:
             pass
         event.clearEvents()
         self.mouse.clickReset()
-        keys = [*_BEGIN_KEYS, "escape"]
+        keys = [*_BEGIN_KEYS, _QUIT_KEY]
         mouse_was_down = self.mouse.getPressed()[0] == 1
         pressed_inside = False
         while True:
             if self._close_requested:
                 raise ExperimentAborted()
             pressed = event.getKeys(keyList=keys)
-            if "escape" in pressed:
-                raise ExperimentAborted()
+            if _QUIT_KEY in pressed:
+                self._interrupt("quit", backdrop=self._draw_begin_screen)
+                mouse_was_down, pressed_inside = self.mouse.getPressed()[0] == 1, False
+                continue
             if pressed:
                 break
             inside = self._begin_button.contains(self.mouse)
@@ -479,8 +514,7 @@ class TestExperiment:
                     break                       # a complete click on the button
                 pressed_inside = False
             mouse_was_down = mouse_down
-            self.background.draw()
-            self._begin_button.draw()
+            self._draw_begin_screen()
             self.win.flip()
 
         begun_at = datetime.now()
@@ -507,8 +541,8 @@ class TestExperiment:
                 experiment window to Qt.
 
         Raises:
-            ExperimentAborted: if Escape is pressed; the responses collected so
-                far are attached on the exception's ``.partial`` attribute.
+            ExperimentAborted: if the session is quit (Escape, then Y); the
+                responses collected so far are on the exception's ``.partial``.
         """
         self.prepare(trials)
         self.win.frameIntervals = []
@@ -595,6 +629,67 @@ class TestExperiment:
             self._prompt_panels[text] = panel
         return panel
 
+    def _build_overlay(self, title: str, hint: str):
+        """(panel, title, hint) for one overlay, the panel fitted to the longer line."""
+        title_stim = visual.TextStim(self.win, text=title, pos=(0.0, 0.04), height=0.07,
+                                     color="white", wrapWidth=1.4, autoLog=False)
+        hint_stim = visual.TextStim(self.win, text=hint, pos=(0.0, -0.06), height=0.04,
+                                    color="white", wrapWidth=1.4, autoLog=False)
+        px_x, _px_y = _pixels_per_unit(self.win)
+        half_w = max(title_stim.boundingBox[0], hint_stim.boundingBox[0]) / px_x / 2.0 + 0.06
+        panel = _panel(self.win, -half_w, half_w, -0.13, 0.14)
+        panel.opacity = _OVERLAY_PANEL_OPACITY
+        return panel, title_stim, hint_stim
+
+    def _draw_begin_screen(self) -> None:
+        self.background.draw()
+        self._begin_button.draw()
+
+    def _notify(self, evt: dict) -> None:
+        """Pass a status event to :attr:`on_status` (the monitor); never fatal."""
+        if self.on_status is not None:
+            try:
+                self.on_status(evt)
+            except Exception as exc:  # noqa: BLE001
+                print(f"Status callback failed: {exc!r}", file=sys.stderr)
+
+    def _interrupt(self, kind: str, backdrop: "Callable[[], None] | None" = None) -> None:
+        """Hold the session on an overlay until the experimenter decides.
+
+        ``"pause"`` waits for P again. ``"quit"`` asks: Y quits (raises
+        :class:`ExperimentAborted`, as closing the window does), N or Escape
+        carries on. Returning means "carry on"; a caller that was playing a clip
+        or waiting for an answer then replays the trial. The clip is silenced at
+        once, and the overlay is taken down before anything is timed again.
+        """
+        draw_backdrop = backdrop or (lambda: self._draw_scene(enabled=False))
+        if self._sound is not None:
+            self._sound.stop()                 # back to the clip's start, too
+        self._record_frames(False)             # a pause is not a run of dropped frames
+        self._notify({"status": "paused", "reason": kind})
+        keys = [_PAUSE_KEY] if kind == "pause" else [*_CONFIRM_QUIT_KEYS, *_KEEP_GOING_KEYS]
+        panel, title, hint = self._overlays[kind]
+        event.clearEvents()
+        while True:
+            if self._close_requested:
+                raise ExperimentAborted()
+            pressed = event.getKeys(keyList=keys)
+            if kind == "quit" and any(k in _CONFIRM_QUIT_KEYS for k in pressed):
+                raise ExperimentAborted()
+            if pressed:
+                break
+            draw_backdrop()
+            self._overlay_dim.draw()
+            panel.draw()
+            title.draw()
+            hint.draw()
+            self.win.flip()
+        draw_backdrop()
+        self.win.flip()
+        event.clearEvents()
+        self.mouse.clickReset()
+        self._notify({"status": "resumed"})
+
     def _warm_up(self) -> None:
         """Draw every stimulus variant once, without showing anything.
 
@@ -616,15 +711,22 @@ class TestExperiment:
         self.led.draw()
         self.replay_button.draw()
         self._begin_button.draw()
+        self._overlay_dim.draw()
+        for stims in self._overlays.values():
+            for stim in stims:
+                stim.draw()
         gl.glFinish()
         self.win.clearBuffer()
 
     def _settle(self, seconds: float) -> None:
-        """Hold the (greyed) trial screen briefly; Escape still quits."""
+        """Hold the (greyed) trial screen briefly; Escape still asks to quit."""
         countdown = core.CountdownTimer(seconds)
         while countdown.getTime() > 0:
-            if "escape" in event.getKeys(keyList=["escape"]) or self._close_requested:
+            if self._close_requested:
                 raise ExperimentAborted()
+            if _QUIT_KEY in event.getKeys(keyList=[_QUIT_KEY]):
+                self._interrupt("quit")
+                countdown.reset(seconds)
             self._draw_scene(enabled=False)
             self.win.flip()
         event.clearEvents()
@@ -653,7 +755,12 @@ class TestExperiment:
 
         self._draw_scene(enabled=False)
         self.win.flip()
-        self._play_and_wait_offset(duration)
+        while True:
+            try:
+                self._play_and_wait_offset(duration)
+                break
+            except _Interrupted:
+                continue                         # paused mid-clip: play it again
         self._show_feedback(stim.emotion, chosen=None)
         self._sound.stop()
         self._record_frames(False)               # loading the next trial isn't a dropped frame
@@ -675,13 +782,16 @@ class TestExperiment:
         self._draw_scene(enabled=False)
         self.win.flip()
 
-        n_replays = 0
-        self._play_and_wait_offset(duration)
+        n_replays = n_pauses = 0
         while True:
-            outcome = self._await_response()
+            try:
+                self._play_and_wait_offset(duration)   # (re)zeros the clock at onset
+                outcome = self._await_response()
+            except _Interrupted:
+                n_pauses += 1                    # the RT would span the pause: replay
+                continue
             if outcome is _REPLAY:
                 n_replays += 1
-                self._play_and_wait_offset(duration)   # re-zeros the clock
                 continue
             press = outcome
             break
@@ -705,6 +815,7 @@ class TestExperiment:
             rt_offset=rt.from_offset,
             n_replays=n_replays,
             background=self.background.label,
+            n_pauses=n_pauses,
         )
 
     def _show_feedback(self, correct: Emotion, chosen: "Emotion | None") -> None:
@@ -723,16 +834,20 @@ class TestExperiment:
         else:
             prompt = f"Correct answer: {correct.label}"
 
+        def scene() -> None:
+            self._draw_scene(enabled=False, feedback_correct=correct,
+                             feedback_chosen=chosen, prompt_override=prompt)
+
         countdown = core.CountdownTimer(self.feedback_duration)
         while countdown.getTime() > 0:
-            if "escape" in event.getKeys() or self._close_requested:
+            if self._close_requested:
                 raise ExperimentAborted()
-            self._draw_scene(
-                enabled=False,
-                feedback_correct=correct,
-                feedback_chosen=chosen,
-                prompt_override=prompt,
-            )
+            pressed = event.getKeys(keyList=[_QUIT_KEY, _PAUSE_KEY])
+            if pressed:   # the answer is already in: afterwards, the feedback just restarts
+                self._interrupt("quit" if _QUIT_KEY in pressed else "pause", backdrop=scene)
+                self._record_frames(True)
+                countdown.reset(self.feedback_duration)
+            scene()
             self.win.flip()
         event.clearEvents()
 
@@ -772,7 +887,8 @@ class TestExperiment:
 
     def _play_and_wait_offset(self, duration: float) -> None:
         """Schedule the clip, zero the clock at onset, and hold (greyed, LED live)
-        until the clip finishes. Escape quits; early key presses are discarded."""
+        until the clip finishes. Early key presses are discarded; P or Escape
+        interrupts (see :meth:`_interrupt`) and raises :class:`_Interrupted`."""
         assert self._sound is not None
         try:
             self._sound.volume = self.volume     # experimenter-set playback level
@@ -790,15 +906,23 @@ class TestExperiment:
         self._record_frames(True)                 # continuous flips from here to the answer
 
         while self.clock.getTime() < duration:
-            if "escape" in event.getKeys() or self._close_requested:  # drains presses
+            if self._close_requested:
                 raise ExperimentAborted()
+            pressed = event.getKeys()             # drains presses: early answers don't count
+            if _QUIT_KEY in pressed or _PAUSE_KEY in pressed:
+                self._interrupt("quit" if _QUIT_KEY in pressed else "pause")
+                raise _Interrupted()
             self._draw_scene(enabled=False, amplitude=self._amplitude_at(self.clock.getTime()))
             self.win.flip()
         event.clearEvents()
 
     def _await_response(self) -> "_Press | str":
-        """Poll input until a response (or a replay request) arrives."""
-        keys = list(self.key_map) + ["escape"]
+        """Poll input until a response (or a replay request) arrives.
+
+        P or Escape interrupts (see :meth:`_interrupt`) and raises
+        :class:`_Interrupted`: the caller replays the trial.
+        """
+        keys = list(self.key_map) + [_QUIT_KEY, _PAUSE_KEY]
         if self.allow_replays:
             keys.append("r")
         mouse_was_down = self.mouse.getPressed()[0] == 1  # ignore a held-over click
@@ -806,8 +930,9 @@ class TestExperiment:
             if self._close_requested:
                 raise ExperimentAborted()
             for name, t in event.getKeys(keyList=keys, timeStamped=self.clock):
-                if name == "escape":
-                    raise ExperimentAborted()
+                if name in (_QUIT_KEY, _PAUSE_KEY):
+                    self._interrupt("quit" if name == _QUIT_KEY else "pause")
+                    raise _Interrupted()
                 if name == "r":
                     return _REPLAY
                 return _Press(self.key_map[name], t, "key")

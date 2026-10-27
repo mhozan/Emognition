@@ -53,6 +53,7 @@ def response_to_record(r: Response) -> dict:
         "rt_offset": r.rt_offset,
         "n_replays": r.n_replays,
         "background": r.background,
+        "n_pauses": r.n_pauses,
     }
 
 
@@ -68,6 +69,7 @@ def response_from_record(d: dict) -> Response:
         rt_offset=d.get("rt_offset"),
         n_replays=int(d.get("n_replays", 0)),
         background=d.get("background", ""),
+        n_pauses=int(d.get("n_pauses", 0)),
     )
 
 

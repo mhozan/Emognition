@@ -31,17 +31,19 @@ HEADER = {"participant": "P1", "started_at": datetime(2026, 10, 27, 14, 3, 5),
           "random_seed": 42, "trial_order": ["/c/a_hap_f.wav", "/c/b_sad_m.wav"]}
 
 
-def _trial(name="spk1_hap_f.wav", emotion=Emotion.HAPPY, responded=Emotion.HAPPY, rt=0.512):
+def _trial(name="spk1_hap_f.wav", emotion=Emotion.HAPPY, responded=Emotion.HAPPY, rt=0.512,
+           n_pauses=0):
     stim = Stimulus(path=f"/clips/{name}", emotion=emotion, sex=Sex.FEMALE, recording_id="spk1")
     return Response(stimulus=stim, responded=responded,
                     rt_onset=None if rt is None else rt + 1.25, rt_offset=rt,
-                    n_replays=1, background="Starry night")
+                    n_replays=1, background="Starry night", n_pauses=n_pauses)
 
 
 @pytest.mark.parametrize("response", [
     _trial(),
     _trial(responded=None, rt=None),                       # unanswered trial
     _trial(name="x_ang_f.wav", emotion=Emotion.ANGRY, responded=Emotion.SAD, rt=-0.0371),
+    _trial(n_pauses=2),                                    # paused twice, replayed each time
 ])
 def test_records_round_trip_exactly(response):
     assert response_from_record(response_to_record(response)) == response

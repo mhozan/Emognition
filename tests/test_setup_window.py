@@ -321,6 +321,18 @@ def test_monitor_carries_counts_across_a_resume(app):
     assert m._lbl_trial.text() == "8 / 20" and "6 / 8" in m._lbl_accuracy.text()
 
 
+def test_monitor_shows_a_pause_and_puts_the_counter_back(app):
+    m = MonitorWindow()
+    m.handle_event({"status": "start", "total": 10, "mode": "test", "participant": "P1"})
+    m.handle_event({"status": "trial", "index": 3, "total": 10, "responded": "sad", "correct": True})
+    m.handle_event({"status": "paused", "reason": "pause"})
+    assert m._lbl_trial.text() == "Paused"
+    m.handle_event({"status": "paused", "reason": "quit"})       # still held: counter kept
+    assert m._lbl_trial.text() == "Quit?"
+    m.handle_event({"status": "resumed"})
+    assert m._lbl_trial.text() == "3 / 10"
+
+
 def test_monitor_shrugs_off_unknown_or_odd_events(app):
     m = MonitorWindow()
     m.handle_event({"status": "something-new"})
