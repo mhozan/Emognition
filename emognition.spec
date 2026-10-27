@@ -23,8 +23,8 @@ hiddenimports = []
 # psychtoolbox/.dylibs/ and statically links PortAudio — so collect_all() below
 # pulls everything PsychHID/PsychPortAudio need and PyInstaller rewrites their
 # @loader_path references automatically.  No manual dylib bundling is required.
-# (There is no native arm64 psychtoolbox wheel; Apple Silicon runs the Intel
-#  build under Rosetta 2.)
+# (The pinned psychtoolbox 3.0.19.14 has no arm64 wheel, so Apple Silicon runs
+#  the Intel build under Rosetta 2; 3.0.22+ ships universal2 wheels.)
 
 # Packages PyInstaller can't figure out on its own -> grab everything.
 for pkg in (
@@ -43,8 +43,11 @@ for pkg in (
     binaries += pkg_binaries
     hiddenimports += pkg_hidden
 
-# The audio backend we actually use is imported lazily by PsychoPy.
-hiddenimports += ["psychopy.sound.backend_ptb"]
+# The audio backend we actually use is imported lazily by PsychoPy -- since
+# 2026.2 by name, from prefs.hardware["audioLib"], for both the Sound and the
+# speaker device behind it -- so static analysis never sees these imports.
+hiddenimports += ["psychopy.sound.backend_ptb",
+                  "psychopy.hardware.speaker.speaker_psychtoolbox"]
 # psychopy.core.quit() -> psychopy.iohub -> pythoncom (Windows COM; pywin32).
 hiddenimports += ["pythoncom", "pywintypes"]
 # Report writers and naming module are imported lazily from app.py.

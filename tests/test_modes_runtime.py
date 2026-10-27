@@ -39,18 +39,29 @@ def test_configure_prefs_sets_the_legacy_audio_prefs():
             hardware.pop("audioLatencyMode", None)
 
 
-def test_psychopy_still_defaults_to_ptb_with_a_shared_latency_class():
-    """PsychoPy 2026 ignores those prefs; what we rely on are these defaults.
+def test_playback_resolves_to_ptb_with_a_shared_latency_class():
+    """What our RTs rely on: PTB playback at latency class 1 (a shared device).
 
     PTB schedules onsets sample-accurately (our RT zero), and latency class 1
     shares the device instead of grabbing it exclusively (class >= 2 was
-    unstable under PipeWire here). If a PsychoPy upgrade changes either default,
+    unstable under PipeWire here). PsychoPy has moved where both are decided
+    (2026.1 hard-wired them; 2026.2 reads ``prefs.hardware['audioLib']`` again),
+    so this checks the outcome with our prefs applied: if an upgrade changes it,
     this fails before any participant hears anything different.
     """
     import inspect
 
-    sound_mod = pytest.importorskip("psychopy.sound.sound")
-    speaker = pytest.importorskip("psychopy.hardware.speaker")
-    assert sound_mod.Sound.backend == "ptb"
-    default = inspect.signature(speaker.SpeakerDevice.__init__).parameters["latencyClass"].default
-    assert default == 1
+    prefs = pytest.importorskip("psychopy").prefs
+    from emognition.runtime import configure_prefs
+
+    saved = list(prefs.hardware["audioLib"])
+    try:
+        configure_prefs()
+        sound_mod = pytest.importorskip("psychopy.sound.sound")
+        speaker_mod = pytest.importorskip("psychopy.hardware.speaker")
+        assert sound_mod.Sound.resolveBackend().__name__ == "psychopy.sound.backend_ptb"
+        device = speaker_mod.SpeakerDevice.resolveBackend()
+        assert device.__name__ == "PsychtoolboxSpeakerDevice"
+        assert inspect.signature(device.__init__).parameters["latencyClass"].default == 1
+    finally:
+        prefs.hardware["audioLib"] = saved

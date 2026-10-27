@@ -4,16 +4,26 @@
 # Reproduce the exact known-good environment (what CI and the builds use):
 #   pip install --no-deps -r requirements.txt
 # requirements.txt is the lockfile; this file is only the human-level intent.
-# Do NOT `pip install -r requirements.in`: resolving psychopy's metadata would
-# pull in wxPython (see below).
 #
-# Why psychopy is installed with --no-deps: its metadata hard-requires wxPython,
-# which (a) has no PyPI wheel on Linux, (b) is only used by the PsychoPy Builder/Coder
-# IDE — NOT by the experiment runtime — and (c) bloats PyInstaller bundles. We build
-# our own UI on PyQt6 (which PsychoPy already depends on), so wx is dead weight.
+# Python: the newest version PsychoPy supports -- 3.12 for PsychoPy 2026.2
+# (Requires-Python >=3.10,<3.13). Newer Pythons (3.13+) can't install PsychoPy
+# at all; move up when a PsychoPy release allows it, then re-lock.
+#
+# Re-locking (on Linux, in a fresh venv of that Python):
+#   pip install --dry-run --ignore-installed --report report.json \
+#       -c <old requirements.txt minus psychopy> psychopy==<new> <the packages below>
+# and write the report's "install" list to requirements.txt. The constraint
+# keeps every pin that still fits, so only what has to change does.
+#
+# Why --no-deps: requirements.txt is the complete list, generated on Linux and
+# used on every OS. PsychoPy's metadata adds platform extras we leave out on
+# purpose -- pyglet 1.4.11 on Windows (we use 1.5.27 everywhere), pywinhook,
+# pypiwin32 -- and pip, left to resolve, would try to reconcile them. (Until
+# PsychoPy 2026.2 its metadata also demanded wxPython, which only its Builder IDE
+# uses; our UI is PyQt6.)
 
 # --- The experiment engine (timing, audio, visual, data) ---
-# psychopy==2026.1.3          # pinned in requirements.txt; installed with --no-deps
+# psychopy==2026.2.5          # pinned in requirements.txt; installed with --no-deps
 
 # --- Report generation (replaces MATLAB's print -dpdf / writematrix) ---
 fpdf2                          # PDF reports  (was: MATLAB print -dpdf)

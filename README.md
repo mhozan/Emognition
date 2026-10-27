@@ -102,10 +102,17 @@ chmod +x emognition/emognition
 
 </details>
 
+**Which Python?** The pre-built downloads above include their own Python. To
+run from source you need **Python 3.12**, the newest version PsychoPy supports:
+PsychoPy 2026.2 installs on Python 3.10–3.12 only. Python 3.13 and later,
+including the current 3.15, can't install PsychoPy yet. Emognition will move to
+a newer Python as soon as a PsychoPy release allows it. Any 3.12.x works, so
+take the newest one your installer offers.
+
 <details>
 <summary><strong>Windows — from source</strong></summary>
 
-PsychoPy requires **Python 3.10 exactly** — 3.11 and later are not compatible.
+You need **Python 3.12** (see *Which Python?* above).
 All commands below are for **PowerShell**; do not use Command Prompt.
 
 **Step 1 — Open PowerShell**
@@ -118,13 +125,15 @@ All commands below are for **PowerShell**; do not use Command Prompt.
 > Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
 > ```
 
-**Step 2 — Install Python 3.10**
+**Step 2 — Install Python 3.12**
 
 Download **Windows installer (64-bit)** from
-[python.org/downloads/release/python-31011](https://www.python.org/downloads/release/python-31011/)
-(`python-3.10.11-amd64.exe`). On the first screen, tick **"Add Python 3.10 to PATH"** before clicking Install Now.
+[python.org/downloads/release/python-31210](https://www.python.org/downloads/release/python-31210/)
+(`python-3.12.10-amd64.exe`). 3.12.10 is the newest 3.12 release that has an
+installer; later 3.12 releases are security fixes published as source code only.
+On the first screen, tick **"Add python.exe to PATH"**, then click **Install Now**.
 
-Verify: `python --version` → should print `Python 3.10.11`.
+Check it: `py -3.12 --version` should print `Python 3.12.10`.
 
 **Step 3 — Install Git**
 
@@ -136,7 +145,7 @@ Download from [git-scm.com/download/win](https://git-scm.com/download/win), run 
 cd "$HOME\Documents"
 git clone https://github.com/mhozan/Emognition.git
 cd Emognition
-python -m venv .venv
+py -3.12 -m venv .venv
 .venv\Scripts\Activate.ps1
 pip install --no-deps -r requirements.txt
 python -m emognition
@@ -153,15 +162,16 @@ python -m emognition
 <details>
 <summary><strong>macOS — from source</strong></summary>
 
-**Step 1 — Install Python 3.10**
+**Step 1 — Install Python 3.12**
 
-Option A (simpler): download **macOS 64-bit universal2 installer** from
-[python.org/downloads/release/python-31011](https://www.python.org/downloads/release/python-31011/) and run it.
-
-Option B (Homebrew):
+Option A (Homebrew, which keeps 3.12 at its newest patch release):
 ```bash
-brew install pyenv && pyenv install 3.10.11 && pyenv local 3.10.11
+brew install python@3.12
 ```
+
+Option B: download the **macOS 64-bit universal2 installer** from
+[python.org/downloads/release/python-31210](https://www.python.org/downloads/release/python-31210/)
+and run it. 3.12.10 is the newest 3.12 release with an installer.
 
 **Step 2 — Install PortAudio** (required for PsychoPy audio)
 
@@ -176,7 +186,7 @@ No Homebrew? Install it first: [brew.sh](https://brew.sh).
 ```bash
 git clone https://github.com/mhozan/Emognition.git
 cd Emognition
-python3.10 -m venv .venv
+python3.12 -m venv .venv
 source .venv/bin/activate
 pip install --no-deps -r requirements.txt
 python -m emognition
@@ -189,26 +199,27 @@ python -m emognition
 <details>
 <summary><strong>Linux — from source</strong></summary>
 
-**Step 1 — Install system libraries**
+**Step 1 — Install Python 3.12 and the system libraries**
 
 ```bash
 sudo apt-get update
 sudo apt-get install -y \
-  python3.10 python3.10-venv python3.10-dev \
+  python3.12 python3.12-venv python3.12-dev \
   libglu1-mesa libgl1 libegl1 libsndfile1 libportaudio2 \
   libxcb-cursor0 libxcb-xinerama0 libxkbcommon-x11-0 libdbus-1-3 \
   git
 ```
 
-> Ubuntu 24.04+: add the deadsnakes PPA first:
-> `sudo add-apt-repository ppa:deadsnakes/ppa && sudo apt-get update`
+> Ubuntu 24.04 ships Python 3.12. On other releases, add the deadsnakes PPA
+> first (`sudo add-apt-repository ppa:deadsnakes/ppa && sudo apt-get update`),
+> or install 3.12 with pyenv (`pyenv install 3.12` picks the newest 3.12.x).
 
 **Step 2 — Download and set up**
 
 ```bash
 git clone https://github.com/mhozan/Emognition.git
 cd Emognition
-python3.10 -m venv .venv
+python3.12 -m venv .venv
 source .venv/bin/activate
 pip install --no-deps -r requirements.txt
 python -m emognition

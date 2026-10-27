@@ -47,7 +47,7 @@ def _selfcheck() -> int:
     bootstrap()
     # Importing these pulls in the audio/visual/keyboard backends + report deps.
     import psychtoolbox  # noqa: F401
-    from psychopy import sound, visual  # noqa: F401
+    from psychopy import sound, visual  # noqa: F401  (visual: import check only)
     from psychopy.hardware import keyboard  # noqa: F401
 
     from .core import scan_audio_dir  # noqa: F401
@@ -57,6 +57,12 @@ def _selfcheck() -> int:
     from .ui.assets import audio_dir, backgrounds_dir
     from .ui.experiment_window import TestExperiment  # noqa: F401
 
+    # The audio engine the RTs depend on must load from the bundle: PsychoPy would
+    # otherwise fall back quietly, and PsychPortAudio failing to load is exactly
+    # what broke an arm64 macOS build once.
+    backend = sound.Sound.resolveBackend().__name__
+    if backend != "psychopy.sound.backend_ptb":
+        raise RuntimeError(f"audio backend is {backend}, not PsychToolbox")
     n_clips = len([f for f in os.listdir(audio_dir()) if f.endswith(".wav")])
     pictures = list_pictures(backgrounds_dir())
     # Decode the default and one bundled picture: proves Pillow's codecs are bundled.
@@ -65,7 +71,7 @@ def _selfcheck() -> int:
         if problem:
             raise RuntimeError(problem)
     print(f"Emognition {__version__} self-check OK "
-          f"(python {sys.version.split()[0]}, {n_clips} bundled clips, "
+          f"(python {sys.version.split()[0]}, PTB audio, {n_clips} bundled clips, "
           f"{len(pictures)} background pictures)")
     return 0
 
