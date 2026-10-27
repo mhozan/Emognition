@@ -21,6 +21,10 @@ defusedxml                     # optional fpdf2 dep: SVG sanitization (silences 
 openpyxl                       # Excel reports (was: MATLAB writecell/writematrix)
 matplotlib                     # confusion-matrix figure for the PDF
 
+# --- Participant-window background pictures (decode, fit, import) ---
+pillow                         # already a psychopy dependency; used directly by emognition.imaging
+numpy                          # ditto; gradient rendering and audio envelopes
+
 # --- Audio preprocessing / calibration (loudness normalize + trim silence) ---
 pyloudnorm                     # perceived loudness, ITU-R BS.1770 (LUFS)
 # soundfile is already pulled in by psychopy (wav read/write)

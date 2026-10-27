@@ -42,6 +42,8 @@ and homage.
 | **Test mode** | Blind test — no feedback — full confusion-matrix report |
 | **Passive training** | Correct label revealed after each clip; participant learns the mapping |
 | **Active training** | Participant responds, then correct (green) / wrong (orange) feedback before advancing |
+| **Begin screen** | The participant starts the session with a big **Begin** button (or Space/Enter); the report's start time and duration count from that press |
+| **Background pictures** | Calm, text-free backgrounds to keep children engaged: a soothing gradient by default, five bundled scenes, your own pictures via **Add picture…**, or a slideshow that changes every N trials |
 | **Calibration** | Per-corpus loudness normalization (LUFS), speech-endpoint trim, BIDS-style renaming |
 | **Experimenter monitor** | Live per-trial accuracy and RT on the experimenter's screen while the participant runs |
 | **Reports** | Self-contained HTML, PDF (confusion heatmap + RT charts), Excel (4 sheets), CSV |
@@ -230,6 +232,28 @@ Fill in the participant ID, select your audio folder, and choose a session mode:
 Click **Calibration** before your first run with a new stimulus corpus to
 normalize loudness and inspect file naming.
 
+**Background** sets what the participant sees behind the buttons:
+
+- **Calm gradient (default)**: a soothing indigo-to-teal blend, drawn at the
+  screen's exact resolution.
+- **A bundled scene**: Starry night, Under the sea, Rolling hills, Soft bubbles,
+  or Classic purple (the original Emognition background). All are calm, contain
+  no text or faces, and are dark enough for the white prompt to stay readable.
+- **Your own picture**: click **Add picture…**. The picture is copied into
+  `~/.emognition/backgrounds/`, turned upright, resized, and stripped of all
+  metadata, including phone GPS. Delete files from that folder to remove them.
+  Bright photos are dimmed slightly, and the on-screen text gets a translucent
+  panel behind it.
+- **Slideshow (all pictures)**: the bundled and added pictures take turns,
+  changing every *N* trials (1–20) and optionally shuffled, as in the original.
+  Pictures only change *between* trials and are decoded ahead of time, so they
+  never touch audio timing or reaction times.
+- **None (plain)**: the classic plain grey screen.
+
+When the session starts, the participant window shows the background and a
+large **Begin** button. The session, and its recorded start time, begins when
+the participant clicks it, or when the experimenter presses Space or Enter.
+
 ### 2. Stimulus corpus
 
 The app accepts two naming conventions:
@@ -358,6 +382,10 @@ Options:
   --no-shuffle       Present clips in folder order instead of shuffled
   --allow-replays    Show a replay button (and 'r' key)
   --amp-visualizer   Show a green amplitude LED during playback
+  --background SPEC  default | none | slideshow | picture file | picture folder  [default]
+  --background-every N        Slideshow: change picture every N trials (1–20)  [5]
+  --[no-]background-shuffle   Slideshow: shuffle the picture order  [on]
+  --no-begin         Start straight away, without the Begin screen (automation)
   --version          Print version and exit
 ```
 

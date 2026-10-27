@@ -19,6 +19,7 @@ settings persist to JSON between launches ("keep previous settings").
 
 from __future__ import annotations
 
+import io
 import json
 import os
 import sys
@@ -40,18 +41,42 @@ from PyQt6.QtWidgets import (
     QLineEdit,
     QMessageBox,
     QPushButton,
+    QSpinBox,
     QVBoxLayout,
     QWidget,
 )
 
 from ..config import ALL_EMOTION_TAGS, ExperimentSettings
-from .assets import audio_dir as _bundled_audio_dir, background_path
+from ..core.backgrounds import (
+    CALM_GRADIENT,
+    DEFAULT_EVERY_N,
+    MAX_EVERY_N,
+    MIN_EVERY_N,
+    SPEC_DEFAULT,
+    SPEC_NONE,
+    SPEC_SLIDESHOW,
+    friendly_name,
+    list_pictures,
+    resolve_background,
+)
+from .assets import audio_dir as _bundled_audio_dir
+from .assets import background_folders, background_path, user_backgrounds_dir, user_data_dir
 
 _CAPTIONS = ["none", "english", "mandarin"]
 _MODES = ["test", "passive", "active"]
 _MODE_LABELS = {"test": "Test", "passive": "Passive Training", "active": "Active Training"}
 _EMOTION_LABELS = {"hap": "Happy", "sca": "Scared", "neu": "Neutral",
                    "sad": "Sad", "ang": "Angry"}
+
+# Background preview size (16:9) and the participant window's plain colour
+# (PsychoPy rgb -0.3 -> 89/255), shown for "None (plain)".
+_THUMB_SIZE = (160, 90)
+_PLAIN_RGB = (89, 89, 89)
+# What "Add picture..." offers (patterns repeated in upper case for case-sensitive
+# file dialogs on Linux).
+_PICTURE_FILTER = "Pictures ({})".format(" ".join(
+    f"*.{ext} *.{ext.upper()}" for ext in ("png", "jpg", "jpeg", "bmp", "gif", "webp")
+))
 
 # Light, high-contrast theme for the form (overrides the OS theme so labels are
 # never light-on-light regardless of the user's desktop appearance).
@@ -61,10 +86,11 @@ QLabel { background: transparent; color: #20203a; }
 QLabel#title { font-size: 22px; font-weight: 700; color: #2a2250; }
 QLabel#subtitle { color: #5a5a7a; }
 QFrame#card { background: #ffffff; border-radius: 14px; }
-QLineEdit, QComboBox {
+QLineEdit, QComboBox, QSpinBox {
     background: #ffffff; color: #20203a;
     border: 1px solid #c4c4d6; border-radius: 7px; padding: 7px 9px;
 }
+QLabel#preview { border: 1px solid #c4c4d6; border-radius: 6px; }
 QLineEdit:focus, QComboBox:focus { border: 1px solid #6c5ce7; }
 QComboBox::drop-down { border: none; width: 22px; }
 QCheckBox { background: transparent; color: #20203a; spacing: 7px; }
@@ -84,9 +110,42 @@ QPushButton#browse:hover { background: #dedeee; }
 
 def default_settings_path() -> str:
     """Where the last-used settings are remembered (~/.emognition/settings.json)."""
-    base = os.path.join(os.path.expanduser("~"), ".emognition")
+    base = user_data_dir()
     os.makedirs(base, exist_ok=True)
     return os.path.join(base, "settings.json")
+
+
+def _thumbnail_image(value: str):
+    """A small PIL preview of a background setting (Pillow only; no PsychoPy)."""
+    from PIL import Image
+
+    from ..imaging import render_background
+
+    if value == SPEC_NONE:
+        return Image.new("RGB", _THUMB_SIZE, _PLAIN_RGB)
+    if value == SPEC_SLIDESHOW:
+        # Side-by-side strips of the first few pictures say "these take turns".
+        sources = list_pictures(*background_folders())[:3] or [CALM_GRADIENT]
+        canvas = Image.new("RGB", _THUMB_SIZE)
+        strip = _THUMB_SIZE[0] // len(sources)
+        for i, source in enumerate(sources):
+            image, _problem = render_background(source, _THUMB_SIZE)
+            left = i * strip
+            right = _THUMB_SIZE[0] if i == len(sources) - 1 else left + strip
+            canvas.paste(image.crop((left, 0, right, _THUMB_SIZE[1])), (left, 0))
+        return canvas
+    source = CALM_GRADIENT if value == SPEC_DEFAULT else value
+    image, _problem = render_background(source, _THUMB_SIZE)
+    return image
+
+
+def _pixmap(image) -> QPixmap:
+    """Convert a PIL image to a QPixmap (via PNG bytes: no ImageQt version coupling)."""
+    buf = io.BytesIO()
+    image.save(buf, "PNG")
+    pixmap = QPixmap()
+    pixmap.loadFromData(buf.getvalue(), "PNG")
+    return pixmap
 
 
 def _default_save_dir() -> str:
@@ -113,9 +172,10 @@ class ConfigWindow(QWidget):
         self._monitor: "MonitorWindow | None" = None
         self._calib: "CalibrationWindow | None" = None
         self._log_fh = None   # open file handle for the session log
+        self._thumbs: dict[str, QPixmap] = {}   # background previews, by setting value
         self.setWindowTitle("Emognition - Setup")
         self.setStyleSheet(_STYLE)
-        self.resize(760, 620)
+        self.resize(780, 700)
         self._build()
         if os.path.exists(self.settings_path):
             try:
@@ -162,6 +222,21 @@ class ConfigWindow(QWidget):
         }
         for box in self.emotion_boxes.values():
             box.setChecked(True)
+        # Participant-window background (MATLAB: "Pictures Directory", "Pics
+        # Interval [1-20]", "Shuffle images randomly").
+        self.background = QComboBox()
+        self.bg_preview = QLabel()
+        self.bg_preview.setObjectName("preview")
+        self.bg_preview.setFixedSize(*_THUMB_SIZE)
+        self.bg_every = QSpinBox()
+        self.bg_every.setRange(MIN_EVERY_N, MAX_EVERY_N)
+        self.bg_every.setValue(DEFAULT_EVERY_N)
+        self.bg_every.setToolTip("Slideshow: show each picture for this many trials.")
+        self.bg_shuffle = QCheckBox("Shuffle pictures")
+        self.bg_shuffle.setChecked(True)
+        self.bg_shuffle.setToolTip("Slideshow: randomise the order the pictures appear in.")
+        self._populate_backgrounds(SPEC_DEFAULT)
+        self.background.currentIndexChanged.connect(self._on_background_changed)
 
         grid = QGridLayout()
         grid.setVerticalSpacing(8)
@@ -182,6 +257,25 @@ class ConfigWindow(QWidget):
         grid.addWidget(self._browse_button(self.save_dir), r, 2); r += 1
         grid.addWidget(QLabel("Caption"), r, 0); grid.addWidget(self.caption, r, 1); r += 1
         grid.addWidget(QLabel("Mode"), r, 0); grid.addWidget(self.mode, r, 1); r += 1
+
+        grid.addWidget(QLabel("Background"), r, 0); grid.addWidget(self.background, r, 1)
+        add_picture = QPushButton("Add picture...")
+        add_picture.setObjectName("browse")
+        add_picture.setToolTip("Copy your own pictures into "
+                               f"{user_backgrounds_dir()} (metadata such as GPS is removed).")
+        add_picture.clicked.connect(self._add_pictures)
+        grid.addWidget(add_picture, r, 2); r += 1
+        bg_row = QHBoxLayout()
+        bg_row.setContentsMargins(0, 0, 0, 0)
+        bg_row.addWidget(self.bg_preview)
+        bg_row.addStretch(1)
+        bg_row.addWidget(QLabel("Change every"))
+        bg_row.addWidget(self.bg_every)
+        bg_row.addWidget(QLabel("trials"))
+        bg_row.addSpacing(12)
+        bg_row.addWidget(self.bg_shuffle)
+        bg_w = QWidget(); bg_w.setLayout(bg_row)
+        grid.addWidget(bg_w, r, 1, 1, 2); r += 1
 
         self.volume = QDoubleSpinBox()
         self.volume.setRange(0.0, 1.0); self.volume.setSingleStep(0.05); self.volume.setValue(0.8)
@@ -239,6 +333,69 @@ class ConfigWindow(QWidget):
         if path:
             target.setText(path)
 
+    # -- background picker -------------------------------------------------
+
+    def _populate_backgrounds(self, select: str) -> None:
+        """(Re)fill the Background list -- bundled pictures, then the user's -- and select *select*."""
+        bundled, user = background_folders()
+        self.background.blockSignals(True)
+        self.background.clear()
+        self.background.addItem("Calm gradient (default)", SPEC_DEFAULT)
+        for path in list_pictures(bundled):
+            self.background.addItem(friendly_name(path), path)
+        for path in list_pictures(user):
+            self.background.addItem(f"{friendly_name(path)} (added)", path)
+        self.background.addItem("Slideshow (all pictures)", SPEC_SLIDESHOW)
+        self.background.addItem("None (plain)", SPEC_NONE)
+        self.background.blockSignals(False)
+        self._select_background(select)
+
+    def _background_value(self) -> str:
+        value = self.background.currentData()
+        return value if isinstance(value, str) else SPEC_DEFAULT
+
+    def _select_background(self, value: str) -> None:
+        index = self.background.findData(value)
+        if index < 0 and value and os.path.isfile(value):
+            # A picture set elsewhere (e.g. on the command line): list it too.
+            self.background.insertItem(self.background.count() - 2,
+                                       f"{friendly_name(value)} (custom)", value)
+            index = self.background.findData(value)
+        self.background.setCurrentIndex(max(0, index))
+        self._on_background_changed()
+
+    def _on_background_changed(self, *_args) -> None:
+        value = self._background_value()
+        slideshow = value == SPEC_SLIDESHOW
+        self.bg_every.setEnabled(slideshow)
+        self.bg_shuffle.setEnabled(slideshow)
+        if value not in self._thumbs:
+            self._thumbs[value] = _pixmap(_thumbnail_image(value))
+        self.bg_preview.setPixmap(self._thumbs[value])
+
+    def _add_pictures(self) -> None:
+        """"Add picture...": import into ~/.emognition/backgrounds, then select the last one."""
+        from ..imaging import PictureError, import_picture
+
+        paths, _filter = QFileDialog.getOpenFileNames(
+            self, "Add background pictures", os.path.expanduser("~"), _PICTURE_FILTER)
+        if not paths:
+            return
+        added, problems = [], []
+        for path in paths:
+            try:
+                added.append(import_picture(path, user_backgrounds_dir()))
+            except PictureError as exc:
+                problems.append(str(exc))
+            except OSError as exc:      # e.g. the personal folder isn't writable
+                problems.append(f"{os.path.basename(path)}: {exc}")
+        if added:
+            self._populate_backgrounds(added[-1])
+            self.status.setStyleSheet("color:#2e7d32;")
+            self.status.setText(f"Added {len(added)} picture(s).")
+        if problems:
+            QMessageBox.warning(self, "Some pictures were not added", "\n".join(problems))
+
     # -- settings <-> form ----------------------------------------------
 
     def settings_from_form(self) -> ExperimentSettings:
@@ -257,6 +414,9 @@ class ConfigWindow(QWidget):
             volume=self.volume.value(),
             emotions=[t for t, b in self.emotion_boxes.items() if b.isChecked()],
             mode=mode_key,
+            background=self._background_value(),
+            background_every=self.bg_every.value(),
+            background_shuffle=self.bg_shuffle.isChecked(),
         )
 
     def apply_settings(self, s: ExperimentSettings) -> None:
@@ -275,6 +435,9 @@ class ConfigWindow(QWidget):
             box.setChecked(tag in s.emotions)
         if s.mode in _MODE_LABELS:
             self.mode.setCurrentText(_MODE_LABELS[s.mode])
+        self.bg_every.setValue(s.background_every)
+        self.bg_shuffle.setChecked(s.background_shuffle)
+        self._select_background(s.background or SPEC_DEFAULT)
 
     # -- actions ---------------------------------------------------------
 
@@ -285,6 +448,12 @@ class ConfigWindow(QWidget):
         if not settings.emotions:
             self.status.setStyleSheet("color:#c62828;")
             self.status.setText("Select at least one emotion.")
+            return
+        try:   # same check the session makes, but before anything launches
+            resolve_background(settings.background, picture_folders=background_folders())
+        except ValueError as exc:
+            self.status.setStyleSheet("color:#c62828;")
+            self.status.setText(str(exc))
             return
         try:
             settings.save(self.settings_path)   # persist what the experimenter set
