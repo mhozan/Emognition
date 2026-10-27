@@ -37,6 +37,9 @@ class Response:
             negative if the participant answered before the clip finished.
         n_replays: How many times the participant replayed the clip before
             answering (0 when replays are disabled or unused).
+        background: The background picture on screen during the trial (its
+            friendly name; "" for a plain window) -- lets an analysis check
+            whether pictures affected performance.
     """
 
     stimulus: Stimulus
@@ -44,6 +47,7 @@ class Response:
     rt_onset: float | None = None
     rt_offset: float | None = None
     n_replays: int = 0
+    background: str = ""
 
     @property
     def true_emotion(self) -> Emotion:

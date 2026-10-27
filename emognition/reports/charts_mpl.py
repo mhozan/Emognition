@@ -26,7 +26,7 @@ matplotlib.use("Agg")  # headless raster backend; must precede pyplot import
 import matplotlib.pyplot as plt  # noqa: E402
 
 from ..core import Response, SessionSummary  # noqa: E402
-from .common import heat_rgb  # noqa: E402
+from .common import heat_rgb, round_half_up  # noqa: E402
 
 
 def _to_png(fig) -> bytes:
@@ -58,7 +58,10 @@ def confusion_png(summary: SessionSummary) -> bytes:
     ax.set_ylabel("true")
     for i, row in enumerate(data):
         for j, n in enumerate(row):
-            ax.text(j, i, str(n), ha="center", va="center", color="#1a1a1a", fontsize=9)
+            pct = summary.confusion_pct[i][j] if summary.confusion_pct else None
+            # Half-up, like every other format (Python's own rounding is half-even).
+            label = f"{n}\n{round_half_up(pct, 0)}%" if n and pct is not None else str(n)
+            ax.text(j, i, label, ha="center", va="center", color="#1a1a1a", fontsize=8)
     ax.set_title("shade = share of the row", fontsize=8, pad=26, loc="left")
     return _to_png(fig)
 

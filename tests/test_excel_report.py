@@ -45,7 +45,7 @@ def workbook(tmp_path):
 
 def test_sheets_present(workbook):
     assert workbook.sheetnames == [
-        "Session Info", "Confusion Matrix", "Percentages", "Pressed Keys"
+        "Session Info", "Confusion Matrix", "Percentages", "Pressed Keys", "Confusion (% of row)"
     ]
 
 

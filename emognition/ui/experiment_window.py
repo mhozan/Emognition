@@ -696,6 +696,7 @@ class TestExperiment:
             rt_onset=rt.from_onset,
             rt_offset=rt.from_offset,
             n_replays=n_replays,
+            background=self.background.label,
         )
 
     def _show_feedback(self, correct: Emotion, chosen: "Emotion | None") -> None:

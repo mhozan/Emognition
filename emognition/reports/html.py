@@ -31,11 +31,13 @@ from ..core.scoring import DEFAULT_RT_KIND, GroupStats
 from .charts import reaction_time_svg
 from .common import (
     EMPTY,
+    EXTRA_STAT_COLUMNS,
     RT_FLAG_LABEL,
     STAT_COLUMNS,
     SessionInfo,
     fmt_pct,
     fmt_pct_unit,
+    fmt_proportion,
     fmt_replays,
     fmt_seconds,
     fmt_seconds_unit,
@@ -75,6 +77,7 @@ def _cards_section(summary: SessionSummary) -> str:
         ("Mean reaction", fmt_seconds_unit(t.mean_rt)),
         ("Trials answered", f"{t.n_answered} / {t.n_presented}"),
         ("Correct", str(t.n_correct)),
+        ("Cohen's κ", fmt_proportion(summary.kappa)),
     ]
     blocks = "".join(
         f"<div class='card'><div class='card-val'>{escape(v)}</div>"
@@ -93,7 +96,9 @@ def _confusion_section(summary: SessionSummary) -> str:
         for j, count in enumerate(row):
             rgb = _heat_css(count, sum(row), on_diagonal=(i == j))
             style = f" style='background:{rgb};color:#1a1a1a'" if rgb else ""
-            cells.append(f"<td{style}>{count}</td>")
+            pct = summary.confusion_pct[i][j]
+            share = f"<br><small>{fmt_pct(pct)}%</small>" if count and pct is not None else ""
+            cells.append(f"<td{style}>{count}{share}</td>")
         body_rows.append(f"<tr><th class='rowhead'>{escape(lab)}</th>{''.join(cells)}</tr>")
     return f"""
     <section>
@@ -106,21 +111,25 @@ def _confusion_section(summary: SessionSummary) -> str:
     </section>"""
 
 
-def _stat_cells(stats: GroupStats) -> str:
+def _stat_cells(stats: GroupStats, hu: float | None = None) -> str:
     return (
         f"<td>{fmt_pct(stats.pct_correct)}</td>"
         f"<td>{fmt_seconds(stats.mean_rt)}</td>"
         f"<td>{fmt_replays(stats.mean_replays)}</td>"
+        f"<td>{fmt_seconds(stats.median_rt)}</td>"
+        f"<td>{fmt_seconds(stats.sd_rt)}</td>"
+        f"<td>{fmt_seconds(stats.iqr_rt)}</td>"
+        f"<td>{fmt_proportion(hu)}</td>"
     )
 
 
 def _stats_section(summary: SessionSummary) -> str:
-    head = "".join(f"<th>{escape(c)}</th>" for c in STAT_COLUMNS)
+    head = "".join(f"<th>{escape(c)}</th>" for c in (*STAT_COLUMNS, *EXTRA_STAT_COLUMNS))
     rows = []
     for emo in summary.emotion_order:
         rows.append(
             f"<tr><th class='rowhead'>{escape(emo.label)}</th>"
-            f"{_stat_cells(summary.per_emotion[emo])}</tr>"
+            f"{_stat_cells(summary.per_emotion[emo], summary.unbiased_hit_rate.get(emo))}</tr>"
         )
     for sex in SEXES_IN_ORDER:
         rows.append(

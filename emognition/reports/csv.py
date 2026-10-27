@@ -44,6 +44,7 @@ _TRIAL_FIELDS = [
     "replays",
     "sex",
     "rt_flag",
+    "background",      # picture on screen during the trial ("" = plain)
 ]
 
 _SUMMARY_FIELDS = [
@@ -55,6 +56,11 @@ _SUMMARY_FIELDS = [
     "mean_rt_s",
     "mean_replays",
     "n_rt",            # RTs averaged into mean_rt_s (flagged trials excluded)
+    "median_rt_s",
+    "sd_rt_s",         # sample SD (n - 1)
+    "iqr_rt_s",
+    "hu",              # Wagner's unbiased hit rate (emotion rows only)
+    "kappa",           # Cohen's kappa (Total row only)
 ]
 
 
@@ -92,11 +98,12 @@ def write_trials_csv(
                 "replays": r.n_replays,
                 "sex": r.sex.name.lower(),
                 "rt_flag": RT_FLAG_LABEL[flag] or "ok",
+                "background": neutralize(r.background),
             })
     return path
 
 
-def _summary_row(group: str, stats: GroupStats) -> dict:
+def _summary_row(group: str, stats: GroupStats, *, hu=None, kappa=None) -> dict:
     return {
         "group": group,
         "n_presented": stats.n_presented,
@@ -106,6 +113,11 @@ def _summary_row(group: str, stats: GroupStats) -> dict:
         "mean_rt_s": _round(stats.mean_rt, 4),
         "mean_replays": _round(stats.mean_replays, 3),
         "n_rt": stats.n_rt,
+        "median_rt_s": _round(stats.median_rt, 4),
+        "sd_rt_s": _round(stats.sd_rt, 4),
+        "iqr_rt_s": _round(stats.iqr_rt, 4),
+        "hu": _round(hu, 4),
+        "kappa": _round(kappa, 4),
     }
 
 
@@ -115,10 +127,11 @@ def write_summary_csv(summary: SessionSummary, path: str) -> str:
         writer = csv.DictWriter(fh, fieldnames=_SUMMARY_FIELDS)
         writer.writeheader()
         for emo in summary.emotion_order:
-            writer.writerow(_summary_row(emo.label, summary.per_emotion[emo]))
+            writer.writerow(_summary_row(emo.label, summary.per_emotion[emo],
+                                         hu=summary.unbiased_hit_rate.get(emo)))
         for sex in SEXES_IN_ORDER:
             writer.writerow(_summary_row(sex.label, summary.per_sex[sex]))
-        writer.writerow(_summary_row("Total", summary.total))
+        writer.writerow(_summary_row("Total", summary.total, kappa=summary.kappa))
     return path
 
 
@@ -143,3 +156,26 @@ def write_csv_report(
     trials_path = write_trials_csv(responses, path, flags=flags, rt_kind=rt_kind)
     summary_path = write_summary_csv(summary, _with_suffix(path, "_summary"))
     return [trials_path, summary_path]
+
+
+def write_confusion_csv(
+    responses: Sequence[Response],
+    path: str,
+    *,
+    summary: SessionSummary | None = None,
+    rt_kind: str = DEFAULT_RT_KIND,
+) -> str:
+    """Write the confusion matrix in long ("tidy") form; return the path.
+
+    One row per (true emotion, chosen emotion) cell with its count and its share
+    of the row -- ready for R/pandas without reshaping a 5x5 grid.
+    """
+    summary, _flags = prepare_summary(responses, summary=summary, rt_kind=rt_kind)
+    with open(path, "w", newline="", encoding="utf-8") as fh:
+        writer = csv.writer(fh)
+        writer.writerow(["true_emotion", "chosen_emotion", "count", "pct_of_row"])
+        for i, true in enumerate(summary.emotion_order):
+            for j, chosen in enumerate(summary.emotion_order):
+                writer.writerow([true.label, chosen.label, summary.confusion[i][j],
+                                 _round(summary.confusion_pct[i][j], 2)])
+    return path

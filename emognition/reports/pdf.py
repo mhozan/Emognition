@@ -35,6 +35,7 @@ from .common import (
     SessionInfo,
     fmt_pct,
     fmt_pct_unit,
+    fmt_proportion,
     fmt_replays,
     fmt_seconds,
     fmt_seconds_unit,
@@ -49,12 +50,14 @@ def _ascii(value: object) -> str:
     return s.encode("latin-1", "replace").decode("latin-1")
 
 
-def _stat_row(label: str, stats: GroupStats) -> list[str]:
+def _stat_row(label: str, stats: GroupStats, hu: float | None = None) -> list[str]:
     return [
         label,
         _ascii(fmt_pct(stats.pct_correct)),
         _ascii(fmt_seconds(stats.mean_rt)),
         _ascii(fmt_replays(stats.mean_replays)),
+        _ascii(fmt_seconds(stats.median_rt)),
+        _ascii(fmt_proportion(hu)),
     ]
 
 
@@ -77,6 +80,7 @@ def _session_info(pdf: FPDF, info: SessionInfo, summary: SessionSummary) -> None
                    f"{summary.total.n_correct} correct"),
         ("Overall accuracy", fmt_pct_unit(summary.total.pct_correct)),
         ("Mean reaction", f"{fmt_seconds_unit(summary.total.mean_rt)} (from {summary.rt_kind})"),
+        ("Cohen's kappa", fmt_proportion(summary.kappa)),
     ]
     pdf.set_font("Helvetica", "", 10)
     for key, val in rows:
@@ -99,13 +103,13 @@ def _section_title(pdf: FPDF, text: str) -> None:
 
 def _stats_table(pdf: FPDF, summary: SessionSummary) -> None:
     pdf.set_font("Helvetica", "", 9)
-    rows = [["", *STAT_COLUMNS]]
+    rows = [["", *STAT_COLUMNS, "Median RT (s)", "Hu"]]
     for emo in summary.emotion_order:
-        rows.append(_stat_row(emo.label, summary.per_emotion[emo]))
+        rows.append(_stat_row(emo.label, summary.per_emotion[emo], summary.unbiased_hit_rate.get(emo)))
     for sex in SEXES_IN_ORDER:
         rows.append(_stat_row(sex.label, summary.per_sex[sex]))
     rows.append(_stat_row("Total", summary.total))
-    with pdf.table(text_align=("LEFT", "RIGHT", "RIGHT", "RIGHT")) as table:
+    with pdf.table(text_align=("LEFT", *("RIGHT",) * (len(rows[0]) - 1))) as table:
         for r in rows:
             table.row([_ascii(c) for c in r])
     pdf.ln(2)

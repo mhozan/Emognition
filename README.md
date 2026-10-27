@@ -293,7 +293,13 @@ CSV goes first, so the data is safe even if a later format fails:
 
 Every format shows the same session details, including the seed, the refresh
 rate and the share of dropped frames (reaction times are sampled once per
-frame, so these say how precise the RTs were).
+frame, so these say how precise the RTs were). Alongside % correct, the reports
+give **Wagner's unbiased hit rate (Hu)** per emotion and **Cohen's κ** overall.
+Raw % correct gives a participant who answers "Neutral" every time 100% on
+Neutral; Hu and κ don't. They also give the RT median, SD and IQR, and the
+confusion matrix as counts and as % of each row (Excel sheet *Confusion (% of
+row)*, and `_confusion.csv` in long format for R/pandas). The per-trial CSV
+records which background picture was on screen.
 
 <details>
 <summary><strong>Reaction-time definition</strong></summary>

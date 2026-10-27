@@ -31,6 +31,10 @@ from ..core import (
 
 # Labels for the three statistic columns, shared across all report formats.
 STAT_COLUMNS: tuple[str, str, str] = ("% Correct", "Avg. Reaction (s)", "Avg. Replays")
+# Added after the legacy three (so the old column positions don't move).
+EXTRA_STAT_COLUMNS: tuple[str, str, str, str] = (
+    "Median RT (s)", "RT SD (s)", "RT IQR (s)", "Unbiased hit rate (Hu)",
+)
 
 # What to print where a statistic is undefined (e.g. an emotion never presented).
 # An em dash reads as "no data", distinct from a real 0.
@@ -82,6 +86,11 @@ def fmt_seconds(value: float | None) -> str:
 def fmt_replays(value: float | None) -> str:
     """Format a mean replay count to two decimals."""
     return EMPTY if value is None else str(round_half_up(value, 2))
+
+
+def fmt_proportion(value: float | None) -> str:
+    """A 0..1 measure (Hu, Cohen's kappa) to three decimals, or the empty marker."""
+    return EMPTY if value is None else str(round_half_up(value, 3))
 
 
 def fmt_pct_unit(value: float | None) -> str:

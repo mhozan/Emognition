@@ -102,12 +102,13 @@ def test_csv_excel_and_html_report_the_same_numbers(tmp_path):
     excel_rows = {ws.cell(row=r, column=1).value: (ws.cell(row=r, column=2).value, ws.cell(row=r, column=3).value)
                   for r in range(2, ws.max_row + 1)}
     html = render_html_report(responses)
+    stats_html = html.split("<h2>Statistics</h2>", 1)[1].split("</section>", 1)[0]
 
     for emo in EMOTIONS_IN_ORDER:
         ref = reference.per_emotion[emo]
         pct_x, rt_x = excel_rows[emo.label]
         m = re.search(rf"<th class='rowhead'>{emo.label}</th><td>([^<]*)</td><td>([^<]*)</td>"
-                      rf"<td>([^<]*)</td></tr>", html)
+                      rf"<td>([^<]*)</td>", stats_html)
         assert m, emo.label
         if ref.pct_correct is None:                          # never answered
             assert csv_rows[emo.label]["pct_correct"] == "" and pct_x is None and m.group(1) == EMPTY
@@ -148,3 +149,36 @@ def test_every_writer_copes_with_edge_case_sessions(tmp_path, kind):
         assert float(total["pct_correct"]) == 0.0
     if kind in ("empty", "all unanswered"):
         assert total["pct_correct"] == "" and total["mean_rt_s"] == ""
+
+
+# --- new measures in the reports (Phase 5) ------------------------------------------
+
+def test_reports_carry_hu_kappa_spread_and_background(tmp_path):
+    from emognition.reports import render_html_report, write_confusion_csv
+
+    responses = _mixed_session()
+    responses[0].background = "Starry night"
+    trials, summary_csv = write_csv_report(responses, str(tmp_path / "r.csv"))
+    rows = {row["group"]: row for row in csv.DictReader(open(summary_csv, newline="", encoding="utf-8"))}
+    assert rows["Happy"]["hu"] and rows["Total"]["kappa"] and rows["Total"]["median_rt_s"]
+    assert rows["Female"]["hu"] == "" and rows["Happy"]["kappa"] == ""
+    first = next(csv.DictReader(open(trials, newline="", encoding="utf-8")))
+    assert first["background"] == "Starry night"
+
+    long = list(csv.DictReader(open(write_confusion_csv(responses, str(tmp_path / "c.csv")),
+                                    newline="", encoding="utf-8")))
+    assert len(long) == 25 and {"true_emotion", "chosen_emotion", "count", "pct_of_row"} <= set(long[0])
+    happy = {r["chosen_emotion"]: r for r in long if r["true_emotion"] == "Happy"}
+    assert happy["Happy"]["count"] == "2" and float(happy["Happy"]["pct_of_row"]) == pytest.approx(66.67)
+
+    wb = load_workbook(write_excel_report(responses, str(tmp_path / "r.xlsx")))
+    info = {wb["Session Info"].cell(row=r, column=1).value: wb["Session Info"].cell(row=r, column=2).value
+            for r in range(1, wb["Session Info"].max_row + 1)}
+    assert info["Cohen's kappa"] is not None
+    assert wb["Percentages"].cell(row=1, column=8).value == "Unbiased hit rate (Hu)"
+    assert wb["Confusion (% of row)"].cell(row=2, column=2).value == pytest.approx(200 / 3)
+
+    from html import unescape
+
+    html = unescape(render_html_report(responses))     # labels are HTML-escaped
+    assert "Cohen's κ" in html and "Unbiased hit rate (Hu)" in html and "66.7%" in html

@@ -163,12 +163,19 @@ def _write_reports(responses, base: str, info, record: dict | None = None) -> tu
     attempted; each format is isolated, so a plotting or font problem in the
     PDF can't take the others (or the data) with it.
     """
-    from .reports import write_csv_report, write_excel_report, write_html_report, write_pdf_report
+    from .reports import (
+        write_confusion_csv,
+        write_csv_report,
+        write_excel_report,
+        write_html_report,
+        write_pdf_report,
+    )
     from .reports.sidecar import write_session_sidecar
 
     writers = (
         ("CSV", lambda: write_csv_report(responses, base + ".csv")),
         ("JSON", lambda: write_session_sidecar(base + ".json", record or {})),
+        ("confusion CSV", lambda: write_confusion_csv(responses, base + "_confusion.csv")),
         ("Excel", lambda: write_excel_report(responses, base + ".xlsx", info=info)),
         ("HTML", lambda: write_html_report(responses, base + ".html", info=info)),
         ("PDF", lambda: write_pdf_report(responses, base + ".pdf", info=info)),

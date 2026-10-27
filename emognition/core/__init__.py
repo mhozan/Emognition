@@ -28,8 +28,11 @@ from .timing import ReactionTime, reaction_time
 from .scoring import (
     GroupStats,
     SessionSummary,
+    cohen_kappa,
     confusion_matrix,
+    row_percentages,
     summarize,
+    unbiased_hit_rates,
 )
 from .quality import RtFlag, flag_responses, scrub_flagged_rts
 from .modes import SessionMode
@@ -58,6 +61,9 @@ __all__ = [
     "SessionSummary",
     "confusion_matrix",
     "summarize",
+    "unbiased_hit_rates",
+    "cohen_kappa",
+    "row_percentages",
     # reaction-time quality control
     "RtFlag",
     "flag_responses",

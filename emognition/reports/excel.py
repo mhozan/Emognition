@@ -36,6 +36,7 @@ from openpyxl.worksheet.worksheet import Worksheet
 from ..core import EMOTIONS_IN_ORDER, SEXES_IN_ORDER, Response, RtFlag, SessionSummary
 from ..core.scoring import DEFAULT_RT_KIND, GroupStats
 from .common import (
+    EXTRA_STAT_COLUMNS,
     RT_FLAG_LABEL,
     STAT_COLUMNS,
     SessionInfo,
@@ -101,8 +102,10 @@ def _write_session_info(
         ("Overall correct", summary.total.n_correct),
         ("Overall accuracy (%)", summary.total.pct_correct),
         ("Mean reaction (s)", summary.total.mean_rt),
+        ("Cohen's kappa", summary.kappa),
     ]
-    number_formats = {"Overall accuracy (%)": "0.0", "Mean reaction (s)": "0.000"}
+    number_formats = {"Overall accuracy (%)": "0.0", "Mean reaction (s)": "0.000",
+                      "Cohen's kappa": "0.000"}
     for r, (label, value) in enumerate(rows, start=3):
         ws.cell(row=r, column=1, value=label).font = _BOLD
         cell = _text_cell(ws, r, 2, value)
@@ -137,8 +140,9 @@ def _write_confusion(ws: Worksheet, summary: SessionSummary) -> None:
     ws.freeze_panes = "B2"  # keep labels visible when scrolling
 
 
-def _stat_row(ws: Worksheet, row: int, label: str, stats: GroupStats) -> None:
-    """Write one (% correct, mean RT, mean replays) row of the Percentages sheet."""
+def _stat_row(ws: Worksheet, row: int, label: str, stats: GroupStats, hu: float | None = None) -> None:
+    """One Percentages row: the legacy (% correct, mean RT, mean replays) in B-D,
+    then median / SD / IQR of the RT and the unbiased hit rate in E-H."""
     ws.cell(row=row, column=1, value=label).font = _BOLD
     pct = ws.cell(row=row, column=2, value=stats.pct_correct)
     rt = ws.cell(row=row, column=3, value=stats.mean_rt)
@@ -146,16 +150,19 @@ def _stat_row(ws: Worksheet, row: int, label: str, stats: GroupStats) -> None:
     pct.number_format = "0.0"
     rt.number_format = "0.000"
     rep.number_format = "0.00"
+    for col, value in ((5, stats.median_rt), (6, stats.sd_rt), (7, stats.iqr_rt)):
+        ws.cell(row=row, column=col, value=value).number_format = "0.000"
+    ws.cell(row=row, column=8, value=hu).number_format = "0.000"
 
 
 def _write_percentages(ws: Worksheet, summary: SessionSummary, n_excluded: int = 0) -> None:
     """Per-emotion, per-sex, and total stats (legacy 'Percentages' sheet)."""
-    for j, title in enumerate(STAT_COLUMNS, start=2):
+    for j, title in enumerate((*STAT_COLUMNS, *EXTRA_STAT_COLUMNS), start=2):
         _header(ws.cell(row=1, column=j, value=title))
 
     row = 2
     for emo in summary.emotion_order:
-        _stat_row(ws, row, emo.label, summary.per_emotion[emo])
+        _stat_row(ws, row, emo.label, summary.per_emotion[emo], summary.unbiased_hit_rate.get(emo))
         row += 1
     for sex in SEXES_IN_ORDER:
         _stat_row(ws, row, sex.label, summary.per_sex[sex]); row += 1
@@ -167,9 +174,29 @@ def _write_percentages(ws: Worksheet, summary: SessionSummary, n_excluded: int =
         ws.cell(row=row + 2, column=1, value=note).font = Font(italic=True)
 
     ws.column_dimensions["A"].width = 12
-    for col in ("B", "C", "D"):
+    for col in ("B", "C", "D", "E", "F", "G"):
         ws.column_dimensions[col].width = 17
+    ws.column_dimensions["H"].width = 22
     ws.freeze_panes = "A2"
+
+
+def _write_confusion_pct(ws: Worksheet, summary: SessionSummary) -> None:
+    """The confusion matrix as % of each row (how often each answer was given)."""
+    labels = [e.label for e in summary.emotion_order]
+    _header(ws.cell(row=1, column=1, value="true \\ chosen (%)"))
+    for j, lab in enumerate(labels, start=2):
+        _header(ws.cell(row=1, column=j, value=lab))
+    for i, (lab, row) in enumerate(zip(labels, summary.confusion_pct), start=2):
+        _header(ws.cell(row=i, column=1, value=lab))
+        for j, pct in enumerate(row, start=2):
+            cell = ws.cell(row=i, column=j, value=pct)
+            cell.number_format = "0.0"
+            cell.alignment = _CENTER
+            fill = _cell_fill(summary.confusion[i - 2][j - 2], sum(summary.confusion[i - 2]), i == j)
+            if fill is not None:
+                cell.fill = fill
+    ws.column_dimensions["A"].width = 18
+    ws.freeze_panes = "B2"
 
 
 def _write_pressed_keys(
@@ -240,6 +267,7 @@ def write_excel_report(
     _write_confusion(wb.create_sheet("Confusion Matrix"), summary)
     _write_percentages(wb.create_sheet("Percentages"), summary, n_rt_excluded(flags))
     _write_pressed_keys(wb.create_sheet("Pressed Keys"), responses, flags)
+    _write_confusion_pct(wb.create_sheet("Confusion (% of row)"), summary)
 
     wb.save(path)
     return path

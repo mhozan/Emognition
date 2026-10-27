@@ -101,3 +101,49 @@ def test_rt_kind_onset_uses_onset_values():
 def test_invalid_rt_kind_raises():
     with pytest.raises(ValueError):
         summarize(RESPONSES, rt_kind="banana")
+
+
+# --- bias-corrected measures and RT spread (Phase 5) ------------------------------
+
+def _matrix(cells):
+    """5x5 confusion matrix from {(true_index, chosen_index): count}."""
+    m = [[0] * 5 for _ in range(5)]
+    for (i, j), n in cells.items():
+        m[i][j] = n
+    return m
+
+
+def test_unbiased_hit_rate_and_kappa_by_hand():
+    from emognition.core import cohen_kappa, row_percentages, unbiased_hit_rates
+
+    HAP, SAD = 0, 3
+    m = _matrix({(HAP, HAP): 3, (HAP, SAD): 1, (SAD, HAP): 2, (SAD, SAD): 2})
+    hu = unbiased_hit_rates(m)
+    assert hu[HAP] == pytest.approx(9 / (4 * 5))       # 3^2 / (played 4 * chosen 5)
+    assert hu[SAD] == pytest.approx(4 / (4 * 3))
+    assert hu[1] is None and hu[2] is None and hu[4] is None   # never played
+    assert cohen_kappa(m) == pytest.approx(0.25)       # po 0.625, pe 0.5
+    assert row_percentages(m)[HAP] == [75.0, 0.0, 0.0, 25.0, 0.0]
+    assert row_percentages(m)[1] == [None] * 5
+
+
+def test_answering_one_emotion_to_everything_is_exposed():
+    from emognition.core import cohen_kappa, unbiased_hit_rates
+
+    NEU = 2
+    m = _matrix({(i, NEU): 2 for i in range(5)})       # "Neutral" every time
+    assert unbiased_hit_rates(m)[NEU] == pytest.approx(0.2)   # % correct would say 100
+    assert cohen_kappa(m) == pytest.approx(0.0)
+    assert cohen_kappa(_matrix({})) is None
+    assert cohen_kappa(_matrix({(0, 0): 4})) is None   # chance agreement is already 1
+
+
+def test_rt_spread_median_sd_iqr():
+    stim = Stimulus(path="x_hap_f.wav", emotion=Emotion.HAPPY, sex=Sex.FEMALE)
+    rs = [Response(stim, Emotion.HAPPY, rt + 1.0, rt, 0) for rt in (0.5, 0.7, 0.9, 1.1)]
+    t = summarize(rs).total
+    assert t.median_rt == pytest.approx(0.8)
+    assert t.sd_rt == pytest.approx(0.2582, abs=1e-4)  # sample SD (n - 1)
+    assert t.iqr_rt == pytest.approx(0.3)              # inclusive quartiles 0.65 .. 0.95
+    one = summarize(rs[:1]).total
+    assert one.median_rt == pytest.approx(0.5) and one.sd_rt is None and one.iqr_rt is None

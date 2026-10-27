@@ -17,7 +17,11 @@ products feed the Excel/PDF reports directly:
   the canonical Happy / Scared / Neutral / Sad / Angry order; and
 * **summary statistics** -- percent-correct, mean reaction time, and mean replays
   broken down per emotion, per speaker sex, and overall (the legacy
-  "Percentages" sheet).
+  "Percentages" sheet), plus the RT median / SD / IQR; and
+* **bias-corrected agreement** -- Wagner's unbiased hit rate per emotion and
+  Cohen's kappa overall. Raw percent-correct rewards a participant who answers
+  "Neutral" to everything with 100 % for Neutral; these measures don't, which
+  is why emotion-recognition papers report them.
 
 Percent-correct for an emotion is ``100 * diagonal / row-sum`` -- correct
 responses divided by the number of *answered* trials of that emotion, exactly as
@@ -30,8 +34,9 @@ as errors.
 
 from __future__ import annotations
 
+import statistics
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from .emotions import Emotion, EMOTIONS_IN_ORDER, SEXES_IN_ORDER, Sex
 from .responses import Response
@@ -72,6 +77,9 @@ class GroupStats:
     mean_rt: float | None      # mean reaction time (seconds), see rt_kind
     mean_replays: float | None  # mean number of replays per answered trial
     n_rt: int = 0              # RTs behind mean_rt (answered minus RT-excluded trials)
+    median_rt: float | None = None
+    sd_rt: float | None = None   # sample SD (n - 1); None with fewer than 2 RTs
+    iqr_rt: float | None = None  # Q3 - Q1 ("inclusive" quartiles); None with < 2 RTs
 
 
 @dataclass(frozen=True, slots=True)
@@ -84,6 +92,10 @@ class SessionSummary:
     per_sex: dict[Sex, GroupStats]
     total: GroupStats
     rt_kind: str
+    # Wagner's unbiased hit rate per emotion (None: never presented or chosen).
+    unbiased_hit_rate: dict[Emotion, float | None] = field(default_factory=dict)
+    kappa: float | None = None                       # Cohen's kappa, all trials
+    confusion_pct: list[list[float | None]] = field(default_factory=list)  # % of each row
 
 
 def _rt_value(response: Response, rt_kind: str) -> float | None:
@@ -108,6 +120,8 @@ def _group_stats(responses: Sequence[Response], rt_kind: str) -> GroupStats:
         rt for r in answered if (rt := _rt_value(r, rt_kind)) is not None
     ]
     pct = 100.0 * n_correct / len(answered) if answered else None
+    two = len(rts) >= 2
+    q1, _q2, q3 = statistics.quantiles(rts, n=4, method="inclusive") if two else (None, None, None)
     return GroupStats(
         n_presented=len(responses),
         n_answered=len(answered),
@@ -116,7 +130,60 @@ def _group_stats(responses: Sequence[Response], rt_kind: str) -> GroupStats:
         mean_rt=_mean(rts),
         mean_replays=_mean([r.n_replays for r in answered]),
         n_rt=len(rts),
+        median_rt=statistics.median(rts) if rts else None,
+        sd_rt=statistics.stdev(rts) if two else None,
+        iqr_rt=(q3 - q1) if two else None,
     )
+
+
+def row_percentages(matrix: Sequence[Sequence[int]]) -> list[list[float | None]]:
+    """Each confusion cell as % of its row (how often each answer was given per emotion).
+
+    Rows with no presentations are all ``None``.
+    """
+    out: list[list[float | None]] = []
+    for row in matrix:
+        total = sum(row)
+        out.append([100.0 * n / total if total else None for n in row])
+    return out
+
+
+def unbiased_hit_rates(matrix: Sequence[Sequence[int]]) -> list[float | None]:
+    """Wagner's (1993) unbiased hit rate for each emotion, from the confusion matrix.
+
+    ``Hu_i = A_ii^2 / (row_i * col_i)`` -- the hit rate (correct / times played)
+    times the precision (correct / times chosen). Answering one emotion to
+    everything gets that emotion a hit rate of 1 but an Hu of only its share of
+    the trials. ``None`` when the emotion was never played or never chosen.
+
+    Wagner, H. L. (1993). On measuring performance in category judgment studies
+    of nonverbal behavior. *Journal of Nonverbal Behavior*, 17(1), 3-28.
+    """
+    cols = [sum(col) for col in zip(*matrix)] if matrix else []
+    rates: list[float | None] = []
+    for i, row in enumerate(matrix):
+        hits, played, chosen = row[i], sum(row), cols[i]
+        rates.append(hits * hits / (played * chosen) if played and chosen else None)
+    return rates
+
+
+def cohen_kappa(matrix: Sequence[Sequence[int]]) -> float | None:
+    """Cohen's kappa: agreement with the true emotion beyond what chance predicts.
+
+    ``kappa = (p_o - p_e) / (1 - p_e)`` with ``p_o`` the observed accuracy and
+    ``p_e`` the agreement expected from the row and column totals. 1 is perfect,
+    0 is chance level. ``None`` if there are no answered trials, or if chance
+    agreement is already 1 (a single emotion played and chosen throughout).
+    """
+    n = sum(sum(row) for row in matrix)
+    if n == 0:
+        return None
+    observed = sum(matrix[i][i] for i in range(len(matrix))) / n
+    cols = [sum(col) for col in zip(*matrix)]
+    expected = sum(sum(row) * cols[i] for i, row in enumerate(matrix)) / (n * n)
+    if expected >= 1.0:
+        return None
+    return (observed - expected) / (1.0 - expected)
 
 
 def summarize(
@@ -143,11 +210,15 @@ def summarize(
         s: _group_stats([r for r in responses if r.sex is s], rt_kind)
         for s in SEXES_IN_ORDER
     }
+    confusion = confusion_matrix(responses)
     return SessionSummary(
-        confusion=confusion_matrix(responses),
+        confusion=confusion,
         emotion_order=EMOTIONS_IN_ORDER,
         per_emotion=per_emotion,
         per_sex=per_sex,
         total=_group_stats(responses, rt_kind),
         rt_kind=rt_kind,
+        unbiased_hit_rate=dict(zip(EMOTIONS_IN_ORDER, unbiased_hit_rates(confusion))),
+        kappa=cohen_kappa(confusion),
+        confusion_pct=row_percentages(confusion),
     )

@@ -32,7 +32,7 @@ from concurrent.futures import Future, ThreadPoolExecutor
 
 from psychopy import visual
 
-from ..core.backgrounds import CALM_GRADIENT, BackgroundPlan
+from ..core.backgrounds import CALM_GRADIENT, BackgroundPlan, friendly_name
 from ..imaging import DEFAULT_MAX_LUMA, render_background
 from .geometry import fit_within
 
@@ -98,6 +98,11 @@ class BackgroundLayer:
     def current(self) -> str | None:
         """The background source on screen now (None for a plain window)."""
         return self._current
+
+    @property
+    def label(self) -> str:
+        """Friendly name of the picture on screen ("" for a plain window), for the data."""
+        return friendly_name(self._current) if self._current else ""
 
     # -- session lifecycle ---------------------------------------------------
 
