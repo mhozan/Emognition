@@ -25,7 +25,9 @@ import argparse
 import json as _json
 import os
 import sys
+import tempfile
 from datetime import datetime
+from typing import NoReturn
 
 from . import __version__
 
@@ -71,25 +73,111 @@ def _default_save_dir() -> str:
     return os.path.join(base, "save_location")
 
 
-def _psychopy_quit() -> None:
-    # psychopy.core.quit() imports psychopy.iohub which needs pythoncom on
-    # Windows; fall back to sys.exit so the process always exits cleanly.
+def _psychopy_quit(code: int = 0) -> NoReturn:
+    """Shut PsychoPy down cleanly, then exit with *code*.
+
+    ``psychopy.core.quit()`` tidies up (audio streams, windows) and then calls
+    ``sys.exit(0)`` itself, which would hide a failure from the setup window; we
+    catch that exit and use our own code. It also imports psychopy.iohub, which
+    needs pythoncom on Windows -- if that import fails we simply exit.
+    """
     try:
         from psychopy import core
         core.quit()
+    except SystemExit:
+        pass
     except (ImportError, ModuleNotFoundError):
-        sys.exit(0)
+        pass
+    sys.exit(code)
+
+
+def _use_utf8_output() -> None:
+    """Make stdout/stderr UTF-8 so printing never fails on a participant's name.
+
+    A piped stdout on Windows defaults to the ANSI code page with strict errors:
+    printing "José" or a Mandarin caption could raise *after* the session. The
+    setup window decodes the pipe as UTF-8.
+    """
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        except (AttributeError, ValueError, OSError):
+            pass   # not a reconfigurable text stream (e.g. None in a windowed build)
+
+
+def _emit(data: dict) -> None:
+    """Write one JSON status line to stdout for the experimenter monitor.
+
+    Never raises: if the setup window has gone away (a broken pipe), the session
+    -- and above all its reports -- must carry on regardless.
+    """
+    try:
+        print(_json.dumps(data), flush=True)
+    except (OSError, ValueError):
+        pass
+
+
+def _prepare_save_dir(path: str) -> str:
+    """Create the report folder and prove it is writable -- before, not after, the session."""
+    os.makedirs(path, exist_ok=True)
+    with tempfile.NamedTemporaryFile(dir=path, prefix=".emognition-write-test-"):
+        pass
+    return path
+
+
+def _report_base(save_dir: str, participant: str, started: datetime) -> str:
+    """'<save_dir>/<participant>_<YYYYmmdd_HHMMSS>' (participant reduced to safe characters)."""
+    safe = "".join(c for c in participant if c.isalnum() or c in "-_") or "session"
+    return os.path.join(save_dir, f"{safe}_{started.strftime('%Y%m%d_%H%M%S')}")
+
+
+def _write_reports(responses, base: str, info) -> tuple[str | None, list[str]]:
+    """Write every report format; return (HTML path or None, formats that failed).
+
+    The raw per-trial CSV goes first, so the data is on disk before anything
+    fancier is attempted, and each format is isolated: a plotting or font
+    problem in the PDF can't take the others (or the data) with it.
+    """
+    from .reports import write_csv_report, write_excel_report, write_html_report, write_pdf_report
+
+    writers = (
+        ("CSV", lambda: write_csv_report(responses, base + ".csv")),
+        ("Excel", lambda: write_excel_report(responses, base + ".xlsx", info=info)),
+        ("HTML", lambda: write_html_report(responses, base + ".html", info=info)),
+        ("PDF", lambda: write_pdf_report(responses, base + ".pdf", info=info)),
+    )
+    html, failed = None, []
+    for name, write in writers:
+        try:
+            written = write()
+        except Exception as exc:  # noqa: BLE001 -- one failing format must not lose the rest
+            failed.append(name)
+            print(f"Could not write the {name} report: {exc!r}", file=sys.stderr)
+            continue
+        if name == "HTML":
+            html = written
+    return html, failed
 
 
 def _run_session(args: argparse.Namespace) -> int:
-    """Run a Test block from CLI settings, then write and open the reports.
+    """Run a session from CLI settings, then write and open the reports.
 
     Settings come from the command line (not a GUI dialog) on purpose: opening a
     PyQt6 dialog and then a pyglet/OpenGL PsychoPy window in the *same* process
-    crashes on Linux (the two toolkits fight over the GL context). The graphical
-    setup screen (Phase 2, #12) will launch the experiment in a separate process
-    to avoid exactly this. For now, defaults + flags keep things robust.
+    crashes on Linux (the two toolkits fight over the GL context). The setup
+    window therefore launches this in a separate process.
+
+    Exit codes: 0 done; 1 nothing to run or nowhere to save; 2 a bad setting;
+    3 the session ran but a report format could not be written (see stderr --
+    the CSV is written first, so the raw data is normally still safe).
     """
+    _use_utf8_output()
+    try:
+        emotions = _parse_emotions(args.emotions)
+    except ValueError as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+
     from .runtime import bootstrap
 
     bootstrap()
@@ -107,7 +195,6 @@ def _run_session(args: argparse.Namespace) -> int:
     if not stimuli:
         print(f"No audio stimuli found in {audio_folder}.", file=sys.stderr)
         return 1
-    emotions = _parse_emotions(args.emotions)
     trials = build_trial_list(stimuli, emotions=emotions, shuffle=not args.no_shuffle)
     if not trials:
         chosen = ", ".join(e.label for e in emotions) if emotions else "the selected emotions"
@@ -121,6 +208,12 @@ def _run_session(args: argparse.Namespace) -> int:
     except ValueError as exc:
         print(str(exc), file=sys.stderr)
         return 2
+    save_dir = args.save_dir or _default_save_dir()
+    try:
+        _prepare_save_dir(save_dir)
+    except OSError as exc:
+        print(f"Cannot save reports in {save_dir}: {exc}", file=sys.stderr)
+        return 1
 
     launched = datetime.now()
     win = visual.Window(
@@ -142,10 +235,6 @@ def _run_session(args: argparse.Namespace) -> int:
         mode=mode,
         background=plan,
     )
-
-    def _emit(data: dict) -> None:
-        """Write a JSON status line to stdout for the experimenter monitor."""
-        print(_json.dumps(data), flush=True)
 
     def _on_trial(response, index: int, total: int) -> None:
         if response is not None:
@@ -193,26 +282,15 @@ def _run_session(args: argparse.Namespace) -> int:
             print(f"Passive training session complete ({len(trials)} clips presented).")
         else:
             print("No responses recorded.")
-        _psychopy_quit()
-        return 0
+        _psychopy_quit(0)
 
     # Report writers (openpyxl, fpdf2, matplotlib: ~0.5 s of imports) load only
     # now, after the window has closed, instead of delaying the window opening.
     from .io import open_path
-    from .reports import (
-        SessionInfo,
-        write_csv_report,
-        write_excel_report,
-        write_html_report,
-        write_pdf_report,
-    )
+    from .reports import SessionInfo
 
     started = begun_at or launched      # the session starts when Begin is pressed
-    save_dir = args.save_dir or _default_save_dir()
-    os.makedirs(save_dir, exist_ok=True)
-    stamp = started.strftime("%Y%m%d_%H%M%S")
-    safe = "".join(c for c in args.participant if c.isalnum() or c in "-_") or "session"
-    base = os.path.join(save_dir, f"{safe}_{stamp}")
+    base = _report_base(save_dir, args.participant, started)
     info = SessionInfo(
         participant=args.participant,
         experimenter=args.experimenter,
@@ -222,15 +300,15 @@ def _run_session(args: argparse.Namespace) -> int:
         started_at=started, finished_at=finished_at,
         app_version=__version__,
     )
-    html = write_html_report(responses, base + ".html", info=info)
-    write_excel_report(responses, base + ".xlsx", info=info)
-    write_pdf_report(responses, base + ".pdf", info=info)
-    write_csv_report(responses, base + ".csv")
-    print(f"Reports saved to: {base}.(html|pdf|xlsx|csv)")
-    open_path(html)
-
-    _psychopy_quit()
-    return 0
+    html, failed = _write_reports(responses, base, info)
+    if failed:
+        print(f"Reports saved to: {base}.* -- FAILED: {', '.join(failed)} (see messages above)",
+              file=sys.stderr)
+    else:
+        print(f"Reports saved to: {base}.(csv|xlsx|html|pdf)")
+    if html:
+        open_path(html)
+    _psychopy_quit(3 if failed else 0)
 
 
 def _caption_value(choice: str) -> str:
@@ -239,14 +317,33 @@ def _caption_value(choice: str) -> str:
 
 
 def _parse_emotions(spec: str | None):
-    """Parse a comma-separated emotion-tag list into Emotions, or None for all."""
-    if not spec:
-        return None
-    from .core import TAG_TO_EMOTION
+    """Parse a comma-separated emotion list into Emotions, or None for all five.
 
-    tags = [t.strip().lower() for t in spec.split(",") if t.strip()]
-    emotions = [TAG_TO_EMOTION[t] for t in tags if t in TAG_TO_EMOTION]
-    return emotions or None
+    Accepts the 3-letter tags (``hap,sad``) and the full names (``happy,sad``),
+    in any letter case. Raises ValueError naming anything it doesn't recognise:
+    silently dropping an entry would quietly change which emotions are tested.
+    """
+    if not spec or not spec.strip():
+        return None
+    from .core import EMOTIONS_IN_ORDER, TAG_TO_EMOTION
+
+    aliases = dict(TAG_TO_EMOTION)
+    aliases.update({e.label.lower(): e for e in EMOTIONS_IN_ORDER})
+    chosen, unknown = [], []
+    for item in (t.strip().lower() for t in spec.split(",")):
+        if not item:
+            continue
+        emotion = aliases.get(item)
+        if emotion is None:
+            unknown.append(item)
+        elif emotion not in chosen:
+            chosen.append(emotion)
+    if unknown:
+        raise ValueError(
+            f"Unknown emotion(s): {', '.join(unknown)}. Use hap, sca, neu, sad, ang "
+            "(or happy, scared, neutral, sad, angry)."
+        )
+    return chosen or None
 
 
 def _open_config_ui() -> int:
@@ -288,8 +385,7 @@ def _play_tone(rms: float, seconds: float) -> int:
     snd.play()
     core.wait(seconds + 0.2)
     snd.stop()
-    _psychopy_quit()
-    return 0
+    _psychopy_quit(0)
 
 
 def build_parser() -> argparse.ArgumentParser:
