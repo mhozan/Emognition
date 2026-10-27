@@ -124,6 +124,7 @@ class MonitorWindow(QWidget):
         self.setFixedWidth(360)
         self._n_correct = 0
         self._n_responded = 0
+        self._n_done = 0            # trials finished before a resume
         self._build()
 
     # -- layout -----------------------------------------------------------
@@ -210,26 +211,27 @@ class MonitorWindow(QWidget):
             # The participant window shows the Begin screen (pb_beginner.m's button).
             self._lbl_trial.setText("Waiting for Begin")
         elif kind == "begun":
-            self._lbl_trial.setText(f"0 / {evt.get('total', 0)}")
+            self._lbl_trial.setText(f"{self._n_done} / {evt.get('total', 0)}")
         elif kind == "trial":
             self._on_trial(evt)
         elif kind == "done":
             self._on_done(evt)
 
     def _on_start(self, evt: dict) -> None:
-        self._n_correct = 0
-        self._n_responded = 0
+        # A resumed session reports what was already done, so the counters carry on.
+        self._n_done = int(evt.get("done") or 0)
+        self._n_correct = int(evt.get("n_correct") or 0)
+        self._n_responded = int(evt.get("n_answered") or 0)
         self._lbl_participant.setText(evt.get("participant", "—"))
         mode_labels = {"test": "Test", "passive": "Passive", "active": "Active"}
         self._lbl_mode.setText(mode_labels.get(evt.get("mode", "test"), "Test"))
-        total = evt.get("total", 0)
-        self._lbl_trial.setText(f"0 / {total}")
-        self._bar_progress.setValue(0)
+        total = int(evt.get("total") or 0)
+        self._lbl_trial.setText(f"{self._n_done} / {total}")
+        self._bar_progress.setValue(round(100 * self._n_done / total) if total > 0 else 0)
         self._lbl_played.setText("—")
         self._lbl_responded.setText("—")
         self._lbl_rt.setText("—")
-        self._lbl_accuracy.setText("Accuracy:  —")
-        self._bar_accuracy.setValue(0)
+        self._show_accuracy()
 
     def _on_trial(self, evt: dict) -> None:
         index = int(evt.get("index") or 0)
@@ -266,11 +268,19 @@ class MonitorWindow(QWidget):
             else:
                 self._lbl_rt.setText("—")
 
-            pct = round(100 * self._n_correct / self._n_responded)
-            self._lbl_accuracy.setText(
-                f"Accuracy:  {self._n_correct} / {self._n_responded}   ({pct} %)"
-            )
-            self._bar_accuracy.setValue(pct)
+            self._show_accuracy()
+
+    def _show_accuracy(self) -> None:
+        """Running accuracy over the answered trials ("—" before the first one)."""
+        if self._n_responded <= 0:
+            self._lbl_accuracy.setText("Accuracy:  —")
+            self._bar_accuracy.setValue(0)
+            return
+        pct = round(100 * self._n_correct / self._n_responded)
+        self._lbl_accuracy.setText(
+            f"Accuracy:  {self._n_correct} / {self._n_responded}   ({pct} %)"
+        )
+        self._bar_accuracy.setValue(pct)
 
     def _set_badge(self, name: str, text: str) -> None:
         """Show *text* styled as *name* (re-polished so the stylesheet follows).

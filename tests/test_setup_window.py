@@ -174,6 +174,62 @@ def test_reusing_an_id_with_reports_asks_first(window, tmp_path, monkeypatch):
     assert not window._confirm_new_participant(s) and asked
 
 
+def test_another_participants_reports_are_not_a_reused_id(window, tmp_path):
+    out = tmp_path / "reports"
+    out.mkdir()
+    (out / "P09_retest_20261027_101500.csv").write_text("trial\n")   # "P09_..." but not P09
+    assert window._confirm_new_participant(ExperimentSettings(participant="P09", save_dir=str(out)))
+
+
+def _unfinished_log(folder, participant="P10"):
+    from datetime import datetime
+
+    from emognition.core import Emotion, Response, Sex, Stimulus
+    from emognition.io.autosave import PARTIAL_SUFFIX, SessionLog
+
+    path = str(folder / f"{participant}_20261027_101500{PARTIAL_SUFFIX}")
+    log = SessionLog(path, {"participant": participant, "started_at": datetime(2026, 10, 27, 10, 15),
+                            "trial_order": ["/c/a_hap_f.wav", "/c/b_sad_m.wav"]})
+    log.append(Response(Stimulus("/c/a_hap_f.wav", Emotion.HAPPY, Sex.FEMALE), Emotion.HAPPY, 1.2, 0.3))
+    log.close()
+    return path
+
+
+@pytest.mark.parametrize("clicked, expect", [("Resume", "log"), ("Start new", ""), (None, None)])
+def test_an_unfinished_session_is_offered_for_resume(window, tmp_path, clicked, expect):
+    out = tmp_path / "reports"
+    out.mkdir()
+    s = ExperimentSettings(participant="P10", save_dir=str(out))
+    asked = []
+    window._choose = lambda *a: asked.append(a) or clicked
+    assert window._ask_resume(s) == "" and not asked               # nothing unfinished: no question
+    log = _unfinished_log(out)
+    assert window._ask_resume(s) == (log if expect == "log" else expect)
+    assert "1 of 2 trials" in asked[0][1]
+
+
+def test_resuming_launches_with_the_log_and_only_the_display(window, tmp_path, monkeypatch):
+    out = tmp_path / "reports"
+    out.mkdir()
+    log = _unfinished_log(out)
+    launched = []
+
+    class _NoStart(QtCore.QProcess):              # record the command instead of running it
+        def start(self, *args):
+            launched.append(list(self.arguments()))
+
+    monkeypatch.setattr(config_window, "QProcess", _NoStart)
+    monkeypatch.setattr(window, "_should_open_monitor", lambda: False)
+    window._choose = lambda *a: "Resume"
+    window.participant.setText("P10")
+    window.save_dir.setText(str(out))
+    window._on_proceed()
+    window._log_fh.close()
+    (args,) = launched
+    assert f"--resume={log}" in args
+    assert not any(a.startswith(("--participant", "--mode", "--emotions")) for a in args)
+
+
 # --- calibration window: heavy work off the GUI thread (Phase 3) ----------------
 
 def _wait(app, predicate, timeout_ms=20000):
@@ -251,6 +307,18 @@ def test_monitor_tracks_trials_badges_and_final_accuracy(app):
     assert m._lbl_responded.objectName() == "neutral_badge" and m._lbl_responded.text() == "(passive)"
     m.handle_event({"status": "done", "n_correct": 1, "n_trials": 3, "n_answered": 2, "aborted": True})
     assert "1 / 2" in m._lbl_accuracy.text() and "aborted" in m._lbl_trial.text()
+
+
+def test_monitor_carries_counts_across_a_resume(app):
+    m = MonitorWindow()
+    m.handle_event({"status": "start", "total": 20, "mode": "test", "participant": "P1",
+                    "done": 7, "n_correct": 5, "n_answered": 7})
+    assert m._lbl_trial.text() == "7 / 20" and "5 / 7" in m._lbl_accuracy.text()
+    m.handle_event({"status": "begun", "total": 20, "done": 7})
+    assert m._lbl_trial.text() == "7 / 20"
+    m.handle_event({"status": "trial", "index": 8, "total": 20, "emotion": "happy", "sex": "female",
+                    "responded": "happy", "correct": True, "rt_ms": 500})
+    assert m._lbl_trial.text() == "8 / 20" and "6 / 8" in m._lbl_accuracy.text()
 
 
 def test_monitor_shrugs_off_unknown_or_odd_events(app):

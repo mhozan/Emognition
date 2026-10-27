@@ -193,6 +193,52 @@ def _write_reports(responses, base: str, info, record: dict | None = None) -> tu
     return html, failed
 
 
+# Settings a resumed session takes from its log, except these (the display can
+# differ, and the log itself is what's being resumed).
+_RESUME_KEEP = frozenset({"resume", "screen", "fullscreen", "no_begin"})
+
+
+def _apply_saved_settings(args: argparse.Namespace, saved: dict) -> None:
+    """Resume with the interrupted session's own settings (participant, mode, ...)."""
+    for key, value in saved.items():
+        if key not in _RESUME_KEEP and hasattr(args, key):
+            setattr(args, key, value)
+
+
+def _stimuli_from_paths(paths: list[str], audio_folder: str):
+    """The interrupted session's trial order, re-parsed from its saved file paths.
+
+    A clip that's no longer at its saved path (the app was moved or updated in
+    between) is looked up by name in *audio_folder*: the name is what says which
+    emotion and voice it is.
+
+    Raises:
+        ValueError: naming a clip that can't be found either way.
+    """
+    from .naming import parse_any
+
+    stimuli = []
+    for path in paths:
+        if not os.path.exists(path):
+            path = os.path.join(audio_folder, os.path.basename(path))
+        stim = parse_any(path) if os.path.exists(path) else None
+        if stim is None:
+            raise ValueError(f"Cannot resume: stimulus missing or renamed: {path}")
+        stimuli.append(stim)
+    return stimuli
+
+
+def _open_session_log(path: str, header: dict | None):
+    """Start (or, with header=None, continue) the autosave log; None if impossible."""
+    from .io.autosave import SessionLog
+
+    try:
+        return SessionLog(path, header)
+    except OSError as exc:
+        print(f"Autosave unavailable ({exc}); trials are only saved at the end.", file=sys.stderr)
+        return None
+
+
 def _run_session(args: argparse.Namespace) -> int:
     """Run a session from CLI settings, then write and open the reports.
 
@@ -201,11 +247,25 @@ def _run_session(args: argparse.Namespace) -> int:
     crashes on Linux (the two toolkits fight over the GL context). The setup
     window therefore launches this in a separate process.
 
+    Every finished trial is autosaved to ``<base>.partial.jsonl``; with
+    ``--resume <that file>`` an interrupted session carries on with the same
+    trial order and settings, and its reports cover all of its trials.
+
     Exit codes: 0 done; 1 nothing to run or nowhere to save; 2 a bad setting;
     3 the session ran but a report format could not be written (see stderr --
     the CSV is written first, so the raw data is normally still safe).
     """
     _use_utf8_output()
+    resume_header, done = None, []
+    if args.resume:
+        from .io.autosave import read_session_log
+
+        try:
+            resume_header, done = read_session_log(args.resume)
+        except (OSError, ValueError) as exc:
+            print(f"Cannot resume {args.resume}: {exc}", file=sys.stderr)
+            return 2
+        _apply_saved_settings(args, resume_header.get("settings", {}))
     try:
         emotions = _parse_emotions(args.emotions)
     except ValueError as exc:
@@ -220,25 +280,35 @@ def _run_session(args: argparse.Namespace) -> int:
 
     from .core import SessionMode, build_trial_list
     from .core.backgrounds import resolve_background
+    from .io.autosave import PARTIAL_SUFFIX
     from .naming import scan_stimuli
     from .ui.assets import Caption, audio_dir, background_folders, default_save_dir
     from .ui.experiment_window import ExperimentAborted, TestExperiment
 
     audio_folder = args.audio_dir or audio_dir()
-    stimuli = scan_stimuli(audio_folder)   # accepts canonical (BIDS) AND legacy names
-    if not stimuli:
-        print(f"No audio stimuli found in {audio_folder}.", file=sys.stderr)
-        return 1
-    # One recorded seed drives every random choice, so a session's order can be
-    # reproduced exactly (--seed) -- the original never seeded its RNG at all,
-    # so the first session after each launch always got the same order.
-    seed = args.seed if args.seed is not None else secrets.randbelow(2**31 - 1)
-    trials = build_trial_list(stimuli, emotions=emotions, shuffle=not args.no_shuffle,
-                              rng=random.Random(seed))
+    if resume_header:
+        seed = int(resume_header["random_seed"])
+        try:
+            trials = _stimuli_from_paths(resume_header["trial_order"], audio_folder)
+        except ValueError as exc:
+            print(str(exc), file=sys.stderr)
+            return 1
+    else:
+        stimuli = scan_stimuli(audio_folder)   # accepts canonical (BIDS) AND legacy names
+        if not stimuli:
+            print(f"No audio stimuli found in {audio_folder}.", file=sys.stderr)
+            return 1
+        # One recorded seed drives every random choice, so a session's order can be
+        # reproduced exactly (--seed) -- the original never seeded its RNG at all,
+        # so the first session after each launch always got the same order.
+        seed = args.seed if args.seed is not None else secrets.randbelow(2**31 - 1)
+        trials = build_trial_list(stimuli, emotions=emotions, shuffle=not args.no_shuffle,
+                                  rng=random.Random(seed))
     if not trials:
         chosen = ", ".join(e.label for e in emotions) if emotions else "the selected emotions"
         print(f"No clips in {audio_folder} match {chosen}; nothing to present.", file=sys.stderr)
         return 1
+    remaining = trials[len(done):]
     try:
         plan = resolve_background(
             args.background, picture_folders=background_folders(),
@@ -255,29 +325,25 @@ def _run_session(args: argparse.Namespace) -> int:
         print(f"Cannot save reports in {save_dir}: {exc}", file=sys.stderr)
         return 1
 
-    launched = datetime.now()
-    win = visual.Window(
-        size=(1280, 800), color=(-0.3, -0.3, -0.3), units="height",
-        fullscr=args.fullscreen, screen=args.screen,
-    )
-    try:
-        win.winHandle.set_caption("Emognition")  # title bar (windowed only)
-    except Exception:
-        pass
     mode = SessionMode(args.mode)
-    experiment = TestExperiment(
-        win,
-        caption=Caption(_caption_value(args.caption)),
-        emotions=emotions,
-        allow_replays=args.allow_replays,
-        amp_visualizer=args.amp_visualizer,
-        volume=args.volume,
-        mode=mode,
-        background=plan,
-    )
+    launched = datetime.now()
+    log = None
+    aborted = False
+    begun_at: datetime | None = None
+    new_responses = []
+    timing: dict = {}
 
     def _on_trial(response, index: int, total: int) -> None:
+        nonlocal log
         if response is not None:
+            if log is not None:
+                try:
+                    log.append(response)        # on disk before the next clip starts
+                except OSError as exc:          # e.g. disk full: warn once, carry on
+                    print(f"Autosave stopped ({exc}); the remaining trials are saved "
+                          "with the reports at the end.", file=sys.stderr)
+                    log.close()
+                    log = None
             _emit({
                 "status": "trial",
                 "index": index,
@@ -293,26 +359,67 @@ def _run_session(args: argparse.Namespace) -> int:
             _emit({"status": "trial", "index": index, "total": total,
                    "responded": None, "correct": None, "rt_ms": None})
 
-    _emit({"status": "start", "total": len(trials), "mode": args.mode,
-           "participant": args.participant})
-    aborted = False
-    begun_at: datetime | None = None
-    responses = []
-    try:
-        experiment.prepare(trials)          # audio stream, pictures, GPU warm-up
-        if args.no_begin:
-            begun_at = datetime.now()
-        else:
-            _emit({"status": "waiting"})
-            begun_at = experiment.wait_for_begin()
-        _emit({"status": "begun", "total": len(trials)})
-        responses = experiment.run(trials, on_trial=_on_trial)
-    except ExperimentAborted as abort:
-        responses, aborted = getattr(abort, "partial", []), True
-    finally:
-        timing = _safe_timing(experiment)
-        experiment.close()
-        win.close()
+    if remaining:
+        win = visual.Window(
+            size=(1280, 800), color=(-0.3, -0.3, -0.3), units="height",
+            fullscr=args.fullscreen, screen=args.screen,
+        )
+        try:
+            win.winHandle.set_caption("Emognition")  # title bar (windowed only)
+        except Exception:
+            pass
+        experiment = TestExperiment(
+            win,
+            caption=Caption(_caption_value(args.caption)),
+            emotions=emotions,
+            allow_replays=args.allow_replays,
+            amp_visualizer=args.amp_visualizer,
+            volume=args.volume,
+            mode=mode,
+            background=plan,
+            first_trial=len(done) + 1,
+        )
+        # A resumed session tells the monitor what's already done, so its trial
+        # counter and running accuracy carry on instead of restarting at zero.
+        _emit({"status": "start", "total": len(trials), "mode": args.mode,
+               "participant": args.participant, "done": len(done),
+               "n_correct": sum(1 for r in done if r.is_correct),
+               "n_answered": sum(1 for r in done if r.answered)})
+        try:
+            experiment.prepare(remaining)        # audio stream, pictures, GPU warm-up
+            if args.no_begin:
+                begun_at = datetime.now()
+            else:
+                _emit({"status": "waiting"})
+                begun_at = experiment.wait_for_begin()
+            _emit({"status": "begun", "total": len(trials), "done": len(done)})
+            if mode != SessionMode.PASSIVE_TRAINING:   # passive training records nothing
+                if resume_header:
+                    log = _open_session_log(args.resume, None)
+                else:
+                    base = _report_base(save_dir, args.participant, begun_at)
+                    log = _open_session_log(base + PARTIAL_SUFFIX, {
+                        "app_version": __version__,
+                        "participant": args.participant,
+                        "experimenter": args.experimenter,
+                        "started_at": begun_at,
+                        "base": base,
+                        "random_seed": seed,
+                        "settings": dict(vars(args)),
+                        "audio_folder": audio_folder,
+                        # Absolute, so a resume started from another folder finds them.
+                        "trial_order": [os.path.abspath(t.path) for t in trials],
+                    })
+            new_responses = experiment.run(remaining, on_trial=_on_trial)
+        except ExperimentAborted as abort:
+            new_responses, aborted = getattr(abort, "partial", []), True
+        finally:
+            timing = _safe_timing(experiment)
+            experiment.close()
+            win.close()
+            if log is not None:
+                log.close()
+    responses = [*done, *new_responses]
     finished_at = datetime.now()
     n_correct = sum(1 for r in responses if r.is_correct)
     n_answered = sum(1 for r in responses if r.answered)
@@ -320,6 +427,8 @@ def _run_session(args: argparse.Namespace) -> int:
            "n_answered": n_answered, "aborted": aborted})
 
     if not responses:
+        if log is not None:
+            log.discard()                       # nothing to resume
         if mode == SessionMode.PASSIVE_TRAINING:
             print(f"Passive training session complete ({len(trials)} clips presented).")
         else:
@@ -332,12 +441,17 @@ def _run_session(args: argparse.Namespace) -> int:
     from .reports import SessionInfo
     from .reports.sidecar import environment_info
 
-    started = begun_at or launched      # the session starts when Begin is pressed
-    base = _report_base(save_dir, args.participant, started)
+    if resume_header:
+        started = datetime.fromisoformat(str(resume_header["started_at"]))
+        base = resume_header["base"]            # the reports keep the original name
+    else:
+        started = begun_at or launched          # the session starts when Begin is pressed
+        base = _report_base(save_dir, args.participant, started)
+    label = mode.label + (" (resumed)" if resume_header else "") + (" (aborted)" if aborted else "")
     info = SessionInfo(
         participant=args.participant,
         experimenter=args.experimenter,
-        mode=mode.label + (" (aborted)" if aborted else ""),
+        mode=label,
         audio_folder=audio_folder,
         background=plan.describe(),
         started_at=started, finished_at=finished_at,
@@ -350,6 +464,8 @@ def _run_session(args: argparse.Namespace) -> int:
         "experimenter": args.experimenter,
         "mode": args.mode,
         "aborted": aborted,
+        "resumed_from": args.resume,
+        "n_trials_before_resume": len(done),
         "launched_at": launched,
         "started_at": started,
         "finished_at": finished_at,
@@ -366,11 +482,19 @@ def _run_session(args: argparse.Namespace) -> int:
         "environment": environment_info(),
     }
     html, failed = _write_reports(responses, base, info, record)
+    log_path = (args.resume if resume_header else base + PARTIAL_SUFFIX)
+    if os.path.exists(log_path):
+        if "CSV" in failed or (aborted and len(responses) < len(trials)):
+            # Keep it: the data isn't safely in a CSV yet, or the session can be
+            # finished later with --resume (the reports are then rewritten).
+            print(f"Interrupted-session log kept: {log_path}", file=sys.stderr)
+        else:
+            os.remove(log_path)
     if failed:
         print(f"Reports saved to: {base}.* -- FAILED: {', '.join(failed)} (see messages above)",
               file=sys.stderr)
     else:
-        print(f"Reports saved to: {base}.(csv|xlsx|html|pdf)")
+        print(f"Reports saved to: {base}.(csv|json|xlsx|html|pdf)")
     if html:
         open_path(html)
     _psychopy_quit(3 if failed else 0)
@@ -525,6 +649,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--seed", type=int, default=None,
                         help="random seed for the trial (and picture) order; recorded in "
                              "every report so a session can be reproduced (default: random)")
+    parser.add_argument("--resume", default=None, metavar="LOG",
+                        help="continue an interrupted session from its .partial.jsonl "
+                             "autosave log (same settings and trial order)")
     parser.add_argument("--no-begin", action="store_true",
                         help="start straight away, without the Begin screen (automation)")
     return parser

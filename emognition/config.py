@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from dataclasses import asdict, dataclass, field
 
 from .core.backgrounds import DEFAULT_EVERY_N, SPEC_DEFAULT
@@ -40,6 +41,30 @@ def participant_file_stem(participant: str) -> str:
     an ID that already has reports).
     """
     return "".join(c for c in participant if c.isalnum() or c in "-_") or "session"
+
+
+def session_file_pattern(participant: str, suffix: str) -> re.Pattern[str]:
+    """Matches this participant's session files: ``<stem>_<YYYYmmdd>_<HHMMSS><suffix>``.
+
+    An exact match, not a prefix test: "P1_" is also how "P1_retest"'s files
+    begin, and those belong to someone else.
+    """
+    return re.compile(re.escape(participant_file_stem(participant)) + r"_\d{8}_\d{6}"
+                      + re.escape(suffix))
+
+
+def resume_argv(log_path: str, screen: int = 0, fullscreen: bool = False) -> list[str]:
+    """CLI arguments to resume an interrupted session.
+
+    Only the display is chosen afresh; everything else (participant, mode, the
+    trial order, ...) comes from the log, so it can't drift between the halves.
+    """
+    argv = [f"--resume={log_path}"]
+    if fullscreen:
+        argv.append("--fullscreen")
+    if screen:
+        argv += ["--screen", str(screen)]
+    return argv
 
 
 @dataclass(slots=True)

@@ -60,6 +60,7 @@ only assigned when they actually change.
 
 from __future__ import annotations
 
+import sys
 from dataclasses import dataclass
 from datetime import datetime
 
@@ -314,6 +315,7 @@ class TestExperiment:
         mode: SessionMode = SessionMode.TEST,
         feedback_duration: float = 1.5,
         background: BackgroundPlan | None = None,
+        first_trial: int = 1,
     ) -> None:
         self.win = win
         self.mouse = event.Mouse(win=win, visible=True)
@@ -322,6 +324,9 @@ class TestExperiment:
         self.volume = max(0.0, min(1.0, volume))
         self.mode = mode
         self.feedback_duration = max(0.3, feedback_duration)
+        # > 1 when resuming an interrupted session: trial numbers (progress bar,
+        # slideshow, monitor) continue from here instead of restarting at 1.
+        self.first_trial = max(1, int(first_trial))
         # One clock, reset at each clip's audio onset; every RT is measured
         # against it (keyboard via psychopy.event, mouse via this clock).
         self.clock = core.Clock()
@@ -434,7 +439,7 @@ class TestExperiment:
         if self.amp_visualizer:
             for path in dict.fromkeys(t.path for t in trials):
                 self._envelopes[path] = self._compute_envelope(path)
-        self.background.prepare(len(trials))
+        self.background.prepare(self.first_trial - 1 + len(trials), self.first_trial)
         self._warm_up()
         self._prepared = True
 
@@ -510,19 +515,22 @@ class TestExperiment:
         self.win.nDroppedFrames = 0
 
         responses: list[Response] = []
+        total = self.first_trial - 1 + len(trials)
         try:
-            for i, stim in enumerate(trials, start=1):
+            for i, stim in enumerate(trials, start=self.first_trial):
                 # Trial boundary: the only moment the background may change (one
                 # texture upload; the clip isn't scheduled yet, nothing is timed).
                 self.background.select(i)
-                result = self._present_trial(stim, i, len(trials))
+                result = self._present_trial(stim, i, total)
                 if result is not None:       # passive training produces no response
                     responses.append(result)
                 if on_trial is not None:
                     try:
-                        on_trial(result, i, len(trials))
-                    except Exception:
-                        pass   # monitor errors must never crash the experiment
+                        on_trial(result, i, total)
+                    except Exception as exc:  # noqa: BLE001
+                        # Monitor (or autosave) errors must never crash the experiment,
+                        # but they shouldn't vanish either: stderr reaches the session log.
+                        print(f"Trial callback failed: {exc!r}", file=sys.stderr)
         except ExperimentAborted as abort:
             abort.partial = responses  # type: ignore[attr-defined]
             raise

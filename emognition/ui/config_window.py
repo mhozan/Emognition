@@ -46,7 +46,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from ..config import ALL_EMOTION_TAGS, ExperimentSettings, participant_file_stem
+from ..config import ALL_EMOTION_TAGS, ExperimentSettings, resume_argv, session_file_pattern
 from ..core.backgrounds import (
     CALM_GRADIENT,
     DEFAULT_EVERY_N,
@@ -59,6 +59,7 @@ from ..core.backgrounds import (
     list_pictures,
     resolve_background,
 )
+from ..io.autosave import find_interrupted, read_session_log
 from ..io.lines import LineBuffer
 from .assets import audio_dir as _bundled_audio_dir
 from .assets import (
@@ -467,7 +468,10 @@ class ConfigWindow(QWidget):
             self.status.setStyleSheet("color:#c62828;")
             self.status.setText(str(exc))
             return
-        if not self._confirm_new_participant(settings):
+        resume = self._ask_resume(settings)
+        if resume is None:
+            return
+        if not resume and not self._confirm_new_participant(settings):
             return
         self._settings_warning = ""
         try:
@@ -480,7 +484,10 @@ class ConfigWindow(QWidget):
         self._participant = settings.participant
         launch = replace(settings)
         launch.screen, launch.fullscreen = self._choose_display(settings.fullscreen)
-        cmd = self_command(launch.to_argv())
+        if resume:     # the log holds the settings; only the display is chosen now
+            cmd = self_command(resume_argv(resume, launch.screen, launch.fullscreen))
+        else:
+            cmd = self_command(launch.to_argv())
         self._proc = QProcess(self)
         self._out = LineBuffer()            # reassembles lines split across pipe reads
         self._launch_error: str | None = None
@@ -506,6 +513,45 @@ class ConfigWindow(QWidget):
         self.hide()
         self._proc.start()
 
+    def _ask_resume(self, settings: ExperimentSettings) -> str | None:
+        """Offer to finish this participant's interrupted session, if one is saved.
+
+        Returns the log to resume, "" for a new session, or None to cancel. The
+        unfinished log is never deleted from here: its trials are real data.
+        """
+        folder = settings.save_dir or _default_save_dir()
+        logs = find_interrupted(folder, settings.participant)
+        if not logs:
+            return ""
+        try:
+            header, done = read_session_log(logs[0])
+        except (OSError, ValueError):
+            return ""                         # unreadable: don't block a new session over it
+        total = len(header.get("trial_order") or [])
+        started = str(header.get("started_at", ""))[:16].replace("T", " ")
+        choice = self._choose(
+            "Unfinished session found",
+            f"'{settings.participant}' has an unfinished session from {started}: "
+            f"{len(done)} of {total} trials done.",
+            "Resume carries on where it stopped, with the same settings and trial "
+            "order. Either way, the trials already done stay saved.",
+            ["Resume", "Start new", "Cancel"],
+        )
+        return {"Resume": logs[0], "Start new": ""}.get(choice)
+
+    def _choose(self, title: str, text: str, detail: str, buttons: list[str]) -> str | None:
+        """Ask a question with named buttons; return the one clicked (the first is the default)."""
+        box = QMessageBox(self)
+        box.setIcon(QMessageBox.Icon.Question)
+        box.setWindowTitle(title)
+        box.setText(text)
+        box.setInformativeText(detail)
+        made = [box.addButton(label, QMessageBox.ButtonRole.ActionRole) for label in buttons]
+        box.setDefaultButton(made[0])
+        box.exec()
+        clicked = box.clickedButton()
+        return next((label for label, b in zip(buttons, made) if b is clicked), None)
+
     def _confirm_new_participant(self, settings: ExperimentSettings) -> bool:
         """Ask before reusing a participant ID that already has reports here.
 
@@ -513,9 +559,9 @@ class ConfigWindow(QWidget):
         next child under the last one's ID by mistake.
         """
         folder = settings.save_dir or _default_save_dir()
-        stem = participant_file_stem(settings.participant) + "_"
+        mine = session_file_pattern(settings.participant, ".csv")
         try:
-            existing = [n for n in os.listdir(folder) if n.startswith(stem) and n.endswith(".csv")]
+            existing = [n for n in os.listdir(folder) if mine.fullmatch(n)]
         except OSError:
             return True                       # folder doesn't exist yet: nothing to clash with
         if not existing:

@@ -44,6 +44,7 @@ and homage.
 | **Active training** | Participant responds, then correct (green) / wrong (orange) feedback before advancing |
 | **Begin screen** | The participant starts the session with a big **Begin** button (or Space/Enter); the report's start time and duration count from that press |
 | **Background pictures** | Calm, text-free backgrounds to keep children engaged: a soothing gradient by default, five bundled scenes, your own pictures via **Add picture…**, or a slideshow that changes every N trials |
+| **Crash-safe autosave** | Every trial is on disk the moment it ends; an interrupted session resumes at the next trial, in the same order |
 | **Calibration** | Per-corpus loudness normalization (LUFS), speech-endpoint trim, BIDS-style renaming |
 | **Experimenter monitor** | Live per-trial accuracy and RT on the experimenter's screen while the participant runs |
 | **Reports** | Self-contained HTML, PDF (confusion heatmap + RT charts), Excel (4 sheets), CSV |
@@ -301,6 +302,16 @@ confusion matrix as counts and as % of each row (Excel sheet *Confusion (% of
 row)*, and `_confusion.csv` in long format for R/pandas). The per-trial CSV
 records which background picture was on screen.
 
+**If a session is interrupted** (a crash, a power cut, the window closed), its
+trials are not lost: each one is written to
+`ParticipantID_YYYYMMDD_HHMMSS.partial.jsonl` the moment it ends. The next time
+you click Proceed with the same participant ID and save folder, the setup
+window offers to **Resume**. The session then carries on at the next trial with
+the same settings and trial order, and its reports cover all of it. From the
+command line, use `--resume <that file>`. The `.partial.jsonl` file is deleted
+once the reports are written. A session stopped with Esc writes reports for the
+trials so far and keeps the file, so it can still be finished later.
+
 <details>
 <summary><strong>Reaction-time definition</strong></summary>
 
@@ -324,7 +335,7 @@ and the confusion matrix always use every answered trial.
 ## Development
 
 ```bash
-pytest                           # 88 tests, no display/audio required
+pytest                           # the whole suite; no display or audio needed
 pytest -v tests/test_timing.py   # just the timing tests
 ```
 
@@ -414,6 +425,8 @@ Options:
   --background-every N        Slideshow: change picture every N trials (1–20)  [5]
   --[no-]background-shuffle   Slideshow: shuffle the picture order  [on]
   --seed N           Random seed for the trial and picture order  [random; recorded]
+  --resume LOG       Continue an interrupted session from its .partial.jsonl file
+                     (its settings and trial order; only the display is new)
   --no-begin         Start straight away, without the Begin screen (automation)
   --version          Print version and exit
 ```

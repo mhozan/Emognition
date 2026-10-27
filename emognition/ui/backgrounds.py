@@ -106,10 +106,20 @@ class BackgroundLayer:
 
     # -- session lifecycle ---------------------------------------------------
 
-    def prepare(self, n_trials: int) -> None:
-        """Note the session length and start decoding the second picture, if any."""
+    def prepare(self, n_trials: int, first_trial: int = 1) -> None:
+        """Note the session length and start decoding the next picture, if any.
+
+        *first_trial* > 1 when resuming an interrupted session: the picture for
+        that trial is shown straight away, so the slideshow carries on where it
+        stopped.
+        """
         self._n_trials = n_trials
-        self._prefetch_after(1)
+        if first_trial > 1:
+            source = self.plan.source_for_trial(first_trial)
+            if self._stim is not None and source is not None and source != self._current:
+                self._stim.image = self._render(source)
+                self._current = source
+        self._prefetch_after(first_trial)
 
     def select(self, trial: int) -> None:
         """Show the picture planned for 1-based *trial* (call between trials only)."""
