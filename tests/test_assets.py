@@ -15,9 +15,23 @@ touches the Emotion enum and the filesystem -- so this stays a fast, headless te
 import os
 
 import pytest
+from PIL import Image
 
 from emognition.core import Emotion
-from emognition.ui.assets import Caption, audio_dir, emoticon_path
+from emognition.core.backgrounds import list_pictures
+from emognition.imaging import DEFAULT_MAX_LUMA, mean_luminance
+from emognition.ui.assets import (
+    Caption,
+    audio_dir,
+    background_folders,
+    backgrounds_dir,
+    emoticon_path,
+    user_backgrounds_dir,
+)
+
+# Where the experiment draws text/buttons on a 1920x1080 frame (see
+# scripts/generate_backgrounds.py): these areas must stay dark enough for white text.
+_TEXT_REGIONS = [(1270, 90, 1650, 990), (470, 400, 1130, 580)]
 
 
 @pytest.mark.parametrize("caption, prefix", [
@@ -39,3 +53,26 @@ def test_every_emoticon_file_exists(emotion):
 def test_audio_dir_has_ten_reference_clips():
     wavs = [f for f in os.listdir(audio_dir()) if f.endswith(".wav")]
     assert len(wavs) == 10
+
+
+def test_bundled_backgrounds_are_present():
+    names = [os.path.basename(p) for p in list_pictures(backgrounds_dir())]
+    assert names == [
+        "01-starry-night.jpg", "02-under-the-sea.jpg", "03-rolling-hills.jpg",
+        "04-soft-bubbles.jpg", "05-classic-purple.jpg",
+    ]
+
+
+@pytest.mark.parametrize("path", list_pictures(backgrounds_dir()))
+def test_bundled_background_is_calm_enough_for_white_text(path):
+    with Image.open(path) as img:
+        assert img.size == (1920, 1080) and img.mode == "RGB"
+        assert mean_luminance(img) <= DEFAULT_MAX_LUMA
+        for box in _TEXT_REGIONS:
+            assert mean_luminance(img.crop(box)) <= DEFAULT_MAX_LUMA
+
+
+def test_background_folders_are_bundled_then_user():
+    bundled, user = background_folders()
+    assert bundled == backgrounds_dir()
+    assert user == user_backgrounds_dir() and user.endswith(os.path.join(".emognition", "backgrounds"))

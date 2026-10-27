@@ -76,8 +76,33 @@ def emoticon_path(emotion: Emotion, caption: Caption = Caption.NONE) -> str:
 
 
 def background_path() -> str:
-    """The main background image used by the experiment screens."""
+    """The image painted behind the experimenter setup window."""
     return _image("background_main.jpg")
+
+
+def backgrounds_dir() -> str:
+    """Folder of the bundled, child-friendly participant-window backgrounds.
+
+    The MATLAB app shipped a ``background_pics/`` folder beside the executable
+    for the same purpose; these pictures are generated reproducibly by
+    ``scripts/generate_backgrounds.py``.
+    """
+    return os.path.join(assets_root(), "backgrounds")
+
+
+def user_data_dir() -> str:
+    """The per-user Emognition folder (``~/.emognition``): settings, log, pictures."""
+    return os.path.join(os.path.expanduser("~"), ".emognition")
+
+
+def user_backgrounds_dir() -> str:
+    """Where "Add picture..." keeps the experimenter's own background pictures."""
+    return os.path.join(user_data_dir(), "backgrounds")
+
+
+def background_folders() -> tuple[str, str]:
+    """Folders searched for background pictures: the bundled ones, then the user's."""
+    return backgrounds_dir(), user_backgrounds_dir()
 
 
 def replay_button_path() -> str:
