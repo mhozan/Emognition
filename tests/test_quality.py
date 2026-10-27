@@ -73,3 +73,16 @@ def test_too_few_points_skips_outlier_detection():
     # With only one eligible RT, no spread can be estimated -> no outlier flag.
     flags = flag_responses([_resp(99.0)])
     assert flags == [RtFlag.OK]
+
+
+def test_outliers_are_still_caught_when_most_rts_tie():
+    # Frame-quantised RTs often tie; with >=50% identical values the MAD is 0,
+    # which used to switch slow-outlier detection off entirely.
+    from emognition.core.quality import MIN_ROBUST_SD_S
+
+    onsets = [2.3] * 9 + [31.8]                      # offsets: nine 0.5 s and one 30 s
+    flags = flag_responses([_resp(t) for t in onsets])
+    assert flags[-1] is RtFlag.SLOW_OUTLIER
+    assert all(f is RtFlag.OK for f in flags[:-1])
+    near = [2.3] * 9 + [2.3 + 2 * MIN_ROBUST_SD_S]   # within the floor's tolerance
+    assert flag_responses([_resp(t) for t in near])[-1] is RtFlag.OK

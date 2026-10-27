@@ -296,8 +296,11 @@ Reaction times are measured **two ways**, matching the original tool:
 - **From audio onset** — time from when the clip *starts*. Both are included in
   the Excel and HTML reports.
 
-The RT quality flags `anticipatory` (< 100 ms from onset) and `outlier`
-(> 3 × IQR) are marked in the reports and excluded from summary statistics.
+The RT quality flags `anticipatory` (< 150 ms from onset; since answers unlock
+only when the clip ends, this can only happen with clips shorter than that) and
+`slow outlier` (above median + 3 × 1.4826 × MAD, the robust SD, floored at 50 ms)
+are marked in the reports and excluded from the reaction-time means. Accuracy
+and the confusion matrix always use every answered trial.
 
 </details>
 

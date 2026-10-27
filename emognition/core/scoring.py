@@ -20,8 +20,12 @@ products feed the Excel/PDF reports directly:
   "Percentages" sheet).
 
 Percent-correct for an emotion is ``100 * diagonal / row-sum`` -- correct
-responses divided by the number of times that emotion was presented -- exactly as
-the original computed ``tabl(i,i)/sum(tabl(i,:))``.
+responses divided by the number of *answered* trials of that emotion, exactly as
+the original computed ``tabl(i,i)/sum(tabl(i,:))`` (its table only ever held
+answered trials). Today every recorded trial is answered, so this equals
+correct / presented; if a response timeout is ever added, unanswered trials
+are shown separately (``n_presented`` vs ``n_answered``) rather than counted
+as errors.
 """
 
 from __future__ import annotations

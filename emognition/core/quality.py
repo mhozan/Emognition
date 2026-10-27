@@ -13,12 +13,17 @@ in the literature, and we make them explicit and auditable here:
 
 * **Anticipatory** -- a response so fast (default < 150 ms after the clip's
   *onset*) that the participant can't actually have processed the stimulus; it's
-  a guess or an accidental press.
+  a guess or an accidental press. Note: the experiment window only accepts a
+  response once the clip has *finished*, so onset RT is always at least the clip
+  duration and this flag can only fire for clips shorter than 150 ms. It is kept
+  for completeness (and for designs that allow answering during playback).
 * **Slow outlier** -- a response far slower than the rest. We use a *robust*
   rule (median + k x 1.4826 x MAD, the median absolute deviation) rather than
   mean + k x SD, because a single extreme value inflates the ordinary mean/SD
   enough to hide itself ("masking"). The robust estimator isn't fooled by the
-  very point we're trying to catch.
+  very point we're trying to catch. When half or more of the RTs are identical
+  (frame-quantised timing makes ties common) the MAD is 0, which would switch
+  the test off entirely; a small floor on the spread keeps it working.
 
 We *flag* rather than silently drop, so nothing is hidden: the per-trial report
 shows every flag, and only the **reaction-time means** exclude flagged trials.
@@ -41,8 +46,12 @@ from .responses import Response
 
 # A response faster than this (from audio onset) is treated as anticipatory.
 ANTICIPATORY_THRESHOLD_S = 0.15
-# Slow-outlier cutoff, in standard deviations above the mean RT.
+# Slow-outlier cutoff, in robust SDs (1.4826 x MAD) above the median RT.
 DEFAULT_SD_CUTOFF = 3.0
+# Floor for that robust SD, in seconds: about three 60 Hz frames -- far below the
+# real spread of emotion-recognition RTs (hundreds of ms), so it only matters
+# when the MAD collapses to 0 on tied, frame-quantised values.
+MIN_ROBUST_SD_S = 0.05
 
 
 class RtFlag(Enum):
@@ -76,8 +85,8 @@ def flag_responses(
 
     Anticipatory uses the *onset* RT (a fixed perceptual-plausibility floor); the
     slow-outlier test uses ``rt_kind`` with a robust median/MAD estimator, over
-    trials not already excluded, and only when there are enough of them (and any
-    spread) to judge.
+    trials not already excluded, and only when there are at least two of them
+    (the robust SD is floored at :data:`MIN_ROBUST_SD_S`).
     """
     flags: list[RtFlag] = []
     for r in responses:
@@ -101,12 +110,11 @@ def flag_responses(
         # MAD = median absolute deviation; x1.4826 makes it a SD-equivalent for
         # normal data. Robust to the very outlier we're hunting (no masking).
         mad = statistics.median([abs(v - median) for v in values])
-        robust_sd = 1.4826 * mad
-        if robust_sd > 0:
-            cutoff = median + sd_cutoff * robust_sd
-            for i, v in eligible:
-                if v > cutoff:
-                    flags[i] = RtFlag.SLOW_OUTLIER
+        robust_sd = max(1.4826 * mad, MIN_ROBUST_SD_S)
+        cutoff = median + sd_cutoff * robust_sd
+        for i, v in eligible:
+            if v > cutoff:
+                flags[i] = RtFlag.SLOW_OUTLIER
     return flags
 
 
