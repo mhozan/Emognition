@@ -93,7 +93,6 @@ QProgressBar {
     border: none;
     border-radius: 4px;
     height: 8px;
-    text-visible: 0;
 }
 QProgressBar::chunk {
     background: #4c8caf;

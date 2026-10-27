@@ -25,7 +25,7 @@ import os
 import sys
 from dataclasses import replace
 
-from PyQt6.QtCore import QProcess
+from PyQt6.QtCore import QProcess, Qt
 from PyQt6.QtGui import QColor, QPainter, QPixmap
 from PyQt6.QtWidgets import (
     QApplication,
@@ -59,6 +59,7 @@ from ..core.backgrounds import (
     list_pictures,
     resolve_background,
 )
+from ..io.lines import LineBuffer
 from .assets import audio_dir as _bundled_audio_dir
 from .assets import background_folders, background_path, user_backgrounds_dir, user_data_dir
 
@@ -467,8 +468,10 @@ class ConfigWindow(QWidget):
         launch.screen, launch.fullscreen = self._choose_display(settings.fullscreen)
         cmd = _experiment_command(launch.to_argv())
         self._proc = QProcess(self)
+        self._out = LineBuffer()            # reassembles lines split across pipe reads
+        self._launch_error: str | None = None
         self._proc.finished.connect(self._on_experiment_finished)
-        self._proc.errorOccurred.connect(lambda _err: self._on_experiment_finished())
+        self._proc.errorOccurred.connect(self._on_process_error)
         self._proc.setProgram(cmd[0])
         self._proc.setArguments(cmd[1:])
         # Merge stdout + stderr so both land in our read slot and the log.
@@ -546,31 +549,43 @@ class ConfigWindow(QWidget):
     def _on_proc_output(self) -> None:
         """Read stdout lines from the experiment process.
 
-        Each line is written to the session log. Lines that look like JSON
-        status events are also forwarded to the monitor window.
+        Every complete line goes to the session log; lines that look like JSON
+        status events are also forwarded to the monitor window. Bytes are
+        buffered until a line is complete (a pipe read can end mid-line, or in
+        the middle of a multi-byte character).
         """
         if self._proc is None:
             return
-        data = self._proc.readAllStandardOutput()
-        text = bytes(data).decode("utf-8", errors="replace")
-        if self._log_fh is not None:
-            try:
-                self._log_fh.write(text)
-                self._log_fh.flush()
-            except Exception:
-                pass
-        for line in text.splitlines():
-            line = line.strip()
-            if line.startswith("{") and self._monitor is not None:
+        self._handle_lines(self._out.feed(bytes(self._proc.readAllStandardOutput())))
+
+    def _handle_lines(self, lines: list[str]) -> None:
+        for line in lines:
+            if self._log_fh is not None:
                 try:
-                    self._monitor.handle_event(json.loads(line))
+                    self._log_fh.write(line + "\n")
+                    self._log_fh.flush()
                 except Exception:
                     pass
+            stripped = line.strip()
+            if stripped.startswith("{") and self._monitor is not None:
+                try:
+                    self._monitor.handle_event(json.loads(stripped))
+                except Exception:
+                    pass
+
+    def _on_process_error(self, error) -> None:
+        """QProcess error: a launch that never started must not look like success."""
+        if error == QProcess.ProcessError.FailedToStart:
+            detail = self._proc.errorString() if self._proc is not None else ""
+            self._launch_error = f"Could not start the session: {detail}"
+            self._on_experiment_finished()
 
     def _open_calibration(self) -> None:
         from .calibration_window import CalibrationWindow
 
         self._calib = CalibrationWindow()
+        # Delete on close so 'destroyed' fires and the setup window comes back.
+        self._calib.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
         self._calib.destroyed.connect(self._on_calibration_closed)
         self.hide()
         self._calib.show()
@@ -589,12 +604,18 @@ class ConfigWindow(QWidget):
             self._monitor.close()
             self._monitor = None
         if self._proc is not None and self._proc.state() != QProcess.ProcessState.NotRunning:
-            self._proc.terminate()
+            self._proc.terminate()             # WM_CLOSE on Windows, SIGTERM elsewhere
+            if not self._proc.waitForFinished(3000):
+                self._proc.kill()
         super().closeEvent(event)
+        # The app quits only when this window closes (see run_config_ui).
+        QApplication.instance().quit()
 
     def _on_experiment_finished(self, *args) -> None:
         """Bring the setup window back once the experiment process has ended."""
-        # Flush and close the log file.
+        # Pass on a last line that had no newline, then close the log file.
+        if getattr(self, "_out", None) is not None:
+            self._handle_lines(self._out.flush())
         if self._log_fh is not None:
             try:
                 self._log_fh.close()
@@ -610,20 +631,44 @@ class ConfigWindow(QWidget):
         self.show()
         self.raise_()
         self.activateWindow()
-        code = self._proc.exitCode() if self._proc is not None else 0
+        self._show_outcome()
+
+    def _show_outcome(self) -> None:
+        """Tell the experimenter honestly how the session ended."""
+        log = getattr(self, "_log_path", "last_session.log")
         who = getattr(self, "_participant", "")
-        if code == 0:
-            self.status.setStyleSheet("color:#2e7d32;")
-            self.status.setText(f"Session for '{who}' finished.")
+        launch_error = getattr(self, "_launch_error", None)
+        proc = self._proc
+        crashed = proc is not None and proc.exitStatus() == QProcess.ExitStatus.CrashExit
+        code = proc.exitCode() if proc is not None else 0
+        if launch_error:
+            message, ok = launch_error, False
+        elif crashed:
+            message, ok = f"Session for '{who}' CRASHED. See {log}", False
+        elif code == 3:     # app.py: the session ran but a report format failed
+            message, ok = f"Session for '{who}' finished, but some reports failed. See {log}", False
+        elif code != 0:
+            message, ok = f"Session FAILED (exit {code}). See {log}", False
         else:
-            self.status.setStyleSheet("color:#c62828;")
-            self.status.setText(f"Session FAILED (exit {code}). See "
-                                f"{getattr(self, '_log_path', 'last_session.log')}")
+            message, ok = f"Session for '{who}' finished.", True
+        self.status.setStyleSheet("color:#2e7d32;" if ok else "color:#c62828;")
+        self.status.setText(message)
+
+
+def configure_app(app: QApplication) -> QApplication:
+    """Quit only when the setup window itself closes.
+
+    Qt's default -- quit when the last *visible* window closes -- fired when the
+    experimenter closed the monitor mid-session (the setup window is hidden
+    then), and quitting destroys the QProcess, which kills the experiment.
+    """
+    app.setQuitOnLastWindowClosed(False)
+    return app
 
 
 def run_config_ui(settings_path: str | None = None) -> int:
     """Open the setup screen; returns the Qt exit code when the window closes."""
-    app = QApplication.instance() or QApplication(sys.argv[:1])
+    app = configure_app(QApplication.instance() or QApplication(sys.argv[:1]))
     window = ConfigWindow(settings_path=settings_path)
     window.show()
     return app.exec()
