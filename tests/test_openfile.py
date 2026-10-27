@@ -30,8 +30,23 @@ def test_reveal_command_macos_selects_file():
     assert reveal_command("/tmp/r.html", "darwin") == ["open", "-R", "/tmp/r.html"]
 
 
-def test_reveal_command_windows_uses_select_flag():
-    cmd = reveal_command(r"C:\reports\r.html", "win32")
-    assert cmd[0] == "explorer"
-    assert cmd[1].startswith("/select,")
-    assert cmd[1].endswith("r.html")
+def test_reveal_command_windows_quotes_only_the_path():
+    # A string, so Python can't wrap the whole /select,... argument in quotes
+    # (explorer misreads that when the path contains a space).
+    cmd = reveal_command(r"C:\my reports\r.html", "win32")
+    assert isinstance(cmd, str)
+    assert cmd.startswith('explorer /select,"') and cmd.endswith('r.html"')
+
+
+def test_system_env_restores_the_original_library_path(monkeypatch):
+    from emognition.io.openfile import system_env
+
+    monkeypatch.delattr("sys.frozen", raising=False)
+    assert system_env() is None                       # running from source: inherit
+    monkeypatch.setattr("sys.frozen", True, raising=False)
+    monkeypatch.setenv("LD_LIBRARY_PATH", "/bundle/_internal")
+    monkeypatch.setenv("LD_LIBRARY_PATH_ORIG", "/usr/local/lib")
+    env = system_env()
+    assert env["LD_LIBRARY_PATH"] == "/usr/local/lib" and "LD_LIBRARY_PATH_ORIG" not in env
+    monkeypatch.delenv("LD_LIBRARY_PATH_ORIG")
+    assert "LD_LIBRARY_PATH" not in system_env()      # none originally: drop the bundle's

@@ -43,18 +43,44 @@ def open_command(path: str, platform: str) -> list[str] | None:
     return ["xdg-open", path]  # Linux and other freedesktop systems
 
 
-def reveal_command(path: str, platform: str) -> list[str]:
-    """Return the argv to reveal *path* in the OS file manager."""
+def reveal_command(path: str, platform: str) -> list[str] | str:
+    """Return the command to reveal *path* in the OS file manager.
+
+    On Windows this is a single command-line *string*: explorer wants
+    ``/select,"C:\\some folder\\file"``, and an argv list would make Python
+    quote the whole ``/select,...`` argument, which explorer misreads whenever
+    the path contains a space.
+    """
     if platform.startswith("win"):
         # explorer's /select takes the path glued to the flag with a comma.
-        return ["explorer", f"/select,{os.path.normpath(path)}"]
+        return f'explorer /select,"{os.path.normpath(path)}"'
     if platform == "darwin":
         return ["open", "-R", path]
     # Linux: no portable "select the file", so open the containing directory.
     return ["xdg-open", os.path.dirname(os.path.abspath(path)) or "."]
 
 
-def _spawn(cmd: list[str]) -> bool:
+def system_env() -> dict[str, str] | None:
+    """Environment for launching *system* programs (browser, file manager).
+
+    A frozen (PyInstaller) app on Linux runs with ``LD_LIBRARY_PATH`` pointing
+    at its own bundled libraries, keeping the original in
+    ``LD_LIBRARY_PATH_ORIG``. ``xdg-open`` and the browser it starts must not
+    load those, or they may fail to start, so we restore the original value.
+    Returns ``None`` (inherit everything) when not frozen.
+    """
+    if not getattr(sys, "frozen", False):
+        return None
+    env = dict(os.environ)
+    original = env.pop("LD_LIBRARY_PATH_ORIG", None)
+    if original is not None:
+        env["LD_LIBRARY_PATH"] = original
+    else:
+        env.pop("LD_LIBRARY_PATH", None)
+    return env
+
+
+def _spawn(cmd: list[str] | str) -> bool:
     """Launch *cmd* detached; swallow failures and return success as a bool."""
     try:
         subprocess.Popen(
@@ -62,6 +88,7 @@ def _spawn(cmd: list[str]) -> bool:
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             start_new_session=True,  # don't tie the viewer to our process
+            env=system_env(),
         )
         return True
     except (OSError, ValueError):
