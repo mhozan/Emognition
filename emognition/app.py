@@ -127,8 +127,10 @@ def _prepare_save_dir(path: str) -> str:
 
 def _report_base(save_dir: str, participant: str, started: datetime) -> str:
     """'<save_dir>/<participant>_<YYYYmmdd_HHMMSS>' (participant reduced to safe characters)."""
-    safe = "".join(c for c in participant if c.isalnum() or c in "-_") or "session"
-    return os.path.join(save_dir, f"{safe}_{started.strftime('%Y%m%d_%H%M%S')}")
+    from .config import participant_file_stem
+
+    stem = participant_file_stem(participant)
+    return os.path.join(save_dir, f"{stem}_{started.strftime('%Y%m%d_%H%M%S')}")
 
 
 def _write_reports(responses, base: str, info) -> tuple[str | None, list[str]]:

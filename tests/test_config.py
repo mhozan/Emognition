@@ -78,3 +78,18 @@ def test_old_settings_files_get_background_defaults(tmp_path):
     p.write_text('{"participant": "P05", "mode": "active"}', encoding="utf-8")
     s = ExperimentSettings.load(str(p))
     assert (s.background, s.background_every, s.background_shuffle) == ("default", 5, True)
+
+
+def test_save_is_atomic_and_leaves_no_temp_file(tmp_path):
+    path = str(tmp_path / "settings.json")
+    ExperimentSettings(participant="A").save(path)
+    ExperimentSettings(participant="B").save(path)
+    assert ExperimentSettings.load(path).participant == "B"
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["settings.json"]
+
+
+def test_participant_file_stem_is_path_safe():
+    from emognition.config import participant_file_stem
+
+    assert participant_file_stem("../P 01/é") == "P01é"
+    assert participant_file_stem("///") == "session"

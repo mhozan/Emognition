@@ -20,6 +20,7 @@ The ``mode`` field maps to :class:`~emognition.core.SessionMode` string values
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import asdict, dataclass, field
 
 from .core.backgrounds import DEFAULT_EVERY_N, SPEC_DEFAULT
@@ -29,6 +30,16 @@ ALL_EMOTION_TAGS: tuple[str, ...] = ("hap", "sca", "neu", "sad", "ang")
 
 # Default playback volume (the experimenter sets this; not a participant control).
 DEFAULT_VOLUME = 0.8
+
+
+def participant_file_stem(participant: str) -> str:
+    """The participant label as used in report file names: letters, digits, - and _.
+
+    Keeps report paths inside the save folder (no ``../`` or separators) and is
+    shared by the session runner (naming files) and the setup window (spotting
+    an ID that already has reports).
+    """
+    return "".join(c for c in participant if c.isalnum() or c in "-_") or "session"
 
 
 @dataclass(slots=True)
@@ -95,9 +106,15 @@ class ExperimentSettings:
         return argv
 
     def save(self, path: str) -> str:
-        """Persist to a JSON file; return the path."""
-        with open(path, "w", encoding="utf-8") as fh:
+        """Persist to a JSON file; return the path.
+
+        Written to a temporary file and then renamed over the old one, so a crash
+        mid-write can't leave a truncated settings file behind.
+        """
+        tmp = path + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as fh:
             json.dump(asdict(self), fh, indent=2)
+        os.replace(tmp, path)
         return path
 
     @classmethod

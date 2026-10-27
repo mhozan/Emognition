@@ -46,7 +46,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from ..config import ALL_EMOTION_TAGS, ExperimentSettings
+from ..config import ALL_EMOTION_TAGS, ExperimentSettings, participant_file_stem
 from ..core.backgrounds import (
     CALM_GRADIENT,
     DEFAULT_EVERY_N,
@@ -155,6 +155,13 @@ def _default_save_dir() -> str:
     return os.path.join(base, "save_location")
 
 
+def _unless_default(path: str, default: str) -> str:
+    """"" if *path* is the default location (so the default is resolved at run time)."""
+    if path and os.path.normcase(os.path.abspath(path)) == os.path.normcase(os.path.abspath(default)):
+        return ""
+    return path
+
+
 def _experiment_command(argv: list[str]) -> list[str]:
     """Command to launch a session in a separate process (frozen or from source)."""
     if getattr(sys, "frozen", False):          # PyInstaller bundle: the exe itself
@@ -178,17 +185,24 @@ class ConfigWindow(QWidget):
         self.setStyleSheet(_STYLE)
         self.resize(780, 700)
         self._build()
+        notice = ""
         if os.path.exists(self.settings_path):
             try:
                 self.apply_settings(ExperimentSettings.load(self.settings_path))
             except Exception:
-                pass  # corrupt/old settings -> just start from defaults
+                notice = "Saved settings could not be read; starting from defaults."
+        if self.audio_dir.text() and not os.path.isdir(self.audio_dir.text()):
+            notice = f"Saved audio folder not found ({self.audio_dir.text()}); using the bundled clips."
+            self.audio_dir.clear()
         # First-run defaults: pre-fill any folder that is still blank so the
         # experimenter can click Proceed without hunting for paths first.
         if not self.audio_dir.text():
             self.audio_dir.setText(_bundled_audio_dir())
         if not self.save_dir.text():
             self.save_dir.setText(_default_save_dir())
+        if notice:
+            self.status.setStyleSheet("color:#c62828;")
+            self.status.setText(notice)
 
     # -- layout ----------------------------------------------------------
 
@@ -405,8 +419,11 @@ class ConfigWindow(QWidget):
         return ExperimentSettings(
             participant=self.participant.text().strip() or "Participant01",
             experimenter=self.experimenter.text().strip() or "APPstaff",
-            audio_dir=self.audio_dir.text().strip(),
-            save_dir=self.save_dir.text().strip(),
+            # The bundled clips / default save folder are stored as "" ("use the
+            # default"), never as this install's absolute path: after an upgrade
+            # or a move, that path would point at a stale or missing copy.
+            audio_dir=_unless_default(self.audio_dir.text().strip(), _bundled_audio_dir()),
+            save_dir=_unless_default(self.save_dir.text().strip(), _default_save_dir()),
             caption=self.caption.currentText(),
             fullscreen=self.fullscreen.isChecked(),
             shuffle=self.shuffle.isChecked(),
@@ -456,10 +473,13 @@ class ConfigWindow(QWidget):
             self.status.setStyleSheet("color:#c62828;")
             self.status.setText(str(exc))
             return
+        if not self._confirm_new_participant(settings):
+            return
+        self._settings_warning = ""
         try:
             settings.save(self.settings_path)   # persist what the experimenter set
-        except Exception:
-            pass
+        except OSError as exc:
+            self._settings_warning = f" (Settings could not be saved: {exc})"
 
         # Decide where the experiment runs: on an extended display (not the
         # experimenter's), fullscreen; otherwise honour the Full-screen checkbox.
@@ -491,6 +511,29 @@ class ConfigWindow(QWidget):
 
         self.hide()
         self._proc.start()
+
+    def _confirm_new_participant(self, settings: ExperimentSettings) -> bool:
+        """Ask before reusing a participant ID that already has reports here.
+
+        The previous ID is remembered between sessions, so it's easy to run the
+        next child under the last one's ID by mistake.
+        """
+        folder = settings.save_dir or _default_save_dir()
+        stem = participant_file_stem(settings.participant) + "_"
+        try:
+            existing = [n for n in os.listdir(folder) if n.startswith(stem) and n.endswith(".csv")]
+        except OSError:
+            return True                       # folder doesn't exist yet: nothing to clash with
+        if not existing:
+            return True
+        reply = QMessageBox.question(
+            self, "Participant ID already used",
+            f"Reports for '{settings.participant}' already exist in {folder}.\n\n"
+            "Run another session with this ID?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        return reply == QMessageBox.StandardButton.Yes
 
     def _choose_display(self, user_fullscreen: bool) -> tuple[int, bool]:
         """Pick (screen_index, fullscreen) for the experiment window.
@@ -651,8 +694,14 @@ class ConfigWindow(QWidget):
             message, ok = f"Session FAILED (exit {code}). See {log}", False
         else:
             message, ok = f"Session for '{who}' finished.", True
+        message += getattr(self, "_settings_warning", "")
         self.status.setStyleSheet("color:#2e7d32;" if ok else "color:#c62828;")
         self.status.setText(message)
+        if ok or code == 3:
+            # A session was recorded: clear the ID so the next participant isn't
+            # saved under this one by accident (the experimenter types the new ID).
+            self.participant.clear()
+            self.participant.setPlaceholderText("Next participant ID")
 
 
 def configure_app(app: QApplication) -> QApplication:

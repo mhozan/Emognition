@@ -131,3 +131,44 @@ def test_outcome_messages_are_honest(window, proc, error, expect):
     window._proc, window._launch_error, window._participant = proc, error, "P01"
     window._show_outcome()
     assert expect in window.status.text()
+
+
+# --- settings and participant-ID hygiene (Phase 3) -----------------------------
+
+def test_default_folders_are_stored_as_defaults_not_absolute_paths(window):
+    s = window.settings_from_form()               # first run: fields show bundled/default paths
+    assert window.audio_dir.text() and s.audio_dir == "" and s.save_dir == ""
+    window.audio_dir.setText("/data/my-clips")
+    assert window.settings_from_form().audio_dir == "/data/my-clips"
+
+
+def test_a_vanished_audio_folder_falls_back_to_the_bundled_clips(app, tmp_path, monkeypatch):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    settings = tmp_path / "settings.json"
+    ExperimentSettings(audio_dir=str(tmp_path / "old-install" / "assets" / "audio")).save(str(settings))
+    w = ConfigWindow(settings_path=str(settings))
+    assert "not found" in w.status.text()
+    assert os.path.isdir(w.audio_dir.text())      # re-filled with the bundled folder
+
+
+def test_participant_is_cleared_after_a_recorded_session_only(window):
+    window.participant.setText("P07")
+    window._proc, window._launch_error, window._participant = _FakeProc(0), None, "P07"
+    window._show_outcome()
+    assert window.participant.text() == ""
+    window.participant.setText("P08")
+    window._proc = _FakeProc(1)
+    window._show_outcome()
+    assert window.participant.text() == "P08"     # failed: keep it for a retry
+
+
+def test_reusing_an_id_with_reports_asks_first(window, tmp_path, monkeypatch):
+    out = tmp_path / "reports"
+    out.mkdir()
+    s = ExperimentSettings(participant="P09", save_dir=str(out))
+    assert window._confirm_new_participant(s)                    # nothing there yet
+    (out / "P09_20261027_101500.csv").write_text("trial\n")
+    asked = []
+    monkeypatch.setattr(config_window.QMessageBox, "question",
+                        lambda *a, **k: asked.append(a) or config_window.QMessageBox.StandardButton.No)
+    assert not window._confirm_new_participant(s) and asked
