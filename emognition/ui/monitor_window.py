@@ -223,6 +223,8 @@ class MonitorWindow(QWidget):
             if self._held_text:
                 self._lbl_trial.setText(self._held_text)
                 self._held_text = ""
+        elif kind == "practice":
+            self._lbl_trial.setText(f"Practice {evt.get('index', 0)} / {evt.get('total', 0)}")
         elif kind == "trial":
             self._on_trial(evt)
         elif kind == "done":

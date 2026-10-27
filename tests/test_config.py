@@ -88,6 +88,12 @@ def test_pacing_options_reach_the_command_line():
     assert (args.next_button, args.stars_every, args.break_every) == (True, 5, 20)
 
 
+def test_ordering_and_practice_reach_the_command_line():
+    args = _parse(ExperimentSettings(max_run=2, practice=3))
+    assert (args.max_run, args.practice, args.practice_dir) == (2, 3, None)
+    assert (_parse(ExperimentSettings()).max_run, _parse(ExperimentSettings()).practice) == (0, 0)
+
+
 def test_negative_every_n_is_refused():
     import pytest
 

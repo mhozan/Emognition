@@ -162,6 +162,15 @@ _NEXT_MESSAGES = (
 _NEXT_BUTTON_HEIGHT = 0.11
 _BREAK_TITLE = "Time for a short break!"
 _BREAK_LABEL = "Continue"
+# After the (optional) practice trials, before the real ones.
+_PRACTICE_DONE_TITLE = "Well done! Now for the real thing."
+_PRACTICE_DONE_LABEL = "Start"
+# What's shown while a clip plays, per mode (practice borrows active training's).
+_LISTEN_PROMPTS = {
+    SessionMode.TEST: "Listen...",
+    SessionMode.PASSIVE_TRAINING: "Listen carefully.",
+    SessionMode.ACTIVE_TRAINING: "Listen, then choose.",
+}
 _STAR_MESSAGE = "You earned a star!"
 _ALL_DONE_MESSAGE = "All done! Thank you!"
 _STAR_SECONDS = 1.2
@@ -425,11 +434,7 @@ class TestExperiment:
         self.background = BackgroundLayer(win, background or BackgroundPlan(sources=()))
 
         # Mode-specific "listen" prompt (shown during playback, before response).
-        self._listen_prompt = {
-            SessionMode.TEST:             "Listen...",
-            SessionMode.PASSIVE_TRAINING: "Listen carefully.",
-            SessionMode.ACTIVE_TRAINING:  "Listen, then choose.",
-        }[mode]
+        self._listen_prompt = _LISTEN_PROMPTS[mode]
 
         # Show only the emotions being tested, in canonical order, laid out as a
         # vertically-centred column on the right and renumbered 1..N. (Happy-vs-Sad
@@ -450,7 +455,7 @@ class TestExperiment:
         # each with a backing panel sized to its text for picture backgrounds.
         self._prompts: dict[str, visual.TextStim] = {}
         self._prompt_panels: dict[str, visual.ShapeStim] = {}
-        for text in (self._listen_prompt, _RESPONSE_PROMPT, "Correct!", _WRONG_PROMPT, _RETRY_PROMPT,
+        for text in (*_LISTEN_PROMPTS.values(), _RESPONSE_PROMPT, "Correct!", _WRONG_PROMPT, _RETRY_PROMPT,
                      _STAR_MESSAGE, _ALL_DONE_MESSAGE,
                      *(f"This was: {e.label}" for e in active),
                      *(f"Correct answer: {e.label}" for e in active)):
@@ -491,14 +496,12 @@ class TestExperiment:
             [BeginButton(win, text, pos=_PROMPT_POS, height=_NEXT_BUTTON_HEIGHT) for text in _NEXT_MESSAGES]
             if self.next_button else []
         )
-        # The break screen: its title on a panel (readable over any picture) and a button.
-        self._break_title = visual.TextStim(win, text=_BREAK_TITLE, pos=(0.0, 0.13), height=0.065,
-                                            color="white", wrapWidth=1.4, autoLog=False)
-        w_px, h_px = self._break_title.boundingBox
-        px_x, px_y = _pixels_per_unit(win)
-        half_w, half_h = w_px / px_x / 2.0 + _PANEL_PAD[0], h_px / px_y / 2.0 + _PANEL_PAD[1]
-        self._break_panel = _panel(win, -half_w, half_w, 0.13 - half_h, 0.13 + half_h)
-        self._break_button = BeginButton(win, _BREAK_LABEL, pos=(0.0, -0.06))
+        # Title screens (a title on a panel, readable over any picture, and a button):
+        # the break, and the end of the practice trials.
+        self._title_screens = {
+            "break": self._build_title_screen(_BREAK_TITLE, _BREAK_LABEL),
+            "practice_done": self._build_title_screen(_PRACTICE_DONE_TITLE, _PRACTICE_DONE_LABEL),
+        }
 
         # Pause / quit overlays, built once: the screen dimmed, a panel, two lines.
         self._overlay_dim = visual.Rect(
@@ -610,6 +613,46 @@ class TestExperiment:
             raise
         finally:
             self._record_frames(False)
+        return responses
+
+    def run_practice(
+        self,
+        trials: list[Stimulus],
+        *,
+        on_trial: "callable | None" = None,
+    ) -> list[Response]:
+        """Practice trials before the real ones; returns their (unscored) responses.
+
+        Each answer gets active-training feedback (green / orange), whatever the
+        session's mode. Then a "Now for the real thing" screen waits for Start.
+        The caller keeps these responses out of the scores; :meth:`run` starts
+        the timing QA afresh, so practice frames don't count either.
+
+        Raises:
+            ExperimentAborted: if quit during practice (``.partial`` is empty:
+                practice answers aren't data).
+        """
+        mode, listen = self.mode, self._listen_prompt
+        self.mode, self._listen_prompt = (SessionMode.ACTIVE_TRAINING,
+                                          _LISTEN_PROMPTS[SessionMode.ACTIVE_TRAINING])
+        responses: list[Response] = []
+        try:
+            for i, stim in enumerate(trials, start=1):
+                result = self._present_trial(stim, i, len(trials))
+                responses.append(result)
+                if on_trial is not None:
+                    try:
+                        on_trial(result, i, len(trials))
+                    except Exception as exc:  # noqa: BLE001
+                        print(f"Practice callback failed: {exc!r}", file=sys.stderr)
+        except ExperimentAborted as abort:
+            abort.partial = []  # type: ignore[attr-defined]
+            raise
+        finally:
+            self.mode, self._listen_prompt = mode, listen
+            self._record_frames(False)
+        self._show_title_screen("practice_done")
+        self._progress_frac = 0.0
         return responses
 
     def timing_summary(self) -> dict:
@@ -739,16 +782,32 @@ class TestExperiment:
                        record=False)
         if BREAK in steps:
             self._notify({"status": "paused", "reason": "break"})
-            self._wait_for_button(self._break_button, self._draw_break_screen)
+            self._show_title_screen("break")
             self._notify({"status": "resumed"})
         elif NEXT in steps:
             button = self._next_buttons[(done - 1) % len(self._next_buttons)]
             self._wait_for_button(button, lambda: self._draw_scene(enabled=False, show_prompt=False))
 
-    def _draw_break_screen(self) -> None:
-        self.background.draw()
-        self._break_panel.draw()
-        self._break_title.draw()
+    def _build_title_screen(self, title: str, label: str):
+        """(panel, title, button) for a screen that waits for one click."""
+        stim = visual.TextStim(self.win, text=title, pos=(0.0, 0.13), height=0.065,
+                               color="white", wrapWidth=1.4, autoLog=False)
+        w_px, h_px = stim.boundingBox
+        px_x, px_y = _pixels_per_unit(self.win)
+        half_w, half_h = w_px / px_x / 2.0 + _PANEL_PAD[0], h_px / px_y / 2.0 + _PANEL_PAD[1]
+        panel = _panel(self.win, -half_w, half_w, 0.13 - half_h, 0.13 + half_h)
+        return panel, stim, BeginButton(self.win, label, pos=(0.0, -0.06))
+
+    def _show_title_screen(self, kind: str) -> None:
+        """The background, a title and a button; returns once the button is used."""
+        panel, title, button = self._title_screens[kind]
+
+        def backdrop() -> None:
+            self.background.draw()
+            panel.draw()
+            title.draw()
+
+        self._wait_for_button(button, backdrop)
 
     def _build_stars(self, slots: int) -> None:
         """The star strip under the progress bar, left-aligned with it (none if *slots* is 0)."""
@@ -840,10 +899,11 @@ class TestExperiment:
         for stims in self._overlays.values():
             for stim in stims:
                 stim.draw()
-        for button in (*self._next_buttons, self._break_button):
+        for button in self._next_buttons:
             button.draw()
-        self._break_panel.draw()
-        self._break_title.draw()
+        for stims in self._title_screens.values():
+            for stim in stims:
+                stim.draw()
         if self._star_strip is not None:
             self._star_strip.draw()
         gl.glFinish()

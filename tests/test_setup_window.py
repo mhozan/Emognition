@@ -335,9 +335,19 @@ def test_retry_option_applies_to_active_training_only(window):
 
 def test_pacing_controls_round_trip_and_read_off_at_zero(window):
     assert window.stars_every.text() == "off" and window.break_every.text() == "off"
-    window.apply_settings(ExperimentSettings(next_button=True, stars_every=5, break_every=10))
+    assert window.practice.text() == "off" and window.max_run.text() == "off"
+    window.apply_settings(ExperimentSettings(next_button=True, stars_every=5, break_every=10,
+                                             max_run=2, practice=3))
     s = window.settings_from_form()
     assert (s.next_button, s.stars_every, s.break_every) == (True, 5, 10)
+    assert (s.max_run, s.practice) == (2, 3)
+
+
+def test_monitor_counts_practice_trials_separately(app):
+    m = MonitorWindow()
+    m.handle_event({"status": "start", "total": 10, "mode": "test", "participant": "P1"})
+    m.handle_event({"status": "practice", "index": 2, "total": 3, "correct": True})
+    assert m._lbl_trial.text() == "Practice 2 / 3" and m._lbl_accuracy.text() == "Accuracy:  —"
 
 
 def test_monitor_shows_a_break(app):

@@ -10,7 +10,10 @@
 
 import random
 
+import pytest
+
 from emognition.core import (
+    EMOTIONS_IN_ORDER,
     Emotion,
     Sex,
     Stimulus,
@@ -60,3 +63,52 @@ def test_summarize_stimuli_counts():
     assert bd.by_sex[Sex.MALE] == 5
     assert all(bd.by_emotion[e] == 2 for e in Emotion)
     assert bd.by_emotion_sex[(Emotion.ANGRY, Sex.MALE)] == 1
+
+
+# --- run-limited shuffle and practice picks (Phase 5) ---------------------------------
+
+def _longest_run(order) -> int:
+    import itertools
+
+    return max(len(list(group)) for _, group in itertools.groupby(s.emotion for s in order))
+
+
+def _big_set() -> list[Stimulus]:
+    return [_stim(e, Sex.FEMALE, n) for e in EMOTIONS_IN_ORDER for n in range(24)]   # 120 clips
+
+
+@pytest.mark.parametrize("max_run", [1, 2, 3])
+def test_max_run_is_never_exceeded_and_every_clip_stays(max_run):
+    clips = _big_set()
+    for seed in range(50):
+        order = build_trial_list(clips, rng=random.Random(seed), max_run=max_run)
+        assert _longest_run(order) <= max_run
+        assert sorted(s.path for s in order) == sorted(s.path for s in clips)
+
+
+def test_max_run_orders_are_reproducible_and_off_means_a_plain_shuffle():
+    clips = _big_set()
+    assert build_trial_list(clips, rng=random.Random(4), max_run=2) == \
+        build_trial_list(clips, rng=random.Random(4), max_run=2)
+    plain = list(clips)
+    random.Random(4).shuffle(plain)
+    assert build_trial_list(clips, rng=random.Random(4)) == plain        # seeds keep their orders
+
+
+def test_an_impossible_max_run_is_refused():
+    lopsided = [_stim(Emotion.HAPPY, Sex.FEMALE, n) for n in range(5)] + [_stim(Emotion.SAD, Sex.MALE)]
+    with pytest.raises(ValueError, match="in a row"):
+        build_trial_list(lopsided, rng=random.Random(1), max_run=2)      # 5 happy, 1 separator
+    assert _longest_run(build_trial_list(lopsided, rng=random.Random(1), max_run=3)) <= 3
+
+
+def test_practice_picks_different_emotions_first():
+    from emognition.core.trials import pick_practice
+
+    clips = _big_set()
+    picked = pick_practice(clips, 3, rng=random.Random(2))
+    assert len(picked) == 3 and len({s.emotion for s in picked}) == 3
+    assert len({s.emotion for s in pick_practice(clips, 7, rng=random.Random(2))}) == 5
+    only = pick_practice(clips, 4, emotions=[Emotion.SAD], rng=random.Random(2))
+    assert len(only) == 4 and {s.emotion for s in only} == {Emotion.SAD}
+    assert len(pick_practice(clips[:2], 10, rng=random.Random(2))) == 2  # can't pick more than exist

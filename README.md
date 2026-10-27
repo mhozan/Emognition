@@ -44,6 +44,7 @@ and homage.
 | **Active training** | Participant responds, then correct (green) / wrong (orange) feedback before advancing; optionally *retry until correct*, as in the original |
 | **Begin screen** | The participant starts the session with a big **Begin** button (or Space/Enter); the report's start time and duration count from that press |
 | **Background pictures** | Calm, text-free backgrounds to keep children engaged: a soothing gradient by default, five bundled scenes, your own pictures via **Add picture…**, or a slideshow that changes every N trials |
+| **Practice and balanced order** | Opt-in practice trials with feedback before the test (never scored), and a shuffle with at most N of one emotion in a row |
 | **Child-friendly pacing** | Opt-in: a *Next* button between trials (the original's Extra button), a star every N trials, a break screen every N trials. None of it depends on whether answers are right |
 | **Pause and safe quit** | **P** pauses and resumes; **Esc** asks before quitting. A trial interrupted either way is replayed, and the per-trial CSV counts it |
 | **Crash-safe autosave** | Every trial is on disk the moment it ends; an interrupted session resumes at the next trial, in the same order |
@@ -258,6 +259,19 @@ did: a wrong answer greys out that face ("Not quite!") and the participant
 chooses again until the right one is picked, without being shown the answer.
 Only the first answer is scored and timed. The per-trial CSV's `attempts` and
 `choices` columns keep every answer, e.g. `Sad > Angry > Happy`.
+
+**Practice trials** (0 = off) come right after Begin. Each one gets
+active-training feedback, even in a Test, and then *Well done! Now for the
+real thing.* waits for *Start*. Practice answers are never scored. They are
+kept in the session's `.json`, not the CSV. The practice clips are picked from
+the session's own clips, one emotion each before any repeats, so those clips are
+heard twice. To avoid that, point `--practice-dir` at separate clips.
+
+**At most N of one emotion in a row** (0 = no limit) shuffles so that long runs
+of one emotion can't happen; a run invites guessing. The order is still random
+and reproducible from the recorded seed, and with no limit, a seed gives the
+same order as before. If the clips can't be arranged that way, for example when
+most of them are one emotion, the session says so instead of starting.
 
 Click **Calibration** before your first run with a new stimulus corpus to
 normalize loudness and inspect file naming.
@@ -484,6 +498,9 @@ Options:
   --background-every N        Slideshow: change picture every N trials (1–20)  [5]
   --[no-]background-shuffle   Slideshow: shuffle the picture order  [on]
   --seed N           Random seed for the trial and picture order  [random; recorded]
+  --max-run N        Shuffle with at most N of one emotion in a row (0 = no limit)  [0]
+  --practice N       N practice trials with feedback before the test, not scored  [0]
+  --practice-dir PATH     Clips for the practice trials  [the session's own clips]
   --next-button      Between trials, wait for a click on "Ready for the next one?"
   --stars-every N    A star every N trials (0 = off)  [0]
   --break-every N    A break screen every N trials (0 = off)  [0]

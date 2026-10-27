@@ -97,6 +97,10 @@ class ExperimentSettings:
     next_button: bool = False
     stars_every: int = 0
     break_every: int = 0
+    # Ordering and practice: at most N of one emotion in a row (0 = no limit), and
+    # N practice trials with feedback before the test, never scored (0 = none).
+    max_run: int = 0
+    practice: int = 0
 
     def to_argv(self) -> list[str]:
         """Build the ``emognition`` CLI arguments to run a session with these.
@@ -144,6 +148,10 @@ class ExperimentSettings:
             argv += ["--stars-every", str(self.stars_every)]
         if self.break_every > 0:
             argv += ["--break-every", str(self.break_every)]
+        if self.max_run > 0:
+            argv += ["--max-run", str(self.max_run)]
+        if self.practice > 0:
+            argv += ["--practice", str(self.practice)]
         return argv
 
     def save(self, path: str) -> str:

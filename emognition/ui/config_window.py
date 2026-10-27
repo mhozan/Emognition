@@ -232,6 +232,11 @@ class ConfigWindow(QWidget):
                                                "the progress bar. Never tied to correctness.")
         self.break_every = self._every_spinbox("A 'Time for a short break!' screen every N "
                                                "trials; the child clicks Continue.")
+        self.practice = self._every_spinbox("Practice trials with feedback before the test, "
+                                            "picked from the clips (one per emotion first). "
+                                            "They are never scored.", maximum=20)
+        self.max_run = self._every_spinbox("Shuffle so that no more than this many clips of "
+                                           "one emotion come in a row.", maximum=10)
         self.retry = QCheckBox("Retry until correct")
         self.retry.setToolTip(
             "Active training: a wrong answer greys out that face and asks again until "
@@ -320,6 +325,14 @@ class ConfigWindow(QWidget):
         pacing_w = QWidget(); pacing_w.setLayout(pacing)
         grid.addWidget(pacing_w, r, 0, 1, 3); r += 1
 
+        order = QHBoxLayout()
+        order.addWidget(QLabel("Practice trials")); order.addWidget(self.practice)
+        order.addSpacing(12)
+        order.addWidget(QLabel("At most")); order.addWidget(self.max_run)
+        order.addWidget(QLabel("of one emotion in a row")); order.addStretch(1)
+        order_w = QWidget(); order_w.setLayout(order)
+        grid.addWidget(order_w, r, 0, 1, 3); r += 1
+
         emo = QHBoxLayout()
         emo.addWidget(QLabel("Emotions:"))
         for box in self.emotion_boxes.values():
@@ -349,10 +362,10 @@ class ConfigWindow(QWidget):
         outer.addStretch(1)
 
     @staticmethod
-    def _every_spinbox(tooltip: str) -> QSpinBox:
-        """A 0-50 "every N trials" box where 0 reads "off"."""
+    def _every_spinbox(tooltip: str, maximum: int = 50) -> QSpinBox:
+        """A 0-*maximum* count box where 0 reads "off"."""
         box = QSpinBox()
-        box.setRange(0, 50)
+        box.setRange(0, maximum)
         box.setSpecialValueText("off")
         box.setToolTip(tooltip)
         return box
@@ -468,6 +481,8 @@ class ConfigWindow(QWidget):
             next_button=self.next_button.isChecked(),
             stars_every=self.stars_every.value(),
             break_every=self.break_every.value(),
+            max_run=self.max_run.value(),
+            practice=self.practice.value(),
         )
 
     def apply_settings(self, s: ExperimentSettings) -> None:
@@ -492,6 +507,8 @@ class ConfigWindow(QWidget):
         self.next_button.setChecked(s.next_button)
         self.stars_every.setValue(s.stars_every)
         self.break_every.setValue(s.break_every)
+        self.max_run.setValue(s.max_run)
+        self.practice.setValue(s.practice)
         self._select_background(s.background or SPEC_DEFAULT)
 
     # -- actions ---------------------------------------------------------
