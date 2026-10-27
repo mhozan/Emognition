@@ -49,3 +49,47 @@ def test_no_data_placeholder():
     svg = reaction_time_svg([_resp(None, None)])
     assert "no reaction-time data" in svg
     minidom.parseString(svg)
+
+
+# --- range, NaN and marker-size robustness (Phase 3) --------------------------
+
+def _rt_responses(offsets, replays=0):
+    from emognition.core import Emotion, Response, Sex, Stimulus
+
+    stim = Stimulus(path="/c/x_hap_f.wav", emotion=Emotion.HAPPY, sex=Sex.FEMALE)
+    return [Response(stimulus=stim, responded=Emotion.HAPPY, rt_onset=o + 1.0, rt_offset=o,
+                     n_replays=replays) for o in offsets]
+
+
+def _circles(svg):
+    import re
+
+    return [(float(cx), float(cy), float(r))
+            for cx, cy, r in re.findall(r"<circle cx='([-\d.]+)' cy='([-\d.]+)' r='([\d.]+)'", svg)]
+
+
+def test_negative_rts_stay_inside_the_plot():
+    svg = reaction_time_svg(_rt_responses([-0.5, -0.2]))
+    # plot area spans y = 16 (top) .. 260 - 36 = 224 (bottom)
+    assert all(16 <= cy <= 224 for _, cy, _ in _circles(svg))
+    single = reaction_time_svg(_rt_responses([-0.3]))
+    assert all(16 <= cy <= 224 for _, cy, _ in _circles(single))
+
+
+def test_nan_rts_are_skipped_not_drawn():
+    svg = reaction_time_svg(_rt_responses([0.4, float("nan"), 0.6]))
+    assert "nan" not in svg.lower() and len(_circles(svg)) == 2
+
+
+def test_marker_radius_is_capped():
+    svg = reaction_time_svg(_rt_responses([0.5], replays=40))
+    assert max(r for _, _, r in _circles(svg)) <= 9.0
+
+
+def test_heat_map_shades_by_share_of_the_row():
+    from emognition.reports.common import heat_rgb
+
+    # 2 of 2 and 8 of 8 correct are the same rate -> the same shade
+    assert heat_rgb(2, 2, True) == heat_rgb(8, 8, True)
+    assert heat_rgb(0, 5, False) is None and heat_rgb(1, 0, False) is None
+    assert heat_rgb(1, 4, False) != heat_rgb(1, 4, True)       # red vs green

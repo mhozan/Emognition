@@ -178,3 +178,23 @@ def prepare_summary(
 def n_rt_excluded(flags: Sequence[RtFlag]) -> int:
     """How many answered trials' RTs the means leave out (anticipatory / slow)."""
     return sum(1 for f in flags if f.is_excluded)
+
+
+# Confusion heat map: green on the diagonal (correct), red off it (confusions).
+HEAT_CORRECT_RGB = (76, 175, 80)
+HEAT_CONFUSION_RGB = (229, 115, 115)
+
+
+def heat_rgb(count: int, row_total: int, on_diagonal: bool) -> tuple[int, int, int] | None:
+    """Shade for a confusion cell, or None for an empty one.
+
+    The intensity is the cell's share of its *row* -- how often this answer was
+    given when that emotion was played -- so emotions with fewer clips aren't
+    paler than the rest (shading by the matrix-wide maximum tracked counts, not
+    rates). Excel, HTML and the PDF figure all use this one formula.
+    """
+    if count <= 0 or row_total <= 0:
+        return None
+    t = 0.25 + 0.75 * min(1.0, count / row_total)
+    target = HEAT_CORRECT_RGB if on_diagonal else HEAT_CONFUSION_RGB
+    return tuple(round(255 * (1 - t) + c * t) for c in target)  # type: ignore[return-value]

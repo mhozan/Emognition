@@ -26,6 +26,7 @@ matplotlib.use("Agg")  # headless raster backend; must precede pyplot import
 import matplotlib.pyplot as plt  # noqa: E402
 
 from ..core import Response, SessionSummary  # noqa: E402
+from .common import heat_rgb  # noqa: E402
 
 
 def _to_png(fig) -> bytes:
@@ -41,20 +42,24 @@ def confusion_png(summary: SessionSummary) -> bytes:
     labels = [e.label for e in summary.emotion_order]
     data = summary.confusion
 
+    # Same shading as the Excel/HTML tables: share of the row, green = correct,
+    # red = confusion, white = never chosen (a colour scale that started at
+    # the smallest cell made zeros look like data).
+    blank = (255, 255, 255)
+    rgb = [[heat_rgb(n, sum(row), i == j) or blank for j, n in enumerate(row)]
+           for i, row in enumerate(data)]
     fig, ax = plt.subplots(figsize=(4.2, 3.6))
-    im = ax.imshow(data, cmap="Greens")
+    ax.imshow([[tuple(c / 255 for c in cell) for cell in row] for row in rgb])
     ax.set_xticks(range(len(labels)), labels, rotation=45, ha="left")
     ax.set_yticks(range(len(labels)), labels)
     ax.xaxis.set_label_position("top")
     ax.xaxis.tick_top()
     ax.set_xlabel("chosen")
     ax.set_ylabel("true")
-    vmax = max((max(r) for r in data), default=0)
     for i, row in enumerate(data):
         for j, n in enumerate(row):
-            ax.text(j, i, str(n), ha="center", va="center",
-                    color="white" if (vmax and n > vmax / 2) else "black", fontsize=9)
-    fig.colorbar(im, ax=ax, shrink=0.8)
+            ax.text(j, i, str(n), ha="center", va="center", color="#1a1a1a", fontsize=9)
+    ax.set_title("shade = share of the row", fontsize=8, pad=26, loc="left")
     return _to_png(fig)
 
 

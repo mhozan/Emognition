@@ -35,7 +35,15 @@ from openpyxl.worksheet.worksheet import Worksheet
 
 from ..core import EMOTIONS_IN_ORDER, SEXES_IN_ORDER, Response, RtFlag, SessionSummary
 from ..core.scoring import DEFAULT_RT_KIND, GroupStats
-from .common import RT_FLAG_LABEL, STAT_COLUMNS, SessionInfo, info_rows, n_rt_excluded, prepare_summary
+from .common import (
+    RT_FLAG_LABEL,
+    STAT_COLUMNS,
+    SessionInfo,
+    heat_rgb,
+    info_rows,
+    n_rt_excluded,
+    prepare_summary,
+)
 
 _BOLD = Font(bold=True)
 _CENTER = Alignment(horizontal="center")
@@ -65,20 +73,12 @@ def _header(cell) -> None:
     cell.alignment = _CENTER
 
 
-def _blend_hex(t: float, target: tuple[int, int, int]) -> str:
-    """Blend white -> *target* by fraction ``t`` in [0,1]; return 'RRGGBB'."""
-    t = max(0.0, min(1.0, t))
-    r, g, b = (round(255 * (1 - t) + c * t) for c in target)
-    return f"{r:02X}{g:02X}{b:02X}"
-
-
-def _cell_fill(count: int, max_count: int, on_diagonal: bool) -> PatternFill | None:
-    """Heat-map fill for a confusion cell: green if correct, red if a confusion."""
-    if count <= 0 or max_count <= 0:
+def _cell_fill(count: int, row_total: int, on_diagonal: bool) -> PatternFill | None:
+    """Heat-map fill for a confusion cell (shared shading: share of its row)."""
+    rgb = heat_rgb(count, row_total, on_diagonal)
+    if rgb is None:
         return None
-    intensity = 0.25 + 0.75 * count / max_count
-    target = (76, 175, 80) if on_diagonal else (229, 115, 115)  # green / red
-    hexcol = _blend_hex(intensity, target)
+    hexcol = "{:02X}{:02X}{:02X}".format(*rgb)
     return PatternFill(start_color=hexcol, end_color=hexcol, fill_type="solid")
 
 
@@ -125,12 +125,11 @@ def _write_confusion(ws: Worksheet, summary: SessionSummary) -> None:
     for i, lab in enumerate(labels, start=2):      # row headers (true)
         _header(ws.cell(row=i, column=1, value=lab))
 
-    max_count = max((max(row) for row in summary.confusion), default=0)
     for i, row in enumerate(summary.confusion):
         for j, count in enumerate(row):
             cell = ws.cell(row=i + 2, column=j + 2, value=count)
             cell.alignment = _CENTER
-            fill = _cell_fill(count, max_count, on_diagonal=(i == j))
+            fill = _cell_fill(count, sum(row), on_diagonal=(i == j))
             if fill is not None:
                 cell.fill = fill
 

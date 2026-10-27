@@ -25,7 +25,9 @@ Two ideas worth internalising if SVG is new to you:
 
 from __future__ import annotations
 
+import math
 from collections.abc import Callable, Sequence
+from html import escape
 
 from ..core import Response
 from ..core.scoring import DEFAULT_RT_KIND
@@ -36,6 +38,8 @@ _INCORRECT = "#ff7b7b"
 _LINE = "#7c6cff"
 _AXIS = "#9aa0c7"
 _GRID = "#2a2e52"
+# Markers grow with replays but stay readable (a 20-replay trial used to cover the plot).
+_MAX_RADIUS = 9.0
 
 
 def _linear_map(d0: float, d1: float, p0: float, p1: float) -> Callable[[float], float]:
@@ -64,14 +68,14 @@ def reaction_time_svg(
 
     X = trial number, Y = reaction time (the chosen ``rt_kind``). Points are
     green when correct, red when wrong; marker radius grows with replays.
-    Unanswered trials have no RT and are simply skipped. Returns a small
+    Unanswered trials (no RT) and non-finite values are skipped. Returns a small
     "no data" placeholder SVG if nothing is plottable.
     """
     rt_attr = "rt_onset" if rt_kind == "onset" else "rt_offset"
     points = [
-        (i, getattr(r, rt_attr), r.is_correct, r.n_replays)
+        (i, rt, r.is_correct, r.n_replays)
         for i, r in enumerate(responses, start=1)
-        if getattr(r, rt_attr) is not None
+        if (rt := getattr(r, rt_attr)) is not None and math.isfinite(rt)
     ]
     if not points:
         return (
@@ -88,8 +92,12 @@ def reaction_time_svg(
 
     n = len(responses)
     rts = [rt for _, rt, _, _ in points]
-    ymin = min(0.0, min(rts))
-    ymax = max(rts) * 1.08 or 1.0
+    # Always include 0, then pad the span (a negative max used to put ymax below
+    # the highest point, and a single negative RT inverted the axis).
+    lo, hi = min(0.0, min(rts)), max(0.0, max(rts))
+    pad = 0.08 * (hi - lo) or 1.0
+    ymin = lo - pad if lo < 0 else 0.0
+    ymax = hi + pad
 
     x_of = _linear_map(0.5, n + 0.5, left, left + plot_w)
     y_of = _linear_map(ymin, ymax, top + plot_h, top)  # inverted: data-up = pixel-up
@@ -127,7 +135,7 @@ def reaction_time_svg(
     # points (radius grows with replays)
     for i, rt, correct, replays in points:
         cx, cy = x_of(i), y_of(rt)
-        radius = 3 + 1.8 * replays
+        radius = min(3 + 1.8 * replays, _MAX_RADIUS)
         colour = _CORRECT if correct else _INCORRECT
         parts.append(
             f"<circle cx='{cx:.1f}' cy='{cy:.1f}' r='{radius:.1f}' "
@@ -141,7 +149,7 @@ def reaction_time_svg(
     )
     parts.append(
         f"<text x='14' y='{top + plot_h / 2}' fill='{_AXIS}' text-anchor='middle' "
-        f"transform='rotate(-90 14 {top + plot_h / 2:.1f})'>RT from {rt_kind} (s)</text>"
+        f"transform='rotate(-90 14 {top + plot_h / 2:.1f})'>RT from {escape(rt_kind)} (s)</text>"
     )
 
     parts.append("</svg>")

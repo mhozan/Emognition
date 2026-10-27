@@ -39,6 +39,7 @@ from .common import (
     fmt_replays,
     fmt_seconds,
     fmt_seconds_unit,
+    heat_rgb,
     info_rows,
     prepare_summary,
 )
@@ -47,14 +48,10 @@ from .common import (
 # colour helpers (mirror the Excel heat-map: green = correct, red = confusion)
 # --------------------------------------------------------------------------
 
-def _heat_rgb(count: int, max_count: int, on_diagonal: bool) -> str | None:
-    """CSS ``rgb(...)`` for a confusion cell, or None for an empty cell."""
-    if count <= 0 or max_count <= 0:
-        return None
-    t = 0.25 + 0.75 * count / max_count
-    target = (76, 175, 80) if on_diagonal else (229, 115, 115)
-    r, g, b = (round(255 * (1 - t) + c * t) for c in target)
-    return f"rgb({r},{g},{b})"
+def _heat_css(count: int, row_total: int, on_diagonal: bool) -> str | None:
+    """CSS ``rgb(...)`` for a confusion cell (shared shading), or None if empty."""
+    rgb = heat_rgb(count, row_total, on_diagonal)
+    return None if rgb is None else "rgb({},{},{})".format(*rgb)
 
 
 # --------------------------------------------------------------------------
@@ -89,14 +86,12 @@ def _cards_section(summary: SessionSummary) -> str:
 
 def _confusion_section(summary: SessionSummary) -> str:
     labels = [e.label for e in summary.emotion_order]
-    max_count = max((max(row) for row in summary.confusion), default=0)
-
     head = "".join(f"<th>{escape(l)}</th>" for l in labels)
     body_rows = []
     for i, (lab, row) in enumerate(zip(labels, summary.confusion)):
         cells = []
         for j, count in enumerate(row):
-            rgb = _heat_rgb(count, max_count, on_diagonal=(i == j))
+            rgb = _heat_css(count, sum(row), on_diagonal=(i == j))
             style = f" style='background:{rgb};color:#1a1a1a'" if rgb else ""
             cells.append(f"<td{style}>{count}</td>")
         body_rows.append(f"<tr><th class='rowhead'>{escape(lab)}</th>{''.join(cells)}</tr>")
