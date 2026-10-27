@@ -34,10 +34,10 @@ from .common import (
     RT_FLAG_LABEL,
     STAT_COLUMNS,
     SessionInfo,
-    fmt_datetime,
     fmt_pct,
     fmt_replays,
     fmt_seconds,
+    info_rows,
     prepare_summary,
 )
 
@@ -60,18 +60,7 @@ def _heat_rgb(count: int, max_count: int, on_diagonal: bool) -> str | None:
 # --------------------------------------------------------------------------
 
 def _info_section(info: SessionInfo, summary: SessionSummary) -> str:
-    rows = [
-        ("Participant", info.participant),
-        ("Experimenter", info.experimenter),
-        ("Mode", info.mode),
-        ("Audio folder", info.audio_folder),
-        ("Started", fmt_datetime(info.started_at)),
-        ("Finished", fmt_datetime(info.finished_at)),
-        ("Reaction-time basis", summary.rt_kind),
-        ("App version", info.app_version),
-    ]
-    if info.notes:
-        rows.append(("Notes", info.notes))
+    rows = info_rows(info, summary.rt_kind)
     items = "".join(
         f"<div class='kv'><span class='k'>{escape(str(k))}</span>"
         f"<span class='v'>{escape(str(v)) if v else EMPTY}</span></div>"

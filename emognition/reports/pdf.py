@@ -31,11 +31,12 @@ from .charts_mpl import confusion_png, reaction_time_png
 from .common import (
     RT_FLAG_LABEL,
     STAT_COLUMNS,
+    EMPTY,
     SessionInfo,
-    fmt_datetime,
     fmt_pct,
     fmt_replays,
     fmt_seconds,
+    info_rows,
     prepare_summary,
 )
 
@@ -68,10 +69,8 @@ def _header(pdf: FPDF, info: SessionInfo) -> None:
 
 def _session_info(pdf: FPDF, info: SessionInfo, summary: SessionSummary) -> None:
     rows = [
-        ("Experimenter", info.experimenter),
-        ("Mode", info.mode),
-        ("Started", fmt_datetime(info.started_at)),
-        ("Finished", fmt_datetime(info.finished_at)),
+        # Participant is already the page subtitle; every other shared detail follows.
+        *((k, v or EMPTY) for k, v in info_rows(info, summary.rt_kind) if k != "Participant"),
         ("Trials", f"{summary.total.n_answered}/{summary.total.n_presented} answered, "
                    f"{summary.total.n_correct} correct"),
         ("Overall accuracy", f"{fmt_pct(summary.total.pct_correct)}%"),

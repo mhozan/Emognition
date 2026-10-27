@@ -35,7 +35,7 @@ from openpyxl.worksheet.worksheet import Worksheet
 
 from ..core import EMOTIONS_IN_ORDER, SEXES_IN_ORDER, Response, RtFlag, SessionSummary
 from ..core.scoring import DEFAULT_RT_KIND, GroupStats
-from .common import RT_FLAG_LABEL, STAT_COLUMNS, SessionInfo, fmt_datetime, prepare_summary
+from .common import RT_FLAG_LABEL, STAT_COLUMNS, SessionInfo, info_rows, prepare_summary
 
 _BOLD = Font(bold=True)
 _CENTER = Alignment(horizontal="center")
@@ -82,19 +82,12 @@ def _write_session_info(
 
     rt_label = f"reaction time basis: {summary.rt_kind}"
     rows: list[tuple[str, object]] = [
-        ("Participant", info.participant),
-        ("Experimenter", info.experimenter),
-        ("Mode", info.mode),
-        ("Audio folder", info.audio_folder),
-        ("Started", fmt_datetime(info.started_at)),
-        ("Finished", fmt_datetime(info.finished_at)),
+        *info_rows(info, summary.rt_kind),
         ("Trials presented", summary.total.n_presented),
         ("Trials answered", summary.total.n_answered),
         ("Overall correct", summary.total.n_correct),
         ("Overall accuracy (%)", summary.total.pct_correct),
         ("Mean reaction (s)", summary.total.mean_rt),
-        ("App version", info.app_version),
-        ("Notes", info.notes),
     ]
     for r, (label, value) in enumerate(rows, start=3):
         ws.cell(row=r, column=1, value=label).font = _BOLD

@@ -48,7 +48,8 @@ class SessionInfo:
     experimenter: str = ""
     mode: str = "Test"
     audio_folder: str = ""
-    started_at: datetime | None = None
+    background: str = ""        # e.g. "Calm gradient" or "Slideshow: 6 pictures, ..."
+    started_at: datetime | None = None    # when Begin was pressed (as in pb_beginner.m)
     finished_at: datetime | None = None
     rt_kind: str = "offset"
     app_version: str = ""
@@ -74,6 +75,41 @@ def fmt_replays(value: float | None) -> str:
 def fmt_datetime(value: datetime | None) -> str:
     """Format a timestamp like '2026-06-08 14:30:05', or empty marker."""
     return EMPTY if value is None else value.strftime("%Y-%m-%d %H:%M:%S")
+
+
+def fmt_duration(start: datetime | None, end: datetime | None) -> str:
+    """Elapsed time as 'HH:MM:SS' (the original's monitorperf.m format), or empty marker."""
+    if start is None or end is None:
+        return EMPTY
+    seconds = max(0, round((end - start).total_seconds()))
+    minutes, secs = divmod(seconds, 60)
+    hours, minutes = divmod(minutes, 60)
+    return f"{hours:02d}:{minutes:02d}:{secs:02d}"
+
+
+def info_rows(info: SessionInfo, rt_kind: str) -> list[tuple[str, str]]:
+    """The session-details rows, in one order, for every report format.
+
+    Each writer used to pick its own subset, so the PDF silently lacked the
+    audio folder and app version. Values are strings; an empty value means
+    "unknown" and each format renders it in its own way.
+    """
+    rows = [
+        ("Participant", info.participant),
+        ("Experimenter", info.experimenter),
+        ("Mode", info.mode),
+        ("Audio folder", info.audio_folder),
+        ("Background", info.background),
+        ("Started", fmt_datetime(info.started_at)),
+        ("Finished", fmt_datetime(info.finished_at)),
+        ("Duration", fmt_duration(info.started_at, info.finished_at)),
+        ("Reaction-time basis", rt_kind),
+        ("App version", info.app_version),
+    ]
+    rows.extend((str(k), str(v)) for k, v in info.extra.items())
+    if info.notes:
+        rows.append(("Notes", info.notes))
+    return rows
 
 
 # Short human labels for RT flags, shown in the per-trial tables.
