@@ -26,7 +26,7 @@ from __future__ import annotations
 import os
 import sys
 
-from PyQt6.QtCore import QProcess
+from PyQt6.QtCore import QObject, QProcess, QThread, pyqtSignal
 from PyQt6.QtWidgets import (
     QApplication,
     QComboBox,
@@ -53,7 +53,7 @@ from ..naming import (
     write_data_dictionary,
     write_manifest,
 )
-from .assets import audio_dir
+from .assets import audio_dir, self_command
 
 
 def _table(headers: list[str]) -> QTableWidget:
@@ -80,6 +80,38 @@ def _folder_row(line: QLineEdit, on_browse) -> QWidget:
     return w
 
 
+class _Task(QObject):
+    """Runs one function on a worker thread and reports the outcome.
+
+    Reading and writing a whole folder of recordings takes seconds; on the GUI
+    thread that froze the window. The signals are connected to *methods of the
+    window* (a QObject living on the GUI thread), so Qt delivers them there as
+    queued calls -- widgets are only ever touched from the GUI thread.
+    """
+
+    done = pyqtSignal(object)
+    failed = pyqtSignal(str)
+
+    def __init__(self, fn) -> None:
+        super().__init__()
+        self._fn = fn
+
+    def run(self) -> None:
+        try:
+            result = self._fn()
+        except Exception as exc:  # noqa: BLE001 -- reported to the experimenter
+            self.failed.emit(str(exc) or exc.__class__.__name__)
+        else:
+            self.done.emit(result)
+
+
+def _wavs(folder: str) -> list[str]:
+    """The .wav files in *folder*, sorted (raises OSError if it can't be listed)."""
+    return sorted(
+        os.path.join(folder, f) for f in os.listdir(folder) if f.lower().endswith(".wav")
+    )
+
+
 class CalibrationWindow(QWidget):
     """Tabbed calibration tools for the experimenter."""
 
@@ -88,6 +120,8 @@ class CalibrationWindow(QWidget):
         self.setWindowTitle("Emognition - Calibration")
         self.resize(820, 560)
         self._tone_proc: QProcess | None = None
+        self._tone_stopping = False
+        self._busy: tuple[QThread, _Task] | None = None   # the one background task
 
         tabs = QTabWidget()
         tabs.addTab(self._stimuli_tab(), "Stimuli / naming")
@@ -190,38 +224,72 @@ class CalibrationWindow(QWidget):
         w = QWidget(); w.setLayout(layout)
         return w
 
-    def _wavs(self, folder: str) -> list[str]:
-        return sorted(
-            os.path.join(folder, f) for f in os.listdir(folder) if f.lower().endswith(".wav")
-        )
+    def _start_task(self, fn, on_done, on_failed, status: QLabel, message: str) -> bool:
+        """Run *fn* in the background (one task at a time); False if one is running."""
+        if self._busy is not None:
+            status.setText("Still working on the previous step...")
+            return False
+        thread, task = QThread(self), _Task(fn)
+        task.moveToThread(thread)
+        thread.started.connect(task.run)
+        task.done.connect(on_done)
+        task.failed.connect(on_failed)
+        task.done.connect(thread.quit)
+        task.failed.connect(thread.quit)
+        thread.finished.connect(self._task_finished)
+        self._busy = (thread, task)
+        status.setText(message)
+        thread.start()
+        return True
+
+    def _task_finished(self) -> None:
+        if self._busy is not None:
+            thread, task = self._busy
+            self._busy = None
+            task.deleteLater()
+            thread.deleteLater()
+
+    def _wait_for_task(self, timeout_ms: int = 60000) -> None:
+        """Block until a running task ends (closing mid-task would destroy its thread)."""
+        if self._busy is not None:
+            self._busy[0].wait(timeout_ms)
 
     def _preview_loudness(self) -> None:
         folder = self.loud_dir.text()
         out = os.path.normpath(folder) + "_calibrated"
         method = NormalizationMethod(self.method.currentText())
-        self._plan = plan_batch(self._wavs(folder), out, method=method)
+        self._start_task(lambda: plan_batch(_wavs(folder), out, method=method),
+                         self._show_plan, self._loudness_failed, self.loud_status,
+                         "Analysing recordings...")
+
+    def _show_plan(self, plan) -> None:
+        self._plan = plan
         _fill(self.loud_table, [
             [c.filename, f"{c.orig_duration:.2f}->{c.new_duration:.2f}",
              f"{c.lead_trim_s*1000:.0f}/{c.tail_trim_s*1000:.0f}",
              f"{c.gain_db:+.1f}", "PEAK-LIMITED" if c.will_limit else ""]
-            for c in self._plan.clips
+            for c in plan.clips
         ])
         self.loud_status.setText(
-            f"max trim {self._plan.max_trim_ms:.0f} ms | max |gain| "
-            f"{self._plan.max_abs_gain_db:.1f} dB | spread {self._plan.loudness_spread_db:.1f} dB"
-            + ("  (already calibrated)" if self._plan.is_minor() else "")
+            f"max trim {plan.max_trim_ms:.0f} ms | max |gain| "
+            f"{plan.max_abs_gain_db:.1f} dB | spread {plan.loudness_spread_db:.1f} dB"
+            + ("  (already calibrated)" if plan.is_minor() else "")
         )
 
     def _apply_loudness(self) -> None:
         if self._plan is None:
-            self._preview_loudness()
-        try:
-            written = apply_plan(self._plan)
-        except (ValueError, OSError) as exc:   # e.g. output folder == input folder
-            # (an exception escaping a Qt slot would abort the whole app)
-            self.loud_status.setText(f"Nothing written: {exc}")
+            self.loud_status.setText("Press Preview first to see what would change.")
             return
+        plan = self._plan
+        self._start_task(lambda: apply_plan(plan), self._show_written, self._loudness_failed,
+                         self.loud_status, f"Writing calibrated files to {plan.out_dir}...")
+
+    def _show_written(self, written) -> None:
         self.loud_status.setText(f"Wrote {len(written)} files to {self._plan.out_dir}")
+
+    def _loudness_failed(self, message: str) -> None:
+        # e.g. output folder == input folder, or the folder can't be read
+        self.loud_status.setText(f"Nothing written: {message}")
 
     # -- SPL tone ---------------------------------------------------------
 
@@ -253,22 +321,40 @@ class CalibrationWindow(QWidget):
 
     def _play_tone(self) -> None:
         self._stop_tone()
-        rms = average_rms(self._wavs(self.tone_dir.text()))
+        folder = self.tone_dir.text()
+        self._start_task(lambda: average_rms(_wavs(folder)), self._start_tone,
+                         self._tone_failed, self.tone_status, "Measuring the recordings' level...")
+
+    def _start_tone(self, rms: float) -> None:
         if rms <= 0:
             self.tone_status.setText("No recordings found to match.")
             return
         argv = ["--play-tone", "--tone-rms", f"{rms:.5f}",
                 "--tone-seconds", f"{self.tone_seconds.value():.0f}"]
-        cmd = ([sys.executable, *argv] if getattr(sys, "frozen", False)
-               else [sys.executable, "-m", "emognition", *argv])
+        cmd = self_command(argv)
         self._tone_proc = QProcess(self)
-        self._tone_proc.finished.connect(lambda *_: self.tone_status.setText("Tone stopped."))
+        self._tone_proc.finished.connect(self._tone_finished)
         self._tone_proc.setProgram(cmd[0]); self._tone_proc.setArguments(cmd[1:])
         self._tone_proc.start()
         self.tone_status.setText(f"Playing tone (RMS {rms:.4f})... press Stop to end.")
 
+    def _tone_finished(self, code: int, status) -> None:
+        """Say how the tone ended (it used to say "stopped" even when it failed)."""
+        if status == QProcess.ExitStatus.CrashExit or self._tone_stopping:
+            self.tone_status.setText("Tone stopped.")
+        elif code == 0:
+            self.tone_status.setText("Tone finished.")
+        else:
+            reason = bytes(self._tone_proc.readAllStandardError()).decode("utf-8", "replace").strip()
+            self.tone_status.setText(f"Tone failed (exit {code}). {reason[-200:]}")
+        self._tone_stopping = False
+
+    def _tone_failed(self, message: str) -> None:
+        self.tone_status.setText(f"Could not measure the recordings: {message}")
+
     def _stop_tone(self) -> None:
         if self._tone_proc is not None and self._tone_proc.state() != QProcess.ProcessState.NotRunning:
+            self._tone_stopping = True
             self._tone_proc.kill()
 
     # -- shared -----------------------------------------------------------
@@ -280,6 +366,7 @@ class CalibrationWindow(QWidget):
 
     def closeEvent(self, event) -> None:  # noqa: N802
         self._stop_tone()
+        self._wait_for_task()
         super().closeEvent(event)
 
 

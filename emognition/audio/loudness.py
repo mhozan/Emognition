@@ -32,7 +32,6 @@ import math
 from enum import Enum
 
 import numpy as np
-import pyloudnorm as pyln
 
 # A floor so log10(0) on a silent clip yields a very negative dB, not -inf/NaN.
 _EPS = 1e-12
@@ -71,7 +70,11 @@ def measure(samples: np.ndarray, rate: int, method: NormalizationMethod) -> floa
     if method is NormalizationMethod.LUFS:
         # pyloudnorm accepts (n,) or (n, channels); it gates silence internally.
         # Clips shorter than one BS.1770 block (~400 ms) can't be measured -> fall
-        # back to a very-quiet sentinel rather than crashing.
+        # back to a very-quiet sentinel rather than crashing. Imported here, not at
+        # module level: pyloudnorm pulls in scipy (~0.3 s), which RMS/peak
+        # measurement and the calibration tone never need.
+        import pyloudnorm as pyln
+
         try:
             loudness = pyln.Meter(rate).integrated_loudness(samples)
         except (ValueError, IndexError):

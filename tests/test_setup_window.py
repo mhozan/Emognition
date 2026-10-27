@@ -172,3 +172,65 @@ def test_reusing_an_id_with_reports_asks_first(window, tmp_path, monkeypatch):
     monkeypatch.setattr(config_window.QMessageBox, "question",
                         lambda *a, **k: asked.append(a) or config_window.QMessageBox.StandardButton.No)
     assert not window._confirm_new_participant(s) and asked
+
+
+# --- calibration window: heavy work off the GUI thread (Phase 3) ----------------
+
+def _wait(app, predicate, timeout_ms=20000):
+    """Spin the event loop until *predicate()* is true (or time runs out)."""
+    loop = QtCore.QEventLoop()
+    timer = QtCore.QTimer()
+    timer.timeout.connect(lambda: predicate() and loop.quit())
+    timer.start(20)
+    QtCore.QTimer.singleShot(timeout_ms, loop.quit)
+    loop.exec()
+    timer.stop()
+    return predicate()
+
+
+@pytest.fixture
+def calib(app, tmp_path, monkeypatch):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    from emognition.ui.calibration_window import CalibrationWindow
+
+    w = CalibrationWindow()
+    yield w
+    w._wait_for_task()
+    w.deleteLater()
+
+
+def test_preview_and_apply_run_in_the_background(app, calib, tmp_path):
+    import shutil
+
+    from emognition.ui.assets import audio_dir
+
+    src = tmp_path / "in"
+    src.mkdir()
+    for name in sorted(os.listdir(audio_dir()))[:2]:
+        if name.endswith(".wav"):
+            shutil.copy(os.path.join(audio_dir(), name), src / name)
+    calib.loud_dir.setText(str(src))
+    calib._preview_loudness()
+    assert calib._busy is not None and "Analysing" in calib.loud_status.text()   # returned at once
+    assert _wait(app, lambda: calib._busy is None and calib.loud_table.rowCount() == 2)
+    calib._apply_loudness()
+    assert _wait(app, lambda: calib.loud_status.text().startswith("Wrote 2 files"))
+    assert (tmp_path / "in_calibrated" / "calibration.json").exists()
+
+
+def test_unreadable_folder_is_reported_not_fatal(app, calib, tmp_path):
+    calib.loud_dir.setText(str(tmp_path / "does-not-exist"))
+    calib._preview_loudness()
+    assert _wait(app, lambda: calib.loud_status.text().startswith("Nothing written"))
+    calib._apply_loudness()                       # no plan yet: explains instead of crashing
+    assert "Preview first" in calib.loud_status.text()
+
+
+def test_audio_package_no_longer_loads_scipy_at_import():
+    import subprocess
+    import sys
+
+    code = "import sys, emognition.audio; print('scipy' in sys.modules)"
+    out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True,
+                         cwd=os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    assert out.stdout.strip() == "False", out.stderr

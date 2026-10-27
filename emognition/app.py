@@ -67,12 +67,6 @@ def _selfcheck() -> int:
     return 0
 
 
-def _default_save_dir() -> str:
-    """Where to write reports by default: a 'save_location' beside the app/cwd."""
-    base = os.path.dirname(sys.executable) if getattr(sys, "frozen", False) else os.getcwd()
-    return os.path.join(base, "save_location")
-
-
 def _psychopy_quit(code: int = 0) -> NoReturn:
     """Shut PsychoPy down cleanly, then exit with *code*.
 
@@ -189,7 +183,7 @@ def _run_session(args: argparse.Namespace) -> int:
     from .core import SessionMode, build_trial_list
     from .core.backgrounds import resolve_background
     from .naming import scan_stimuli
-    from .ui.assets import Caption, audio_dir, background_folders
+    from .ui.assets import Caption, audio_dir, background_folders, default_save_dir
     from .ui.experiment_window import ExperimentAborted, TestExperiment
 
     audio_folder = args.audio_dir or audio_dir()
@@ -210,7 +204,7 @@ def _run_session(args: argparse.Namespace) -> int:
     except ValueError as exc:
         print(str(exc), file=sys.stderr)
         return 2
-    save_dir = args.save_dir or _default_save_dir()
+    save_dir = args.save_dir or default_save_dir()
     try:
         _prepare_save_dir(save_dir)
     except OSError as exc:

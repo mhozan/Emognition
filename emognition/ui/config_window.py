@@ -61,7 +61,14 @@ from ..core.backgrounds import (
 )
 from ..io.lines import LineBuffer
 from .assets import audio_dir as _bundled_audio_dir
-from .assets import background_folders, background_path, user_backgrounds_dir, user_data_dir
+from .assets import (
+    background_folders,
+    background_path,
+    default_save_dir as _default_save_dir,
+    self_command,
+    user_backgrounds_dir,
+    user_data_dir,
+)
 
 _CAPTIONS = ["none", "english", "mandarin"]
 _MODES = ["test", "passive", "active"]
@@ -149,24 +156,11 @@ def _pixmap(image) -> QPixmap:
     return pixmap
 
 
-def _default_save_dir() -> str:
-    """Default report output folder: save_location/ beside the exe (or cwd)."""
-    base = os.path.dirname(sys.executable) if getattr(sys, "frozen", False) else os.getcwd()
-    return os.path.join(base, "save_location")
-
-
 def _unless_default(path: str, default: str) -> str:
     """"" if *path* is the default location (so the default is resolved at run time)."""
     if path and os.path.normcase(os.path.abspath(path)) == os.path.normcase(os.path.abspath(default)):
         return ""
     return path
-
-
-def _experiment_command(argv: list[str]) -> list[str]:
-    """Command to launch a session in a separate process (frozen or from source)."""
-    if getattr(sys, "frozen", False):          # PyInstaller bundle: the exe itself
-        return [sys.executable, *argv]
-    return [sys.executable, "-m", "emognition", *argv]
 
 
 class ConfigWindow(QWidget):
@@ -486,7 +480,7 @@ class ConfigWindow(QWidget):
         self._participant = settings.participant
         launch = replace(settings)
         launch.screen, launch.fullscreen = self._choose_display(settings.fullscreen)
-        cmd = _experiment_command(launch.to_argv())
+        cmd = self_command(launch.to_argv())
         self._proc = QProcess(self)
         self._out = LineBuffer()            # reassembles lines split across pipe reads
         self._launch_error: str | None = None

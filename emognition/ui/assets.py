@@ -106,5 +106,24 @@ def background_folders() -> tuple[str, str]:
 
 
 def replay_button_path() -> str:
-    """The replay-button icon (used later when we add replays)."""
+    """The replay-button icon (shown after each clip when replays are allowed)."""
     return _image("replaybutton.png")
+
+
+def default_save_dir() -> str:
+    """Default report folder: ``save_location/`` beside the executable (frozen)
+    or the current folder (from source) -- as the original's exe-relative
+    ``save_location``."""
+    base = os.path.dirname(sys.executable) if getattr(sys, "frozen", False) else os.getcwd()
+    return os.path.join(base, "save_location")
+
+
+def self_command(argv: list[str]) -> list[str]:
+    """The command that runs Emognition itself with *argv* (frozen exe or ``-m``).
+
+    The setup window launches sessions, and Calibration the tone, as separate
+    processes this way (Qt and the PsychoPy window must never share one).
+    """
+    if getattr(sys, "frozen", False):          # PyInstaller bundle: the exe itself
+        return [sys.executable, *argv]
+    return [sys.executable, "-m", "emognition", *argv]
