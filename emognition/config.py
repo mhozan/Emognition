@@ -92,6 +92,11 @@ class ExperimentSettings:
     # Active training only: a wrong answer greys out that face and asks again
     # until the right one is chosen (the original's "Try until you get it right!").
     retry_until_correct: bool = False
+    # Child-friendly pacing between trials (core/pacing.py), all off by default:
+    # the original's "Extra button", a star every N trials, a break every N trials.
+    next_button: bool = False
+    stars_every: int = 0
+    break_every: int = 0
 
     def to_argv(self) -> list[str]:
         """Build the ``emognition`` CLI arguments to run a session with these.
@@ -133,6 +138,12 @@ class ExperimentSettings:
             argv.append("--no-background-shuffle")
         if self.retry_until_correct:
             argv.append("--retry-until-correct")
+        if self.next_button:
+            argv.append("--next-button")
+        if self.stars_every > 0:
+            argv += ["--stars-every", str(self.stars_every)]
+        if self.break_every > 0:
+            argv += ["--break-every", str(self.break_every)]
         return argv
 
     def save(self, path: str) -> str:

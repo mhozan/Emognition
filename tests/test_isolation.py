@@ -27,7 +27,9 @@ _FORBIDDEN = ("psychopy", "psychtoolbox", "pyglet", "PyQt6")
 @pytest.mark.parametrize("module", [
     "emognition.core",
     "emognition.core.backgrounds",
+    "emognition.core.pacing",
     "emognition.io",
+    "emognition.io.autosave",
     "emognition.config",
     "emognition.imaging",
     "emognition.naming",

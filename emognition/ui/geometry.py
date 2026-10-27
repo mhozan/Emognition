@@ -49,6 +49,21 @@ def rounded_rect_vertices(
     return vertices
 
 
+def star_vertices(outer: float, inner: float | None = None, points: int = 5) -> list[tuple[float, float]]:
+    """Outline of a *points*-pointed star centred on 0, its first tip straight up.
+
+    Alternates tips (radius *outer*) and notches (radius *inner*, by default the
+    classic 0.38 of the outer radius), counter-clockwise: ``2 * points`` vertices.
+    """
+    inner = outer * 0.38 if inner is None else inner
+    vertices = []
+    for k in range(2 * points):
+        radius = outer if k % 2 == 0 else inner
+        angle = math.pi / 2 + math.pi * k / points
+        vertices.append((radius * math.cos(angle), radius * math.sin(angle)))
+    return vertices
+
+
 def fit_within(size: tuple[float, float], box: tuple[float, float]) -> tuple[int, int]:
     """Scale *size* down (never up) to fit inside *box*, keeping its aspect ratio.
 

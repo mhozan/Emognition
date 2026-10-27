@@ -48,6 +48,11 @@ used to end the session. A clip or an answer interrupted either way is replayed
 from the start (an RT that spans a pause would be meaningless) and counted in
 ``Response.n_pauses``.
 
+Between trials, optional child-friendly pacing (core/pacing.py; all off by
+default, none of it tied to correctness): a star every N trials, a break screen
+every N trials, and a "Ready for the next one?" button -- the original's Extra
+button -- that the child clicks to hear the next clip.
+
 Two response modalities, one shared clock (reset at audio onset):
   * number keys 1..N  -> pyglet keyboard via psychopy.event
   * clicking a face   -> mouse, faithful to the original GUI
@@ -89,9 +94,11 @@ from psychopy import core, event, sound, visual  # noqa: E402
 
 from ..core import EMOTIONS_IN_ORDER, Emotion, Response, SessionMode, Stimulus, reaction_time  # noqa: E402
 from ..core.backgrounds import BackgroundPlan  # noqa: E402
+from ..core.pacing import BREAK, NEXT, STAR, between_trials, star_slots, stars_earned  # noqa: E402
 from ..core.timing import ReactionTime  # noqa: E402
 from .assets import Caption, emoticon_path, replay_button_path  # noqa: E402
 from .backgrounds import BackgroundLayer  # noqa: E402
+from ..imaging.stars import star_row  # noqa: E402
 from .geometry import rounded_rect_vertices  # noqa: E402
 
 # Sentinel returned by the response loop when the participant asks to replay.
@@ -142,6 +149,24 @@ _BEGIN_FILL_HOVER = (255, 255, 255)
 _BEGIN_TEXT = (42, 34, 80)             # the setup window's title colour
 # A short, calm pause after Begin before the first clip (hand away from the mouse).
 _BEGIN_SETTLE_SECONDS = 0.5
+
+# Optional pacing between trials (core/pacing.py). The original's Extra button
+# showed random encouraging sentences (the list didn't survive); these praise
+# listening, never the answers, so they can't act as feedback in a Test.
+_NEXT_MESSAGES = (
+    "Ready for the next one?",
+    "Nice listening! Ready?",
+    "Keep going! Next one?",
+    "Here comes another one!",
+)
+_NEXT_BUTTON_HEIGHT = 0.11
+_BREAK_TITLE = "Time for a short break!"
+_BREAK_LABEL = "Continue"
+_STAR_MESSAGE = "You earned a star!"
+_ALL_DONE_MESSAGE = "All done! Thank you!"
+_STAR_SECONDS = 1.2
+_STAR_Y = 0.395            # a row just under the progress bar
+_STAR_MAX_SLOT = 0.055     # widest spacing; many stars share the bar's width
 
 # The experimenter's keys (see the module docstring), and what each overlay says.
 _PAUSE_KEY = "p"
@@ -261,27 +286,36 @@ class EmotionButton:
 
 
 class BeginButton:
-    """The large rounded "Begin" button of the start screen.
+    """A large rounded button: "Begin", and the between-trial "Next"/"Continue".
 
     The original's "Begin Test" was a small dark button in the bottom-left corner
-    (proceed.m); this one is centred and big enough for a child to find and hit.
-    The rounded outline is computed once; ``contains`` tests that exact shape.
+    (proceed.m); this one is big enough for a child to find and hit, and as wide
+    as its label needs (never narrower than 3x its height). The rounded outline
+    is computed once; ``contains`` tests that exact shape.
     """
 
-    def __init__(self, win: visual.Window, label: str = _BEGIN_LABEL) -> None:
-        width, height = _BEGIN_SIZE
+    def __init__(
+        self,
+        win: visual.Window,
+        label: str = _BEGIN_LABEL,
+        *,
+        pos: tuple[float, float] = (0.0, 0.0),
+        height: float = _BEGIN_SIZE[1],
+    ) -> None:
+        self._text = visual.TextStim(
+            win, text=label, pos=pos, height=height * 0.46, color=_BEGIN_TEXT,
+            colorSpace="rgb255", bold=True, autoLog=False,
+        )
+        text_width = self._text.boundingBox[0] / _pixels_per_unit(win)[0]
+        width = max(3.0 * height, text_width + 1.1 * height)
         vertices = rounded_rect_vertices(width, height, height / 2.6)
         self._shadow = visual.ShapeStim(
-            win, vertices=vertices, pos=(0.006, -0.010), fillColor=(-1, -1, -1),
-            lineColor=None, opacity=0.35, autoLog=False,
+            win, vertices=vertices, pos=(pos[0] + 0.006, pos[1] - 0.010),
+            fillColor=(-1, -1, -1), lineColor=None, opacity=0.35, autoLog=False,
         )
         self._shape = visual.ShapeStim(
-            win, vertices=vertices, pos=(0.0, 0.0), fillColor=_BEGIN_FILL,
+            win, vertices=vertices, pos=pos, fillColor=_BEGIN_FILL,
             colorSpace="rgb255", lineColor=None, autoLog=False,
-        )
-        self._text = visual.TextStim(
-            win, text=label, pos=(0.0, 0.0), height=height * 0.46, color=_BEGIN_TEXT,
-            colorSpace="rgb255", bold=True, autoLog=False,
         )
         self._hover = False
 
@@ -346,6 +380,9 @@ class TestExperiment:
         background: BackgroundPlan | None = None,
         first_trial: int = 1,
         retry_until_correct: bool = False,
+        next_button: bool = False,
+        stars_every: int = 0,
+        break_every: int = 0,
     ) -> None:
         self.win = win
         self.mouse = event.Mouse(win=win, visible=True)
@@ -355,6 +392,16 @@ class TestExperiment:
         self.mode = mode
         self.feedback_duration = max(0.3, feedback_duration)
         self.retry_until_correct = retry_until_correct and mode == SessionMode.ACTIVE_TRAINING
+        # Between-trial pacing (core/pacing.py); 0 / False = off.
+        self.next_button = bool(next_button)
+        self.stars_every = max(0, int(stars_every))
+        self.break_every = max(0, int(break_every))
+        # The star row: ONE pre-rendered strip (imaging/stars.py), re-rendered only
+        # when a star is earned -- per-star shapes cost ~0.14 ms each, every frame.
+        self._star_strip: visual.ImageStim | None = None
+        self._star_slots = 0
+        self._star_px = 0
+        self._stars_earned = 0
         # > 1 when resuming an interrupted session: trial numbers (progress bar,
         # slideshow, monitor) continue from here instead of restarting at 1.
         self.first_trial = max(1, int(first_trial))
@@ -404,6 +451,7 @@ class TestExperiment:
         self._prompts: dict[str, visual.TextStim] = {}
         self._prompt_panels: dict[str, visual.ShapeStim] = {}
         for text in (self._listen_prompt, _RESPONSE_PROMPT, "Correct!", _WRONG_PROMPT, _RETRY_PROMPT,
+                     _STAR_MESSAGE, _ALL_DONE_MESSAGE,
                      *(f"This was: {e.label}" for e in active),
                      *(f"Correct answer: {e.label}" for e in active)):
             self._prompt_panel(text)
@@ -439,6 +487,18 @@ class TestExperiment:
             autoLog=False,
         )
         self._begin_button = BeginButton(win)
+        self._next_buttons = (
+            [BeginButton(win, text, pos=_PROMPT_POS, height=_NEXT_BUTTON_HEIGHT) for text in _NEXT_MESSAGES]
+            if self.next_button else []
+        )
+        # The break screen: its title on a panel (readable over any picture) and a button.
+        self._break_title = visual.TextStim(win, text=_BREAK_TITLE, pos=(0.0, 0.13), height=0.065,
+                                            color="white", wrapWidth=1.4, autoLog=False)
+        w_px, h_px = self._break_title.boundingBox
+        px_x, px_y = _pixels_per_unit(win)
+        half_w, half_h = w_px / px_x / 2.0 + _PANEL_PAD[0], h_px / px_y / 2.0 + _PANEL_PAD[1]
+        self._break_panel = _panel(win, -half_w, half_w, 0.13 - half_h, 0.13 + half_h)
+        self._break_button = BeginButton(win, _BREAK_LABEL, pos=(0.0, -0.06))
 
         # Pause / quit overlays, built once: the screen dimmed, a panel, two lines.
         self._overlay_dim = visual.Rect(
@@ -480,7 +540,10 @@ class TestExperiment:
         if self.amp_visualizer:
             for path in dict.fromkeys(t.path for t in trials):
                 self._envelopes[path] = self._compute_envelope(path)
-        self.background.prepare(self.first_trial - 1 + len(trials), self.first_trial)
+        total = self.first_trial - 1 + len(trials)
+        self.background.prepare(total, self.first_trial)
+        self._stars_earned = stars_earned(self.first_trial - 1, self.stars_every)
+        self._build_stars(star_slots(total, self.stars_every))
         self._warm_up()
         self._prepared = True
 
@@ -494,41 +557,8 @@ class TestExperiment:
         pb_beginner.m stamped ``S.pb_begin.UserData = clock`` for the report's
         start/finish/duration.
         """
-        try:
-            self.win.winHandle.activate()   # keyboard focus, so Space works straight away
-        except Exception:
-            pass
-        event.clearEvents()
-        self.mouse.clickReset()
-        keys = [*_BEGIN_KEYS, _QUIT_KEY]
-        mouse_was_down = self.mouse.getPressed()[0] == 1
-        pressed_inside = False
-        while True:
-            if self._close_requested:
-                raise ExperimentAborted()
-            pressed = event.getKeys(keyList=keys)
-            if _QUIT_KEY in pressed:
-                self._interrupt("quit", backdrop=self._draw_begin_screen)
-                mouse_was_down, pressed_inside = self.mouse.getPressed()[0] == 1, False
-                continue
-            if pressed:
-                break
-            inside = self._begin_button.contains(self.mouse)
-            self._begin_button.set_hover(inside)
-            mouse_down = self.mouse.getPressed()[0] == 1
-            if mouse_down and not mouse_was_down:
-                pressed_inside = inside
-            elif mouse_was_down and not mouse_down:
-                if pressed_inside and inside:
-                    break                       # a complete click on the button
-                pressed_inside = False
-            mouse_was_down = mouse_down
-            self._draw_begin_screen()
-            self.win.flip()
-
+        self._wait_for_button(self._begin_button, self.background.draw)
         begun_at = datetime.now()
-        event.clearEvents()                     # the Begin press must not count as a response
-        self.mouse.clickReset()
         self._settle(_BEGIN_SETTLE_SECONDS)
         return begun_at
 
@@ -574,6 +604,7 @@ class TestExperiment:
                         # Monitor (or autosave) errors must never crash the experiment,
                         # but they shouldn't vanish either: stderr reaches the session log.
                         print(f"Trial callback failed: {exc!r}", file=sys.stderr)
+                self._between_trials(i, total)   # optional star / break / Next (untimed)
         except ExperimentAborted as abort:
             abort.partial = responses  # type: ignore[attr-defined]
             raise
@@ -650,9 +681,94 @@ class TestExperiment:
         panel.opacity = _OVERLAY_PANEL_OPACITY
         return panel, title_stim, hint_stim
 
-    def _draw_begin_screen(self) -> None:
+    def _wait_for_button(self, button: BeginButton, backdrop: "Callable[[], None]") -> None:
+        """Show *button* over *backdrop* until it's clicked or Space/Enter is pressed.
+
+        A click counts only if it's pressed *and* released on the button. Escape
+        asks before quitting and P pauses (see :meth:`_interrupt`); closing the
+        window aborts. The press is cleared, so it can't count as an answer.
+        """
+        try:
+            self.win.winHandle.activate()   # keyboard focus, so Space works straight away
+        except Exception:
+            pass
+
+        def scene() -> None:
+            backdrop()
+            button.draw()
+
+        event.clearEvents()
+        self.mouse.clickReset()
+        keys = [*_BEGIN_KEYS, _QUIT_KEY, _PAUSE_KEY]
+        mouse_was_down = self.mouse.getPressed()[0] == 1
+        pressed_inside = False
+        while True:
+            if self._close_requested:
+                raise ExperimentAborted()
+            pressed = event.getKeys(keyList=keys)
+            if _QUIT_KEY in pressed or _PAUSE_KEY in pressed:
+                self._interrupt("quit" if _QUIT_KEY in pressed else "pause", backdrop=scene)
+                mouse_was_down, pressed_inside = self.mouse.getPressed()[0] == 1, False
+                continue
+            if pressed:
+                break
+            inside = button.contains(self.mouse)
+            button.set_hover(inside)
+            mouse_down = self.mouse.getPressed()[0] == 1
+            if mouse_down and not mouse_was_down:
+                pressed_inside = inside
+            elif mouse_was_down and not mouse_down:
+                if pressed_inside and inside:
+                    break                       # a complete click on the button
+                pressed_inside = False
+            mouse_was_down = mouse_down
+            scene()
+            self.win.flip()
+        button.set_hover(False)
+        event.clearEvents()
+        self.mouse.clickReset()
+
+    def _between_trials(self, done: int, total: int) -> None:
+        """The optional pacing after trial *done*: a star, a break, the Next button."""
+        steps = between_trials(done, total, stars_every=self.stars_every,
+                               break_every=self.break_every, next_button=self.next_button)
+        if STAR in steps and self._star_strip is not None:
+            self._set_stars(stars_earned(done, self.stars_every))
+            message = _ALL_DONE_MESSAGE if done >= total else _STAR_MESSAGE
+            self._hold(_STAR_SECONDS, lambda: self._draw_scene(enabled=False, prompt_override=message),
+                       record=False)
+        if BREAK in steps:
+            self._notify({"status": "paused", "reason": "break"})
+            self._wait_for_button(self._break_button, self._draw_break_screen)
+            self._notify({"status": "resumed"})
+        elif NEXT in steps:
+            button = self._next_buttons[(done - 1) % len(self._next_buttons)]
+            self._wait_for_button(button, lambda: self._draw_scene(enabled=False, show_prompt=False))
+
+    def _draw_break_screen(self) -> None:
         self.background.draw()
-        self._begin_button.draw()
+        self._break_panel.draw()
+        self._break_title.draw()
+
+    def _build_stars(self, slots: int) -> None:
+        """The star strip under the progress bar, left-aligned with it (none if *slots* is 0)."""
+        self._star_strip, self._star_slots = None, slots
+        if slots <= 0:
+            return
+        slot = min(_STAR_MAX_SLOT, _PROGRESS_WIDTH / slots)       # window units
+        self._star_px = max(8, round(slot * _pixels_per_unit(self.win)[1]))
+        width = slots * slot
+        self._star_strip = visual.ImageStim(
+            self.win, image=star_row(slots, self._stars_earned, self._star_px),
+            pos=(-_PROGRESS_WIDTH / 2.0 + width / 2.0, _STAR_Y), size=(width, slot),
+            interpolate=True, autoLog=False,
+        )
+
+    def _set_stars(self, earned: int) -> None:
+        """Show *earned* gold stars (one texture upload; call between trials only)."""
+        if self._star_strip is not None and earned != self._stars_earned:
+            self._stars_earned = earned
+            self._star_strip.image = star_row(self._star_slots, earned, self._star_px)
 
     def _notify(self, evt: dict) -> None:
         """Pass a status event to :attr:`on_status` (the monitor); never fatal."""
@@ -724,6 +840,12 @@ class TestExperiment:
         for stims in self._overlays.values():
             for stim in stims:
                 stim.draw()
+        for button in (*self._next_buttons, self._break_button):
+            button.draw()
+        self._break_panel.draw()
+        self._break_title.draw()
+        if self._star_strip is not None:
+            self._star_strip.draw()
         gl.glFinish()
         self.win.clearBuffer()
 
@@ -1023,6 +1145,7 @@ class TestExperiment:
         feedback_chosen: "Emotion | None" = None,
         prompt_override: str | None = None,
         excluded: "frozenset[Emotion]" = frozenset(),
+        show_prompt: bool = True,
     ) -> None:
         """Draw one frame: background, prompt, buttons, progress, LED, replay button.
 
@@ -1040,6 +1163,8 @@ class TestExperiment:
                               (used during the feedback phase).
             excluded:         Faces drawn greyed out even when *enabled* (wrong
                               picks while retrying).
+            show_prompt:      False leaves the prompt's place empty (the Next
+                              button sits there).
         """
         # Prompt: pick the pre-built stim for this frame's text.
         if prompt_override is not None:
@@ -1053,8 +1178,10 @@ class TestExperiment:
         if self.background.shows_picture:
             for panel in self._panels:
                 panel.draw()
-            self._prompt_panel(text).draw()
-        self._prompt_stim(text).draw()
+            if show_prompt:
+                self._prompt_panel(text).draw()
+        if show_prompt:
+            self._prompt_stim(text).draw()
 
         # Buttons: apply feedback highlights when in a training feedback phase.
         for button in self.buttons:
@@ -1075,6 +1202,8 @@ class TestExperiment:
         self._progress_track.draw()
         self._set_progress(self._progress_frac)
         self._progress_fill.draw()
+        if self._star_strip is not None:                  # optional: a star every N trials
+            self._star_strip.draw()
 
         # Amplitude LED: only while a clip is playing (responses disabled).
         if self.amp_visualizer and not enabled:

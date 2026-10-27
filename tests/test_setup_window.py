@@ -333,6 +333,22 @@ def test_retry_option_applies_to_active_training_only(window):
     assert not window.retry.isChecked() and not window.retry.isEnabled()
 
 
+def test_pacing_controls_round_trip_and_read_off_at_zero(window):
+    assert window.stars_every.text() == "off" and window.break_every.text() == "off"
+    window.apply_settings(ExperimentSettings(next_button=True, stars_every=5, break_every=10))
+    s = window.settings_from_form()
+    assert (s.next_button, s.stars_every, s.break_every) == (True, 5, 10)
+
+
+def test_monitor_shows_a_break(app):
+    m = MonitorWindow()
+    m.handle_event({"status": "trial", "index": 10, "total": 30, "responded": "sad", "correct": True})
+    m.handle_event({"status": "paused", "reason": "break"})
+    assert m._lbl_trial.text() == "Break"
+    m.handle_event({"status": "resumed"})
+    assert m._lbl_trial.text() == "10 / 30"
+
+
 def test_monitor_shows_retries_on_the_badge(app):
     m = MonitorWindow()
     m.handle_event({"status": "start", "total": 2, "mode": "active", "participant": "P1"})

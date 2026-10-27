@@ -131,3 +131,17 @@ def test_import_rejects_oversized_pictures(tmp_path, monkeypatch):
     monkeypatch.setattr(imaging_backgrounds, "MAX_IMPORT_PIXELS", 1000)
     with pytest.raises(PictureError, match="too large"):
         import_picture(_save(tmp_path / "huge.jpg", size=(100, 100)), str(tmp_path / "o"))
+
+
+# --- the progress-star strip (imaging/stars.py) ---------------------------------
+
+def test_star_row_is_one_clear_strip_with_gold_then_grey_stars():
+    from emognition.imaging.stars import EMPTY, GOLD, star_row
+
+    strip = star_row(4, 1, 40)
+    assert strip.mode == "RGBA" and strip.size == (160, 40)
+    assert strip.getpixel((0, 0))[3] == 0                    # clear between the stars
+    assert strip.getpixel((20, 22))[:3] == pytest.approx(GOLD, abs=2)     # star 1: earned
+    assert strip.getpixel((140, 22))[:3] == pytest.approx(EMPTY, abs=2)   # star 4: not yet
+    with pytest.raises(ValueError):
+        star_row(0, 0, 40)

@@ -81,6 +81,20 @@ def test_old_settings_files_get_background_defaults(tmp_path):
     assert s.retry_until_correct is False
 
 
+def test_pacing_options_reach_the_command_line():
+    args = _parse(ExperimentSettings())
+    assert (args.next_button, args.stars_every, args.break_every) == (False, 0, 0)
+    args = _parse(ExperimentSettings(next_button=True, stars_every=5, break_every=20))
+    assert (args.next_button, args.stars_every, args.break_every) == (True, 5, 20)
+
+
+def test_negative_every_n_is_refused():
+    import pytest
+
+    with pytest.raises(SystemExit):
+        build_parser().parse_args(["--stars-every", "-1"])
+
+
 def test_retry_until_correct_reaches_the_command_line():
     assert not _parse(ExperimentSettings(mode="active")).retry_until_correct
     args = _parse(ExperimentSettings(mode="active", retry_until_correct=True))

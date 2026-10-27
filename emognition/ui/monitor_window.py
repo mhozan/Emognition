@@ -217,7 +217,8 @@ class MonitorWindow(QWidget):
             # P pauses; Escape asks the experimenter whether to quit (Y/N).
             if not self._held_text:
                 self._held_text = self._lbl_trial.text()
-            self._lbl_trial.setText("Quit?" if evt.get("reason") == "quit" else "Paused")
+            label = {"quit": "Quit?", "break": "Break"}.get(evt.get("reason"), "Paused")
+            self._lbl_trial.setText(label)
         elif kind == "resumed":
             if self._held_text:
                 self._lbl_trial.setText(self._held_text)

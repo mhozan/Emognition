@@ -12,7 +12,7 @@ import math
 
 import pytest
 
-from emognition.ui.geometry import fit_within, rounded_rect_vertices
+from emognition.ui.geometry import fit_within, rounded_rect_vertices, star_vertices
 
 
 def test_rounded_rect_spans_exactly_its_box():
@@ -48,3 +48,12 @@ def test_fit_within(size, box, expected):
 def test_fit_within_rejects_empty_sizes():
     with pytest.raises(ValueError):
         fit_within((0, 100), (10, 10))
+
+
+def test_star_points_up_alternates_radii_and_runs_counter_clockwise():
+    verts = star_vertices(1.0, 0.4)
+    assert len(verts) == 10 and verts[0] == pytest.approx((0.0, 1.0))
+    radii = [math.hypot(x, y) for x, y in verts]
+    assert radii[0::2] == pytest.approx([1.0] * 5) and radii[1::2] == pytest.approx([0.4] * 5)
+    area2 = sum(x0 * y1 - x1 * y0 for (x0, y0), (x1, y1) in zip(verts, verts[1:] + verts[:1]))
+    assert area2 > 0

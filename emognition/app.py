@@ -394,6 +394,9 @@ def _run_session(args: argparse.Namespace) -> int:
             background=plan,
             first_trial=len(done) + 1,
             retry_until_correct=args.retry_until_correct,
+            next_button=args.next_button,
+            stars_every=args.stars_every,
+            break_every=args.break_every,
         )
         experiment.on_status = _emit             # "paused" / "resumed" -> the monitor
         # A resumed session tells the monitor what's already done, so its trial
@@ -610,6 +613,14 @@ def _play_tone(rms: float, seconds: float) -> int:
     _psychopy_quit(0)
 
 
+def _non_negative_int(text: str) -> int:
+    """argparse type: a whole number, 0 or more (0 means "off")."""
+    value = int(text)
+    if value < 0:
+        raise argparse.ArgumentTypeError(f"must be 0 or more, not {value}")
+    return value
+
+
 def build_parser() -> argparse.ArgumentParser:
     """The ``emognition`` command line (also used by tests to check ``to_argv()``)."""
     from .core.backgrounds import DEFAULT_EVERY_N, MAX_EVERY_N, MIN_EVERY_N
@@ -675,6 +686,14 @@ def build_parser() -> argparse.ArgumentParser:
                         help="active training: after a wrong answer, grey out that face and "
                              "ask again until the right one is chosen (only the first "
                              "answer is scored)")
+    parser.add_argument("--next-button", action="store_true",
+                        help="between trials, wait for a click on 'Ready for the next one?' "
+                             "(the original's Extra button)")
+    parser.add_argument("--stars-every", type=_non_negative_int, default=0, metavar="N",
+                        help="a star every N trials, a row filling up under the progress bar "
+                             "(never tied to correctness; default 0 = off)")
+    parser.add_argument("--break-every", type=_non_negative_int, default=0, metavar="N",
+                        help="a 'short break' screen every N trials (default 0 = off)")
     parser.add_argument("--resume", default=None, metavar="LOG",
                         help="continue an interrupted session from its .partial.jsonl "
                              "autosave log (same settings and trial order)")
