@@ -46,13 +46,22 @@ def _selfcheck() -> int:
     from psychopy.hardware import keyboard  # noqa: F401
 
     from .core import scan_audio_dir  # noqa: F401
+    from .core.backgrounds import CALM_GRADIENT, list_pictures
+    from .imaging import render_background
     from .reports import write_html_report  # noqa: F401
-    from .ui.assets import audio_dir
+    from .ui.assets import audio_dir, backgrounds_dir
     from .ui.experiment_window import TestExperiment  # noqa: F401
 
     n_clips = len([f for f in os.listdir(audio_dir()) if f.endswith(".wav")])
+    pictures = list_pictures(backgrounds_dir())
+    # Decode the default and one bundled picture: proves Pillow's codecs are bundled.
+    for source in [CALM_GRADIENT, *pictures[:1]]:
+        _image, problem = render_background(source, (64, 36))
+        if problem:
+            raise RuntimeError(problem)
     print(f"Emognition {__version__} self-check OK "
-          f"(python {sys.version.split()[0]}, {n_clips} bundled clips)")
+          f"(python {sys.version.split()[0]}, {n_clips} bundled clips, "
+          f"{len(pictures)} background pictures)")
     return 0
 
 
@@ -85,19 +94,12 @@ def _run_session(args: argparse.Namespace) -> int:
 
     bootstrap()
 
-    from psychopy import core, visual
+    from psychopy import visual
 
     from .core import SessionMode, build_trial_list
-    from .io import open_path
+    from .core.backgrounds import resolve_background
     from .naming import scan_stimuli
-    from .reports import (
-        SessionInfo,
-        write_csv_report,
-        write_excel_report,
-        write_html_report,
-        write_pdf_report,
-    )
-    from .ui.assets import Caption, audio_dir
+    from .ui.assets import Caption, audio_dir, background_folders
     from .ui.experiment_window import ExperimentAborted, TestExperiment
 
     audio_folder = args.audio_dir or audio_dir()
@@ -107,8 +109,20 @@ def _run_session(args: argparse.Namespace) -> int:
         return 1
     emotions = _parse_emotions(args.emotions)
     trials = build_trial_list(stimuli, emotions=emotions, shuffle=not args.no_shuffle)
+    if not trials:
+        chosen = ", ".join(e.label for e in emotions) if emotions else "the selected emotions"
+        print(f"No clips in {audio_folder} match {chosen}; nothing to present.", file=sys.stderr)
+        return 1
+    try:
+        plan = resolve_background(
+            args.background, picture_folders=background_folders(),
+            every_n=args.background_every, shuffle=args.background_shuffle,
+        )
+    except ValueError as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
 
-    started = datetime.now()
+    launched = datetime.now()
     win = visual.Window(
         size=(1280, 800), color=(-0.3, -0.3, -0.3), units="height",
         fullscr=args.fullscreen, screen=args.screen,
@@ -126,6 +140,7 @@ def _run_session(args: argparse.Namespace) -> int:
         amp_visualizer=args.amp_visualizer,
         volume=args.volume,
         mode=mode,
+        background=plan,
     )
 
     def _emit(data: dict) -> None:
@@ -152,12 +167,23 @@ def _run_session(args: argparse.Namespace) -> int:
     _emit({"status": "start", "total": len(trials), "mode": args.mode,
            "participant": args.participant})
     aborted = False
+    begun_at: datetime | None = None
+    responses = []
     try:
+        experiment.prepare(trials)          # audio stream, pictures, GPU warm-up
+        if args.no_begin:
+            begun_at = datetime.now()
+        else:
+            _emit({"status": "waiting"})
+            begun_at = experiment.wait_for_begin()
+        _emit({"status": "begun", "total": len(trials)})
         responses = experiment.run(trials, on_trial=_on_trial)
     except ExperimentAborted as abort:
         responses, aborted = getattr(abort, "partial", []), True
     finally:
+        experiment.close()
         win.close()
+    finished_at = datetime.now()
     n_correct = sum(1 for r in responses if r.is_correct)
     _emit({"status": "done", "n_correct": n_correct, "n_trials": len(responses),
            "aborted": aborted})
@@ -170,6 +196,18 @@ def _run_session(args: argparse.Namespace) -> int:
         _psychopy_quit()
         return 0
 
+    # Report writers (openpyxl, fpdf2, matplotlib: ~0.5 s of imports) load only
+    # now, after the window has closed, instead of delaying the window opening.
+    from .io import open_path
+    from .reports import (
+        SessionInfo,
+        write_csv_report,
+        write_excel_report,
+        write_html_report,
+        write_pdf_report,
+    )
+
+    started = begun_at or launched      # the session starts when Begin is pressed
     save_dir = args.save_dir or _default_save_dir()
     os.makedirs(save_dir, exist_ok=True)
     stamp = started.strftime("%Y%m%d_%H%M%S")
@@ -180,7 +218,8 @@ def _run_session(args: argparse.Namespace) -> int:
         experimenter=args.experimenter,
         mode=mode.label + (" (aborted)" if aborted else ""),
         audio_folder=audio_folder,
-        started_at=started, finished_at=datetime.now(),
+        background=plan.describe(),
+        started_at=started, finished_at=finished_at,
         app_version=__version__,
     )
     html = write_html_report(responses, base + ".html", info=info)
@@ -253,7 +292,10 @@ def _play_tone(rms: float, seconds: float) -> int:
     return 0
 
 
-def main(argv: list[str] | None = None) -> int:
+def build_parser() -> argparse.ArgumentParser:
+    """The ``emognition`` command line (also used by tests to check ``to_argv()``)."""
+    from .core.backgrounds import DEFAULT_EVERY_N, MAX_EVERY_N, MIN_EVERY_N
+
     parser = argparse.ArgumentParser(prog="emognition", description="Speech Emotion Recognition")
     parser.add_argument("--version", action="version", version=f"Emognition {__version__}")
     parser.add_argument("--selfcheck", action="store_true",
@@ -297,6 +339,23 @@ def main(argv: list[str] | None = None) -> int:
                         default="test",
                         help="session mode: test (default), passive training, "
                              "or active training with feedback")
+    parser.add_argument("--background", default="default", metavar="SPEC",
+                        help="participant-window background: 'default' (calm gradient), "
+                             "'none' (plain), 'slideshow' (all pictures), a picture file, "
+                             "or a folder of pictures (slideshow)")
+    parser.add_argument("--background-every", type=int, default=DEFAULT_EVERY_N, metavar="N",
+                        help=f"slideshow: change picture every N trials "
+                             f"({MIN_EVERY_N}-{MAX_EVERY_N}, default {DEFAULT_EVERY_N})")
+    parser.add_argument("--background-shuffle", action=argparse.BooleanOptionalAction,
+                        default=True,
+                        help="slideshow: shuffle the picture order (default: on)")
+    parser.add_argument("--no-begin", action="store_true",
+                        help="start straight away, without the Begin screen (automation)")
+    return parser
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = build_parser()
     raw = sys.argv[1:] if argv is None else list(argv)
     args = parser.parse_args(raw)
 

@@ -207,6 +207,11 @@ class MonitorWindow(QWidget):
         kind = evt.get("status")
         if kind == "start":
             self._on_start(evt)
+        elif kind == "waiting":
+            # The participant window shows the Begin screen (pb_beginner.m's button).
+            self._lbl_trial.setText("Waiting for Begin")
+        elif kind == "begun":
+            self._lbl_trial.setText(f"0 / {evt.get('total', 0)}")
         elif kind == "trial":
             self._on_trial(evt)
         elif kind == "done":

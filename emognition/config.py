@@ -22,6 +22,8 @@ from __future__ import annotations
 import json
 from dataclasses import asdict, dataclass, field
 
+from .core.backgrounds import DEFAULT_EVERY_N, SPEC_DEFAULT
+
 # The five emotion tags, default = all selected.
 ALL_EMOTION_TAGS: tuple[str, ...] = ("hap", "sca", "neu", "sad", "ang")
 
@@ -46,18 +48,27 @@ class ExperimentSettings:
     volume: float = DEFAULT_VOLUME
     emotions: list[str] = field(default_factory=lambda: list(ALL_EMOTION_TAGS))
     mode: str = "test"           # "test" | "passive" | "active"
+    # Participant-window background (MATLAB: "Pictures Directory", "Pics Interval",
+    # "Shuffle images randomly"): "default" | "none" | "slideshow" | file/folder path.
+    background: str = SPEC_DEFAULT
+    background_every: int = DEFAULT_EVERY_N
+    background_shuffle: bool = True
 
     def to_argv(self) -> list[str]:
-        """Build the ``emognition`` CLI arguments to run a session with these."""
+        """Build the ``emognition`` CLI arguments to run a session with these.
+
+        Free-text values use the ``--flag=value`` form, so a participant ID or a
+        path that starts with ``-`` can't be mistaken for another option.
+        """
         argv = [
-            "--participant", self.participant,
-            "--experimenter", self.experimenter,
+            f"--participant={self.participant}",
+            f"--experimenter={self.experimenter}",
             "--caption", self.caption,
         ]
         if self.audio_dir:
-            argv += ["--audio-dir", self.audio_dir]
+            argv.append(f"--audio-dir={self.audio_dir}")
         if self.save_dir:
-            argv += ["--save-dir", self.save_dir]
+            argv.append(f"--save-dir={self.save_dir}")
         if self.fullscreen:
             argv.append("--fullscreen")
         if self.screen:
@@ -75,6 +86,12 @@ class ExperimentSettings:
             argv += ["--emotions", ",".join(self.emotions)]
         if self.mode != "test":
             argv += ["--mode", self.mode]
+        if self.background and self.background != SPEC_DEFAULT:
+            argv.append(f"--background={self.background}")
+        if self.background_every != DEFAULT_EVERY_N:
+            argv += ["--background-every", str(self.background_every)]
+        if not self.background_shuffle:
+            argv.append("--no-background-shuffle")
         return argv
 
     def save(self, path: str) -> str:
