@@ -101,8 +101,9 @@ _OPACITY_DISABLED = 0.3   # clip playing: not clickable yet
 _OPACITY_DIM = 0.12       # training feedback: not the button being taught
 _OPACITY_LEVELS = (_OPACITY_ENABLED, _OPACITY_DISABLED, _OPACITY_DIM)
 
-# Progress bar geometry ('height' units).
-_PROGRESS_WIDTH = 0.6
+# Progress bar geometry ('height' units). 0.5 wide so it ends just left of the
+# key-number column (and of its panel, when a picture is the background).
+_PROGRESS_WIDTH = 0.5
 _PROGRESS_Y = 0.44
 
 # The prompt line.
@@ -115,6 +116,7 @@ _RESPONSE_PROMPT = "Listen, then choose the emotion you heard."
 # white prompt and key numbers stay readable over any photo.
 _PANEL_OPACITY = 0.45
 _PANEL_RADIUS = 0.03
+_PANEL_PAD = (0.035, 0.022)   # horizontal, vertical padding around a prompt
 
 # The Begin screen: a big friendly target for children; Space/Enter for adults.
 _BEGIN_LABEL = "Begin"
@@ -269,13 +271,24 @@ class BeginButton:
 
 
 def _panel(win: visual.Window, left: float, right: float, bottom: float, top: float) -> visual.ShapeStim:
-    """A translucent dark rounded panel spanning the given 'height'-unit box."""
+    """A translucent dark rounded panel spanning the given box (window units)."""
     return visual.ShapeStim(
         win,
         vertices=rounded_rect_vertices(right - left, top - bottom, _PANEL_RADIUS),
         pos=((left + right) / 2.0, (bottom + top) / 2.0),
         fillColor=(-1, -1, -1), lineColor=None, opacity=_PANEL_OPACITY, autoLog=False,
     )
+
+
+def _pixels_per_unit(win: visual.Window) -> tuple[float, float]:
+    """Pixels per window unit along x and y (the app uses 'height' units)."""
+    width, height = (float(v) for v in win.size)
+    units = getattr(win, "units", "height")
+    if units == "norm":
+        return width / 2.0, height / 2.0
+    if units == "pix":
+        return 1.0, 1.0
+    return height, height
 
 
 class TestExperiment:
@@ -346,22 +359,21 @@ class TestExperiment:
         self.key_map: dict[str, Emotion] = {str(i + 1): emo for i, emo in enumerate(active)}
 
         # Every prompt the session can show, built once (changing TextStim.text
-        # rebuilds its pyglet Label; switching between pre-built stims is free).
+        # rebuilds its pyglet Label; switching between pre-built stims is free),
+        # each with a backing panel sized to its text for picture backgrounds.
         self._prompts: dict[str, visual.TextStim] = {}
+        self._prompt_panels: dict[str, visual.ShapeStim] = {}
         for text in (self._listen_prompt, _RESPONSE_PROMPT, "Correct!",
                      *(f"This was: {e.label}" for e in active),
                      *(f"Correct answer: {e.label}" for e in active)):
-            self._prompt_stim(text)
+            self._prompt_panel(text)
 
-        # Panels behind the text, used only when a picture is the background.
+        # Panel behind the number + face column, used only over a picture.
         label_left = 0.45 - button_size * 0.85 - button_size * 0.35
         half = button_size / 2.0 + 0.025
-        self._panels = [
-            _panel(win, _PROMPT_POS[0] - _PROMPT_WRAP / 2 - 0.04, _PROMPT_POS[0] + _PROMPT_WRAP / 2 + 0.04,
-                   _PROMPT_POS[1] - 0.055, _PROMPT_POS[1] + 0.055),
-        ]
-        if ys:
-            self._panels.append(_panel(win, label_left, 0.45 + half, ys[-1] - half, ys[0] + half))
+        self._panels = (
+            [_panel(win, label_left, 0.45 + half, ys[-1] - half, ys[0] + half)] if ys else []
+        )
 
         # Progress BAR (no text): a grey track with a green fill proportional to
         # how far through the block we are.
@@ -527,6 +539,19 @@ class TestExperiment:
             self._prompts[text] = stim
         return stim
 
+    def _prompt_panel(self, text: str) -> visual.ShapeStim:
+        """The backing panel for *text*, fitted to its rendered size (built once)."""
+        panel = self._prompt_panels.get(text)
+        if panel is None:
+            w_px, h_px = self._prompt_stim(text).boundingBox     # pixels, per PsychoPy
+            px_x, px_y = _pixels_per_unit(self.win)
+            half_w = w_px / px_x / 2.0 + _PANEL_PAD[0]
+            half_h = h_px / px_y / 2.0 + _PANEL_PAD[1]
+            x, y = _PROMPT_POS
+            panel = _panel(self.win, x - half_w, x + half_w, y - half_h, y + half_h)
+            self._prompt_panels[text] = panel
+        return panel
+
     def _warm_up(self) -> None:
         """Draw every stimulus variant once, without showing anything.
 
@@ -537,7 +562,7 @@ class TestExperiment:
         from pyglet import gl
 
         self.background.draw()
-        for panel in self._panels:
+        for panel in (*self._panels, *self._prompt_panels.values()):
             panel.draw()
         self._progress_track.draw()
         self._progress_fill.draw()
@@ -788,11 +813,6 @@ class TestExperiment:
             prompt_override:  Replace the default prompt text for this frame
                               (used during the feedback phase).
         """
-        self.background.draw()
-        if self.background.shows_picture:
-            for panel in self._panels:
-                panel.draw()
-
         # Prompt: pick the pre-built stim for this frame's text.
         if prompt_override is not None:
             text = prompt_override
@@ -800,6 +820,12 @@ class TestExperiment:
             text = _RESPONSE_PROMPT
         else:
             text = self._listen_prompt
+
+        self.background.draw()
+        if self.background.shows_picture:
+            for panel in self._panels:
+                panel.draw()
+            self._prompt_panel(text).draw()
         self._prompt_stim(text).draw()
 
         # Buttons: apply feedback highlights when in a training feedback phase.
