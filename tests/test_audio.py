@@ -119,3 +119,67 @@ def test_plan_and_apply_on_bundled_clips(tmp_path):
                 -23.0, abs=1.5
             )
             break
+
+
+# --- preprocess safety and provenance (Phase 3) ----------------------------
+
+def _tone_file(path, seconds=1.0, rate=16000, lead=0.3, tail=0.4, amp=0.2):
+    import numpy as np
+    import soundfile as sf
+
+    n = int(seconds * rate)
+    t = np.arange(n) / rate
+    sig = amp * np.sin(2 * np.pi * 440 * t)
+    data = np.concatenate([np.zeros(int(lead * rate)), sig, np.zeros(int(tail * rate))])
+    sf.write(str(path), data, rate, subtype="PCM_16")
+    return str(path)
+
+
+def test_gui_and_cli_share_one_padding_default():
+    import inspect
+
+    from emognition.audio.preprocess import DEFAULT_PAD_S, plan_batch
+
+    assert inspect.signature(plan_batch).parameters["pad_s"].default == DEFAULT_PAD_S
+    script = open(os.path.join(os.path.dirname(__file__), os.pardir, "scripts",
+                               "calibrate_audio.py"), encoding="utf-8").read()
+    assert "default=DEFAULT_PAD_S * 1000.0" in script
+
+
+def test_apply_plan_refuses_to_overwrite_originals(tmp_path):
+    from emognition.audio import apply_plan, plan_batch
+
+    src = _tone_file(tmp_path / "a_hap_f.wav")
+    before = open(src, "rb").read()
+    with pytest.raises(ValueError, match="input folder"):
+        apply_plan(plan_batch([src], str(tmp_path)))
+    assert open(src, "rb").read() == before
+
+
+def test_apply_plan_refuses_colliding_output_names(tmp_path):
+    from emognition.audio import apply_plan, plan_batch
+
+    (tmp_path / "one").mkdir(); (tmp_path / "two").mkdir()
+    a = _tone_file(tmp_path / "one" / "x_hap_f.wav")
+    b = _tone_file(tmp_path / "two" / "x_hap_f.wav")
+    with pytest.raises(ValueError, match="same file"):
+        apply_plan(plan_batch([a, b], str(tmp_path / "out")))
+
+
+def test_untrimmed_normalisation_hits_the_target_and_sidecar_records_it(tmp_path):
+    import json
+
+    import soundfile as sf
+
+    from emognition.audio import NormalizationMethod, apply_plan, measure, plan_batch
+    from emognition.audio.preprocess import SIDECAR_NAME
+
+    (tmp_path / "in").mkdir()
+    src = _tone_file(tmp_path / "in" / "s_hap_f.wav")
+    plan = plan_batch([src], str(tmp_path / "out"), method=NormalizationMethod.RMS, target_db=-26.0)
+    (out,) = apply_plan(plan, trim=False)
+    data, rate = sf.read(out)
+    assert abs(measure(data, rate, NormalizationMethod.RMS) - (-26.0)) < 0.1   # was ~0.5-0.8 dB short
+    record = json.load(open(tmp_path / "out" / SIDECAR_NAME, encoding="utf-8"))
+    assert record["method"] == "rms" and record["trimmed"] is False and record["pad_s"] == plan.pad_s
+    assert record["clips"][0]["file"] == "s_hap_f.wav" and record["clips"][0]["lead_trim_s"] == 0.0

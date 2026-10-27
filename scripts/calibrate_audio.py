@@ -26,6 +26,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from emognition.audio import NormalizationMethod, apply_plan, plan_batch  # noqa: E402
+from emognition.audio.preprocess import DEFAULT_PAD_S  # noqa: E402
 
 
 def _wavs(folder: str) -> list[str]:
@@ -45,8 +46,9 @@ def main(argv: list[str] | None = None) -> int:
                         default="lufs", help="loudness metric (default: lufs)")
     parser.add_argument("--target", type=float, default=None,
                         help="target level in the metric's dB units (default per method)")
-    parser.add_argument("--pad-ms", type=float, default=40.0,
-                        help="padding kept around speech when trimming (default 40 ms)")
+    parser.add_argument("--pad-ms", type=float, default=DEFAULT_PAD_S * 1000.0,
+                        help=f"padding kept around speech when trimming "
+                             f"(default {DEFAULT_PAD_S * 1000:g} ms, same as the Calibration window)")
     parser.add_argument("--no-trim", action="store_true", help="don't trim silence")
     parser.add_argument("--no-normalize", action="store_true", help="don't change loudness")
     parser.add_argument("--yes", action="store_true", help="apply without confirmation")
@@ -84,7 +86,11 @@ def main(argv: list[str] | None = None) -> int:
             print("Aborted; nothing written.")
             return 0
 
-    written = apply_plan(plan, trim=not args.no_trim, normalize=not args.no_normalize)
+    try:
+        written = apply_plan(plan, trim=not args.no_trim, normalize=not args.no_normalize)
+    except ValueError as exc:     # output folder == input folder, or name collisions
+        print(str(exc), file=sys.stderr)
+        return 2
     print(f"Wrote {len(written)} files to {out_dir}")
     return 0
 

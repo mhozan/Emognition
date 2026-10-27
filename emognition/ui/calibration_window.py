@@ -203,7 +203,12 @@ class CalibrationWindow(QWidget):
     def _apply_loudness(self) -> None:
         if self._plan is None:
             self._preview_loudness()
-        written = apply_plan(self._plan)
+        try:
+            written = apply_plan(self._plan)
+        except (ValueError, OSError) as exc:   # e.g. output folder == input folder
+            # (an exception escaping a Qt slot would abort the whole app)
+            self.loud_status.setText(f"Nothing written: {exc}")
+            return
         self.loud_status.setText(f"Wrote {len(written)} files to {self._plan.out_dir}")
 
     # -- SPL tone ---------------------------------------------------------

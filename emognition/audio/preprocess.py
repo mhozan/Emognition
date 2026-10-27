@@ -18,6 +18,7 @@ writes anything, and it writes to a *new* folder; originals are never touched.
 
 from __future__ import annotations
 
+import json
 import os
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -32,6 +33,15 @@ from .loudness import (
     apply_gain,
     measure,
 )
+
+# Silence kept around the detected speech when trimming. One shared default for
+# the Calibration window and scripts/calibrate_audio.py: offset reaction times
+# are measured from the end of the *file*, so different padding would shift them.
+DEFAULT_PAD_S = 0.10
+
+# Written next to the calibrated clips so a methods section can say exactly what
+# was done to the stimuli.
+SIDECAR_NAME = "calibration.json"
 
 
 @dataclass(frozen=True, slots=True)
@@ -98,7 +108,7 @@ def plan_batch(
     method: NormalizationMethod = NormalizationMethod.LUFS,
     target_db: float | None = None,
     threshold_db: float = -40.0,
-    pad_s: float = 0.10,
+    pad_s: float = DEFAULT_PAD_S,
     ceiling_db: float = DEFAULT_CEILING_DB,
 ) -> BatchPlan:
     """Analyse every clip and return what preprocessing *would* do (no writes)."""
@@ -141,6 +151,55 @@ def plan_batch(
     )
 
 
+def _check_outputs(plan: BatchPlan) -> None:
+    """Refuse plans that would overwrite originals or collide on a file name."""
+    out = os.path.abspath(plan.out_dir)
+    for clip in plan.clips:
+        src_dir = os.path.dirname(os.path.abspath(clip.path))
+        same = os.path.normcase(src_dir) == os.path.normcase(out)
+        if not same and os.path.isdir(out):
+            same = os.path.samefile(src_dir, out)
+        if same:
+            raise ValueError(
+                f"The output folder is the input folder ({out}); choose another one "
+                "so the original recordings are never overwritten."
+            )
+    names = [os.path.normcase(c.filename) for c in plan.clips]
+    duplicates = sorted({n for n in names if names.count(n) > 1})
+    if duplicates:
+        raise ValueError("Two inputs would be written to the same file: " + ", ".join(duplicates))
+
+
+def _write_sidecar(plan: BatchPlan, *, trim: bool, normalize: bool) -> str:
+    """Record the settings and per-clip changes next to the calibrated clips."""
+    record = {
+        "method": plan.method.value,
+        "target_db": plan.target_db,
+        "ceiling_db": plan.ceiling_db,
+        "pad_s": plan.pad_s,
+        "trimmed": trim,
+        "normalized": normalize,
+        "clips": [
+            {
+                "file": c.filename,
+                "source": c.path,
+                "original_duration_s": round(c.orig_duration, 4),
+                "duration_s": round(c.new_duration if trim else c.orig_duration, 4),
+                "lead_trim_s": round(c.lead_trim_s, 4) if trim else 0.0,
+                "tail_trim_s": round(c.tail_trim_s, 4) if trim else 0.0,
+                "gain_db": round(c.gain_db, 3) if normalize else 0.0,
+                "peak_limited": c.will_limit if normalize else False,
+            }
+            for c in plan.clips
+        ],
+    }
+    path = os.path.join(plan.out_dir, SIDECAR_NAME)
+    with open(path, "w", encoding="utf-8") as fh:
+        json.dump(record, fh, indent=2)
+        fh.write("\n")
+    return path
+
+
 def apply_plan(
     plan: BatchPlan,
     *,
@@ -149,9 +208,17 @@ def apply_plan(
 ) -> list[str]:
     """Write the calibrated clips to ``plan.out_dir``; return the written paths.
 
-    Originals are read but never modified. Output keeps each source file's name
-    and audio subtype (e.g. 16-bit PCM).
+    Originals are read but never modified: a plan whose output folder is an
+    input folder, or whose outputs would collide on a name, is refused
+    (ValueError) before anything is written. Output keeps each source file's
+    name and audio subtype (e.g. 16-bit PCM), and a ``calibration.json``
+    sidecar records exactly what was done.
+
+    Gain is measured on the signal actually written: the trimmed clip when
+    trimming (as planned), the untrimmed clip when not -- silence lowers an RMS
+    measurement, so reusing the trimmed figure would miss the target.
     """
+    _check_outputs(plan)
     os.makedirs(plan.out_dir, exist_ok=True)
     written: list[str] = []
     for clip in plan.clips:
@@ -160,8 +227,10 @@ def apply_plan(
         if trim:
             data = trim_samples(data, rate, clip.onset_s, clip.offset_s, clip.pad_s)
         if normalize:
-            data, _ = apply_gain(data, clip.gain_db, plan.ceiling_db)
+            gain_db = clip.gain_db if trim else plan.target_db - measure(data, rate, plan.method)
+            data, _ = apply_gain(data, gain_db, plan.ceiling_db)
         out_path = os.path.join(plan.out_dir, clip.filename)
         sf.write(out_path, data, rate, subtype=subtype)
         written.append(out_path)
+    _write_sidecar(plan, trim=trim, normalize=normalize)
     return written
