@@ -103,16 +103,18 @@ chmod +x emognition/emognition
 </details>
 
 **Which Python?** The pre-built downloads above include their own Python. To
-run from source you need **Python 3.12**, the newest version PsychoPy supports:
-PsychoPy 2026.2 installs on Python 3.10–3.12 only. Python 3.13 and later,
-including the current 3.15, can't install PsychoPy yet. Emognition will move to
-a newer Python as soon as a PsychoPy release allows it. Any 3.12.x works, so
-take the newest one your installer offers.
+run from source you need **Python 3.11**, the newest version the whole stack
+runs on reliably. PsychoPy 2026.2 installs on Python 3.10–3.12, but its audio
+engine, PsychToolbox, crashes on 3.12 and later on Linux unless the computer is
+set up for realtime audio. Python 3.13 and later, including the current 3.15,
+can't install PsychoPy at all yet. Emognition will move to a newer Python as
+soon as PsychoPy and PsychToolbox allow it. Any 3.11.x works; 3.11 gets security
+fixes until October 2027.
 
 <details>
 <summary><strong>Windows — from source</strong></summary>
 
-You need **Python 3.12** (see *Which Python?* above).
+You need **Python 3.11** (see *Which Python?* above).
 All commands below are for **PowerShell**; do not use Command Prompt.
 
 **Step 1 — Open PowerShell**
@@ -125,15 +127,15 @@ All commands below are for **PowerShell**; do not use Command Prompt.
 > Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
 > ```
 
-**Step 2 — Install Python 3.12**
+**Step 2 — Install Python 3.11**
 
 Download **Windows installer (64-bit)** from
-[python.org/downloads/release/python-31210](https://www.python.org/downloads/release/python-31210/)
-(`python-3.12.10-amd64.exe`). 3.12.10 is the newest 3.12 release that has an
-installer; later 3.12 releases are security fixes published as source code only.
+[python.org/downloads/release/python-3119](https://www.python.org/downloads/release/python-3119/)
+(`python-3.11.9-amd64.exe`). 3.11.9 is the newest 3.11 release that has an
+installer; later 3.11 releases are security fixes published as source code only.
 On the first screen, tick **"Add python.exe to PATH"**, then click **Install Now**.
 
-Check it: `py -3.12 --version` should print `Python 3.12.10`.
+Check it: `py -3.11 --version` should print `Python 3.11.9`.
 
 **Step 3 — Install Git**
 
@@ -145,7 +147,7 @@ Download from [git-scm.com/download/win](https://git-scm.com/download/win), run 
 cd "$HOME\Documents"
 git clone https://github.com/mhozan/Emognition.git
 cd Emognition
-py -3.12 -m venv .venv
+py -3.11 -m venv .venv
 .venv\Scripts\Activate.ps1
 pip install --no-deps -r requirements.txt
 python -m emognition
@@ -162,16 +164,16 @@ python -m emognition
 <details>
 <summary><strong>macOS — from source</strong></summary>
 
-**Step 1 — Install Python 3.12**
+**Step 1 — Install Python 3.11**
 
-Option A (Homebrew, which keeps 3.12 at its newest patch release):
+Option A (Homebrew, which keeps 3.11 at its newest patch release):
 ```bash
-brew install python@3.12
+brew install python@3.11
 ```
 
 Option B: download the **macOS 64-bit universal2 installer** from
-[python.org/downloads/release/python-31210](https://www.python.org/downloads/release/python-31210/)
-and run it. 3.12.10 is the newest 3.12 release with an installer.
+[python.org/downloads/release/python-3119](https://www.python.org/downloads/release/python-3119/)
+and run it. 3.11.9 is the newest 3.11 release with an installer.
 
 **Step 2 — Install PortAudio** (required for PsychoPy audio)
 
@@ -186,7 +188,7 @@ No Homebrew? Install it first: [brew.sh](https://brew.sh).
 ```bash
 git clone https://github.com/mhozan/Emognition.git
 cd Emognition
-python3.12 -m venv .venv
+python3.11 -m venv .venv
 source .venv/bin/activate
 pip install --no-deps -r requirements.txt
 python -m emognition
@@ -199,27 +201,35 @@ python -m emognition
 <details>
 <summary><strong>Linux — from source</strong></summary>
 
-**Step 1 — Install Python 3.12 and the system libraries**
+**Step 1 — Install Python 3.11 and the system libraries**
+
+Ubuntu doesn't ship a current Python 3.11, so add the deadsnakes PPA first
+(or install 3.11 with pyenv: `pyenv install 3.11` picks the newest 3.11.x):
 
 ```bash
+sudo add-apt-repository ppa:deadsnakes/ppa
 sudo apt-get update
 sudo apt-get install -y \
-  python3.12 python3.12-venv python3.12-dev \
+  python3.11 python3.11-venv python3.11-dev \
   libglu1-mesa libgl1 libegl1 libsndfile1 libportaudio2 \
   libxcb-cursor0 libxcb-xinerama0 libxkbcommon-x11-0 libdbus-1-3 \
   git
 ```
 
-> Ubuntu 24.04 ships Python 3.12. On other releases, add the deadsnakes PPA
-> first (`sudo add-apt-repository ppa:deadsnakes/ppa && sudo apt-get update`),
-> or install 3.12 with pyenv (`pyenv install 3.12` picks the newest 3.12.x).
+> **Realtime audio (recommended).** PsychToolbox runs its audio thread at
+> realtime priority when the system allows it, which makes playback more robust
+> under load. Without it, PsychToolbox prints a `PTB-CRITICAL ... Failed to set
+> new basePriority` line at the first sound; on Python 3.11 that line is
+> harmless. To allow it, add yourself to the group that `/etc/security/limits.d/`
+> grants `rtprio` (on Ubuntu, `pipewire`), then log out and back in:
+> `sudo usermod -aG pipewire $USER`.
 
 **Step 2 — Download and set up**
 
 ```bash
 git clone https://github.com/mhozan/Emognition.git
 cd Emognition
-python3.12 -m venv .venv
+python3.11 -m venv .venv
 source .venv/bin/activate
 pip install --no-deps -r requirements.txt
 python -m emognition

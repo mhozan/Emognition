@@ -42,9 +42,12 @@ def _selfcheck() -> int:
     import is missing from the bundle, importing these will fail here instead of
     in front of a participant.
     """
-    from .runtime import bootstrap
+    from .runtime import bootstrap, ptb_audio_problem
 
     bootstrap()
+    problem = ptb_audio_problem()      # a bundle that would crash at the first sound fails here
+    if problem:
+        raise RuntimeError(problem)
     # Importing these pulls in the audio/visual/keyboard backends + report deps.
     import psychtoolbox  # noqa: F401
     from psychopy import sound, visual  # noqa: F401  (visual: import check only)
@@ -257,7 +260,8 @@ def _run_session(args: argparse.Namespace) -> int:
     ``--resume <that file>`` an interrupted session carries on with the same
     trial order and settings, and its reports cover all of its trials.
 
-    Exit codes: 0 done; 1 nothing to run or nowhere to save; 2 a bad setting;
+    Exit codes: 0 done; 1 can't run here (no clips, nowhere to save, or audio
+    that would crash -- see runtime.ptb_audio_problem); 2 a bad setting;
     3 the session ran but a report format could not be written (see stderr --
     the CSV is written first, so the raw data is normally still safe).
     """
@@ -278,9 +282,13 @@ def _run_session(args: argparse.Namespace) -> int:
         print(str(exc), file=sys.stderr)
         return 2
 
-    from .runtime import bootstrap
+    from .runtime import bootstrap, ptb_audio_problem
 
     bootstrap()
+    problem = ptb_audio_problem()
+    if problem:                          # say why, instead of segfaulting at the first clip
+        print(problem, file=sys.stderr)
+        return 1
 
     from psychopy import visual
 
@@ -565,9 +573,13 @@ def _play_tone(rms: float, seconds: float) -> int:
 
     import soundfile as sf
 
-    from .runtime import bootstrap
+    from .runtime import bootstrap, ptb_audio_problem
 
     bootstrap()
+    problem = ptb_audio_problem()
+    if problem:
+        print(problem, file=sys.stderr)
+        return 1
     from psychopy import core, sound
 
     from .audio import calibration_tone

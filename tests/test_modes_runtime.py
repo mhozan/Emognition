@@ -65,3 +65,35 @@ def test_playback_resolves_to_ptb_with_a_shared_latency_class():
         assert inspect.signature(device.__init__).parameters["latencyClass"].default == 1
     finally:
         prefs.hardware["audioLib"] = saved
+
+
+# --- PsychToolbox audio vs Python 3.12+ on Linux (runtime.ptb_audio_problem) ----
+
+@pytest.mark.parametrize("version, platform, realtime, crashes", [
+    ((3, 12), "linux", False, True),       # the crash: PTB prints from its audio thread
+    ((3, 15), "linux", False, True),
+    ((3, 12), "linux", True, False),       # realtime allowed: PTB has nothing to complain about
+    ((3, 11), "linux", False, False),      # 3.11 survives the print (process-wide thread state)
+    ((3, 12), "win32", False, False),      # the realtime switch is Linux-only
+    ((3, 12), "darwin", False, False),
+])
+def test_ptb_audio_problem_flags_exactly_the_crashing_setup(version, platform, realtime, crashes):
+    from emognition.runtime import ptb_audio_problem
+
+    problem = ptb_audio_problem(version, platform, realtime_allowed=lambda: realtime)
+    assert (problem is not None) == crashes
+    if crashes:
+        assert "Python 3.11" in problem and "rtprio" in problem
+
+
+def test_realtime_probe_answers_without_changing_this_thread():
+    import os
+    import sys
+
+    from emognition.runtime import _realtime_allowed
+
+    if not sys.platform.startswith("linux"):
+        pytest.skip("scheduling policies are probed on Linux only")
+    before = os.sched_getscheduler(0)
+    assert isinstance(_realtime_allowed(), bool)
+    assert os.sched_getscheduler(0) == before      # only the throwaway thread was touched

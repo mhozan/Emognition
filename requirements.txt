@@ -1,5 +1,5 @@
 # Emognition (PsychoPy port) — pinned dependency lockfile
-# Generated 2026-10-27 on Python 3.12.13 / Ubuntu (PsychoPy 2026.2.5).
+# Generated 2026-10-27 on Python 3.11.15 / Ubuntu (PsychoPy 2026.2.5).
 #
 # Reproduce EXACTLY with:   pip install --no-deps -r requirements.txt
 # (--no-deps makes pip install exactly this list. PsychoPy's own metadata asks

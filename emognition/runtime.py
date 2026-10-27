@@ -9,13 +9,18 @@
 """Runtime hardening: isolated, documented work-arounds for third-party quirks.
 
 Anything that exists purely to dodge someone else's bug lives here, quarantined
-away from the rest of the codebase, with a paper trail. Today there is exactly
-one such gremlin -- see :func:`harden_psychopy`.
+away from the rest of the codebase, with a paper trail: the PsychoPy TextStim race
+(:func:`harden_psychopy`) and the PsychToolbox audio crash on Python 3.12+
+(:func:`ptb_audio_problem`).
 """
 
 from __future__ import annotations
 
+import os
+import sys
+import threading
 import warnings as _warnings
+from collections.abc import Callable
 
 # The exact (constant) regex PsychoPy compiles on every TextStim construction.
 _TEXTSTIM_PYGLET_FILTER = ".*text.Label*"
@@ -58,6 +63,65 @@ def configure_prefs(
 
     prefs.hardware["audioLib"] = list(audio_libs)
     prefs.hardware["audioLatencyMode"] = audio_latency_mode
+
+
+# PsychToolbox asks for this realtime priority (SCHED_FIFO, 0 + tweak 4).
+_PTB_AUDIO_PRIORITY = 4
+
+
+def _realtime_allowed() -> bool:
+    """Can a thread of ours switch itself to realtime scheduling, as PTB's will?
+
+    Probed on a throwaway thread: on Linux, ``sched_setscheduler(0, ...)`` changes
+    only the calling thread, and this one exits straight away.
+    """
+    allowed: list[bool] = []
+
+    def probe() -> None:
+        try:
+            os.sched_setscheduler(0, os.SCHED_FIFO, os.sched_param(_PTB_AUDIO_PRIORITY))
+            allowed.append(True)
+        except (OSError, AttributeError):
+            allowed.append(False)
+
+    thread = threading.Thread(target=probe, name="emognition-realtime-probe")
+    thread.start()
+    thread.join()
+    return bool(allowed and allowed[0])
+
+
+def ptb_audio_problem(
+    version: tuple[int, int] | None = None,
+    platform: str | None = None,
+    realtime_allowed: Callable[[], bool] = _realtime_allowed,
+) -> str | None:
+    """Why PsychToolbox audio would crash this process, or None if it won't.
+
+    **The bug** (psychtoolbox 3.0.19.14 and 3.0.22.2, found 2026-10-27). On Linux
+    (ALSA/PulseAudio), PTB's audio thread switches itself to realtime priority on
+    its first callback. If the system refuses, as it does for users without an
+    ``rtprio`` limit, PTB prints a warning through Python's C API *from that
+    non-Python thread*. Up to Python 3.11 that happens to work: the interpreter
+    finds the "current" thread state through a process-wide pointer to the thread
+    holding the GIL. Python 3.12 made it thread-local, so in PTB's thread it is
+    NULL, and the print segfaults the whole experiment at the first sound.
+
+    Hence: Linux + Python 3.12 or later + no realtime permission = a crash. The
+    caller turns that into a clear message instead (the arguments exist for
+    tests; they default to this process).
+    """
+    version = version or sys.version_info[:2]
+    platform = platform or sys.platform
+    if version < (3, 12) or not platform.startswith("linux") or realtime_allowed():
+        return None
+    return (
+        f"PsychToolbox audio crashes on Python {version[0]}.{version[1]} on Linux unless "
+        "realtime scheduling is allowed (it prints from its audio thread, which "
+        "Python 3.12+ can't survive). Use Python 3.11 (see the README), or allow "
+        "realtime priority for this user: add them to a group that "
+        "/etc/security/limits.d grants 'rtprio' (e.g. 'pipewire' or 'audio') and "
+        "log in again."
+    )
 
 
 def bootstrap() -> None:

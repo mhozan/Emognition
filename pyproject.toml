@@ -7,13 +7,13 @@ name = "emognition"
 version = "3.0.0-alpha.1"
 description = "Speech Emotion Recognition experiment (PsychoPy port of the MATLAB Emognition app)"
 readme = "README.md"
-requires-python = ">=3.12,<3.13"   # the newest PsychoPy 2026.2 supports
+requires-python = ">=3.11,<3.12"   # PTB audio crashes on 3.12+ (runtime.ptb_audio_problem)
 license = { file = "LICENSE" }
 authors = [{ name = "Mohsen Hozan" }]
 keywords = ["psychophysics", "emotion-recognition", "psychopy", "reaction-time", "experiment"]
 classifiers = [
     "License :: OSI Approved :: GNU Affero General Public License v3 or later (AGPLv3+)",
-    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.11",
     "Intended Audience :: Science/Research",
     "Topic :: Scientific/Engineering",
     "Operating System :: OS Independent",

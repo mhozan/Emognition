@@ -5,9 +5,11 @@
 #   pip install --no-deps -r requirements.txt
 # requirements.txt is the lockfile; this file is only the human-level intent.
 #
-# Python: the newest version PsychoPy supports -- 3.12 for PsychoPy 2026.2
-# (Requires-Python >=3.10,<3.13). Newer Pythons (3.13+) can't install PsychoPy
-# at all; move up when a PsychoPy release allows it, then re-lock.
+# Python: 3.11, the newest the whole stack runs on reliably. PsychoPy 2026.2
+# allows 3.10-3.12 (3.13+ can't install it at all), but PsychToolbox's audio
+# engine (3.0.19.14 and 3.0.22.2) segfaults on Python 3.12+ on Linux unless the
+# user may use realtime scheduling -- see emognition/runtime.py,
+# ptb_audio_problem(). Move up when both allow it, then re-lock.
 #
 # Re-locking (on Linux, in a fresh venv of that Python):
 #   pip install --dry-run --ignore-installed --report report.json \
