@@ -42,6 +42,7 @@ and homage.
 | **Test mode** | Blind test — no feedback — full confusion-matrix report |
 | **Passive training** | Correct label revealed after each clip; participant learns the mapping |
 | **Active training** | Participant responds, then correct (green) / wrong (orange) feedback before advancing; optionally *retry until correct*, as in the original |
+| **Emoticon buttons** | Crisp at any screen size (drawn at 512 px from the original artwork); captions in English, Spanish or Traditional Chinese, or none, set in Noto Sans |
 | **Begin screen** | The participant starts the session with a big **Begin** button (or Space/Enter); the report's start time and duration count from that press |
 | **Background pictures** | Calm, text-free backgrounds to keep children engaged: a soothing gradient by default, five bundled scenes, your own pictures via **Add picture…**, or a slideshow that changes every N trials |
 | **Practice and balanced order** | Opt-in practice trials with feedback before the test (never scored), and a shuffle with at most N of one emotion in a row |
@@ -494,7 +495,7 @@ Options:
                      or in the current folder when run from source]
   --mode MODE        test | passive | active  [test]
   --emotions TAGS    Comma-separated subset, e.g. hap,sad,ang  [all five]
-  --caption LANG     none | english | mandarin  [none]
+  --caption LANG     none | english | mandarin | spanish  [none]
   --volume FLOAT     Playback volume 0–1  [0.8]
   --fullscreen       Run the experiment window fullscreen
   --screen INT       Display index for the experiment window [0]

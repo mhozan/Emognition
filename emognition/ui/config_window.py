@@ -71,7 +71,7 @@ from .assets import (
     user_data_dir,
 )
 
-_CAPTIONS = ["none", "english", "mandarin"]
+_CAPTIONS = ["none", "english", "mandarin", "spanish"]
 _MODES = ["test", "passive", "active"]
 _MODE_LABELS = {"test": "Test", "passive": "Passive Training", "active": "Active Training"}
 _EMOTION_LABELS = {"hap": "Happy", "sca": "Scared", "neu": "Neutral",

@@ -38,6 +38,7 @@ _TEXT_REGIONS = [(1270, 90, 1650, 990), (470, 400, 1130, 580)]
     (Caption.ENGLISH, "0"),
     (Caption.MANDARIN, "1"),
     (Caption.NONE, "2"),
+    (Caption.SPANISH, "3"),
 ])
 def test_emoticon_filenames_follow_prefix_convention(caption, prefix):
     path = emoticon_path(Emotion.HAPPY, caption)
@@ -76,3 +77,15 @@ def test_background_folders_are_bundled_then_user():
     bundled, user = background_folders()
     assert bundled == backgrounds_dir()
     assert user == user_backgrounds_dir() and user.endswith(os.path.join(".emognition", "backgrounds"))
+
+
+
+@pytest.mark.parametrize("caption", list(Caption))
+@pytest.mark.parametrize("emotion", list(Emotion))
+def test_every_emoticon_is_a_sharp_opaque_square(caption, emotion):
+    """512 px, drawn by scripts/generate_emoticons.py: crisp at any screen size."""
+    from PIL import Image
+
+    with Image.open(emoticon_path(emotion, caption)) as im:
+        assert im.size[0] == im.size[1] >= 256
+        assert im.convert("RGBA").getpixel((0, 0)) == (255, 255, 255, 255)   # white tile

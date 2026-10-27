@@ -582,8 +582,8 @@ def _run_session(args: argparse.Namespace) -> int:
 
 
 def _caption_value(choice: str) -> str:
-    """Map a caption choice to the Caption enum value ('0'/'1'/'2')."""
-    return {"english": "0", "mandarin": "1", "none": "2"}.get(choice, "2")
+    """Map a caption choice to the Caption enum value ('0'..'3')."""
+    return {"english": "0", "mandarin": "1", "none": "2", "spanish": "3"}.get(choice, "2")
 
 
 def _parse_emotions(spec: str | None):
@@ -708,7 +708,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--emotions", default=None,
                         help="comma-separated emotion tags to test, e.g. hap,sad,ang "
                              "(default: all five)")
-    parser.add_argument("--caption", choices=["none", "english", "mandarin"],
+    parser.add_argument("--caption", choices=["none", "english", "mandarin", "spanish"],
                         default="none", help="emoticon caption language (default: none)")
     parser.add_argument("--fullscreen", action="store_true",
                         help="run the experiment window full screen")

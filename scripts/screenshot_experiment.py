@@ -21,8 +21,9 @@ from emognition.runtime import bootstrap
 bootstrap()
 
 from psychopy import visual
+from emognition.core.backgrounds import SPEC_DEFAULT, resolve_background
 from emognition.core.emotions import EMOTIONS_IN_ORDER
-from emognition.ui.assets import Caption
+from emognition.ui.assets import Caption, background_folders
 from emognition.ui.experiment_window import TestExperiment
 from emognition.core import SessionMode
 
@@ -32,19 +33,21 @@ from emognition.core import SessionMode
 win = visual.Window(
     size=(1280, 800),
     fullscr=False,
-    color=(-1, -1, -1),
-    units="norm",
+    color=(-0.3, -0.3, -0.3),   # the session window's own settings (app.py)
+    units="height",
     title="Emognition",
     allowGUI=True,
     screen=0,
 )
 
-# Build a TestExperiment in Test mode with English captions, all 5 emotions.
+# Build a TestExperiment in Test mode with English captions, all 5 emotions,
+# over the default background (the calm gradient).
 exp = TestExperiment(
     win,
     caption=Caption.ENGLISH,
     emotions=list(EMOTIONS_IN_ORDER),
     mode=SessionMode.TEST,
+    background=resolve_background(SPEC_DEFAULT, picture_folders=background_folders()),
 )
 
 # Simulate mid-session state: 4 of 10 trials done.

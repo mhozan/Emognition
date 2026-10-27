@@ -75,7 +75,7 @@ class ExperimentSettings:
     experimenter: str = "APPstaff"
     audio_dir: str = ""          # "" -> use the bundled stimuli
     save_dir: str = ""           # "" -> default (./save_location)
-    caption: str = "none"        # none | english | mandarin
+    caption: str = "none"        # none | english | mandarin | spanish
     fullscreen: bool = False
     screen: int = 0              # display index for the experiment window
     shuffle: bool = True

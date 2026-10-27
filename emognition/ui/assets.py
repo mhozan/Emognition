@@ -18,12 +18,16 @@ Why a dedicated module? Two reasons:
    advertises via ``sys._MEIPASS``. Centralising path resolution here means the
    PyInstaller fix is a one-line change, not a scavenger hunt.
 
-The emoticon images come in three caption variants, encoded by a leading digit in
-the filename (a quirk we inherit from the original MATLAB assets):
+The emoticon images come in caption variants, encoded by a leading digit in the
+filename (a quirk we inherit from the original MATLAB assets):
 
     "0happy.png"  -> English caption    (rb1 in the old UI)
-    "1happy.png"  -> Mandarin caption    (rb2)
+    "1happy.png"  -> Mandarin caption    (rb2; Traditional characters)
     "2happy.png"  -> no caption          (rb0, the original default)
+    "3happy.png"  -> Spanish caption     (new)
+
+They are drawn by ``scripts/generate_emoticons.py`` (512 px, from the original
+artwork's measured geometry); edit and re-run that, not the PNGs.
 """
 
 from __future__ import annotations
@@ -41,6 +45,7 @@ class Caption(Enum):
     ENGLISH = "0"
     MANDARIN = "1"
     NONE = "2"  # the original program's default
+    SPANISH = "3"
 
 
 def assets_root() -> str:

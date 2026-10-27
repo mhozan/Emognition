@@ -230,8 +230,10 @@ class EmotionButton:
             image=emoticon_path(emotion, caption),
             pos=pos,
             size=(size, size),  # square; window 'height' units keep aspect honest
+            interpolate=True,   # smooth scaling (PsychoPy's default is nearest-pixel)
             autoLog=False,
         )
+        _trilinear(self.stim)   # the 512 px faces are shown at ~130-350 px
         self._stim_opacity = 1.0
         # A small key-hint label to the left of the face (1..N for the buttons
         # actually shown, not the emotion's canonical code) -- one per opacity
@@ -341,6 +343,27 @@ class BeginButton:
         self._shadow.draw()
         self._shape.draw()
         self._text.draw()
+
+
+def _trilinear(stim: visual.ImageStim) -> None:
+    """Shrink *stim*'s image smoothly, from its mipmaps, when it's drawn small.
+
+    PsychoPy builds mipmaps for every texture but samples them with plain
+    bilinear filtering, which makes thin lines shimmer and break up once an
+    image is drawn at less than half its size. A face is drawn at 512 px and
+    shown at 130-350 px, so switch that texture to trilinear filtering
+    (``GL_LINEAR_MIPMAP_LINEAR``), once: it is uploaded when the stim is made,
+    and the emoticons never change. ``_texID`` is PsychoPy's own; if it ever
+    disappears, bilinear filtering still looks fine.
+    """
+    from pyglet import gl
+
+    try:
+        gl.glBindTexture(gl.GL_TEXTURE_2D, stim._texID)
+        gl.glTexParameteri(gl.GL_TEXTURE_2D, gl.GL_TEXTURE_MIN_FILTER, gl.GL_LINEAR_MIPMAP_LINEAR)
+        gl.glBindTexture(gl.GL_TEXTURE_2D, 0)
+    except Exception:  # noqa: BLE001 -- cosmetic only
+        pass
 
 
 def _panel(win: visual.Window, left: float, right: float, bottom: float, top: float) -> visual.ShapeStim:
