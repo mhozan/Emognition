@@ -54,7 +54,7 @@ import psychtoolbox as ptb  # noqa: E402
 from psychopy import core, sound, visual  # noqa: E402
 from psychopy.hardware import keyboard  # noqa: E402
 
-from emognition.core import scan_audio_dir  # noqa: E402
+from emognition.naming import scan_stimuli  # noqa: E402
 
 ASSETS_AUDIO = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "assets", "audio"
@@ -65,7 +65,7 @@ EMO_TO_KEY = {1: "1", 2: "2", 3: "3", 4: "4", 5: "5"}
 
 
 def main() -> int:
-    stimuli = scan_audio_dir(ASSETS_AUDIO)
+    stimuli = scan_stimuli(ASSETS_AUDIO)   # canonical (BIDS) and legacy names
     if not stimuli:
         print(f"No stimuli found in {ASSETS_AUDIO}", file=sys.stderr)
         return 1

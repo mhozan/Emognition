@@ -31,8 +31,10 @@ bootstrap()
 
 from psychopy import core, visual  # noqa: E402
 
-from emognition.core import build_trial_list, scan_audio_dir, summarize  # noqa: E402
+from emognition import __version__  # noqa: E402
+from emognition.core import build_trial_list, summarize  # noqa: E402
 from emognition.io import open_path  # noqa: E402
+from emognition.naming import scan_stimuli  # noqa: E402
 from emognition.reports import (  # noqa: E402
     SessionInfo,
     write_csv_report,
@@ -47,7 +49,10 @@ from emognition.ui.experiment_window import (  # noqa: E402
 
 
 def main() -> int:
-    stimuli = scan_audio_dir(audio_dir())
+    stimuli = scan_stimuli(audio_dir())   # canonical (BIDS) and legacy names
+    if not stimuli:
+        print(f"No stimuli found in {audio_dir()}", file=sys.stderr)
+        return 1
     trials = build_trial_list(stimuli, shuffle=True, rng=random.Random(0))[:5]
 
     win = visual.Window(
@@ -67,10 +72,12 @@ def main() -> int:
     print(f"\n--- responses ({'ABORTED' if aborted else 'complete'}) ---")
     for i, r in enumerate(responses, start=1):
         chosen = r.responded.label if r.responded else "(none)"
+        onset = "  --  " if r.rt_onset is None else f"{r.rt_onset:6.3f}"
+        offset = "  --  " if r.rt_offset is None else f"{r.rt_offset:6.3f}"
         print(
             f"[{i}] {r.stimulus.filename:<16} true={r.true_emotion.label:<8} "
             f"chose={chosen:<8} correct={r.is_correct!s:<5} "
-            f"RT_onset={r.rt_onset:6.3f}s  RT_offset={r.rt_offset:6.3f}s"
+            f"RT_onset={onset}s  RT_offset={offset}s"
         )
 
     if responses:
@@ -90,7 +97,7 @@ def main() -> int:
         stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         base = os.path.join("save_location", f"demo_{stamp}")
         info = SessionInfo(participant="DemoParticipant", experimenter="dev",
-                           mode="Test", app_version="3.0.0-dev",
+                           mode="Test", app_version=__version__,
                            started_at=datetime.now())
         html = write_html_report(responses, base + ".html", info=info)
         write_excel_report(responses, base + ".xlsx", info=info)
