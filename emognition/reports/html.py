@@ -35,8 +35,10 @@ from .common import (
     STAT_COLUMNS,
     SessionInfo,
     fmt_pct,
+    fmt_pct_unit,
     fmt_replays,
     fmt_seconds,
+    fmt_seconds_unit,
     info_rows,
     prepare_summary,
 )
@@ -72,8 +74,8 @@ def _info_section(info: SessionInfo, summary: SessionSummary) -> str:
 def _cards_section(summary: SessionSummary) -> str:
     t = summary.total
     cards = [
-        ("Overall accuracy", fmt_pct(t.pct_correct) + ("%" if t.pct_correct is not None else "")),
-        ("Mean reaction", fmt_seconds(t.mean_rt) + (" s" if t.mean_rt is not None else "")),
+        ("Overall accuracy", fmt_pct_unit(t.pct_correct)),
+        ("Mean reaction", fmt_seconds_unit(t.mean_rt)),
         ("Trials answered", f"{t.n_answered} / {t.n_presented}"),
         ("Correct", str(t.n_correct)),
     ]

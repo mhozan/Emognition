@@ -274,8 +274,9 @@ def _run_session(args: argparse.Namespace) -> int:
         win.close()
     finished_at = datetime.now()
     n_correct = sum(1 for r in responses if r.is_correct)
+    n_answered = sum(1 for r in responses if r.answered)
     _emit({"status": "done", "n_correct": n_correct, "n_trials": len(responses),
-           "aborted": aborted})
+           "n_answered": n_answered, "aborted": aborted})
 
     if not responses:
         if mode == SessionMode.PASSIVE_TRAINING:

@@ -35,7 +35,7 @@ from openpyxl.worksheet.worksheet import Worksheet
 
 from ..core import EMOTIONS_IN_ORDER, SEXES_IN_ORDER, Response, RtFlag, SessionSummary
 from ..core.scoring import DEFAULT_RT_KIND, GroupStats
-from .common import RT_FLAG_LABEL, STAT_COLUMNS, SessionInfo, info_rows, prepare_summary
+from .common import RT_FLAG_LABEL, STAT_COLUMNS, SessionInfo, info_rows, n_rt_excluded, prepare_summary
 
 _BOLD = Font(bold=True)
 _CENTER = Alignment(horizontal="center")
@@ -102,9 +102,12 @@ def _write_session_info(
         ("Overall accuracy (%)", summary.total.pct_correct),
         ("Mean reaction (s)", summary.total.mean_rt),
     ]
+    number_formats = {"Overall accuracy (%)": "0.0", "Mean reaction (s)": "0.000"}
     for r, (label, value) in enumerate(rows, start=3):
         ws.cell(row=r, column=1, value=label).font = _BOLD
-        _text_cell(ws, r, 2, value)
+        cell = _text_cell(ws, r, 2, value)
+        if label in number_formats:
+            cell.number_format = number_formats[label]
     ws.cell(row=len(rows) + 4, column=1, value=rt_label).font = Font(italic=True)
 
     ws.column_dimensions["A"].width = 22
@@ -146,7 +149,7 @@ def _stat_row(ws: Worksheet, row: int, label: str, stats: GroupStats) -> None:
     rep.number_format = "0.00"
 
 
-def _write_percentages(ws: Worksheet, summary: SessionSummary) -> None:
+def _write_percentages(ws: Worksheet, summary: SessionSummary, n_excluded: int = 0) -> None:
     """Per-emotion, per-sex, and total stats (legacy 'Percentages' sheet)."""
     for j, title in enumerate(STAT_COLUMNS, start=2):
         _header(ws.cell(row=1, column=j, value=title))
@@ -158,6 +161,11 @@ def _write_percentages(ws: Worksheet, summary: SessionSummary) -> None:
     for sex in SEXES_IN_ORDER:
         _stat_row(ws, row, sex.label, summary.per_sex[sex]); row += 1
     _stat_row(ws, row, "Total", summary.total)
+    if n_excluded:
+        # Say so where the means are shown (HTML and PDF already did).
+        note = (f"Mean reaction times exclude {n_excluded} trial(s) flagged as "
+                "anticipatory or slow outliers (see 'RT flag' in Pressed Keys).")
+        ws.cell(row=row + 2, column=1, value=note).font = Font(italic=True)
 
     ws.column_dimensions["A"].width = 12
     for col in ("B", "C", "D"):
@@ -184,7 +192,7 @@ def _write_pressed_keys(
         _text_cell(ws, i + 1, 2, r.stimulus.filename)
         ws.cell(row=i + 1, column=3, value=int(r.true_emotion))
         ws.cell(row=i + 1, column=4, value=None if r.responded is None else int(r.responded))
-        ws.cell(row=i + 1, column=5, value=r.is_correct)
+        ws.cell(row=i + 1, column=5, value=r.is_correct if r.answered else None)
         c6 = ws.cell(row=i + 1, column=6, value=r.rt_onset)
         c7 = ws.cell(row=i + 1, column=7, value=r.rt_offset)
         c6.number_format = c7.number_format = "0.000"
@@ -232,7 +240,7 @@ def write_excel_report(
     info_ws.title = "Session Info"
     _write_session_info(info_ws, info, summary, len(responses))
     _write_confusion(wb.create_sheet("Confusion Matrix"), summary)
-    _write_percentages(wb.create_sheet("Percentages"), summary)
+    _write_percentages(wb.create_sheet("Percentages"), summary, n_rt_excluded(flags))
     _write_pressed_keys(wb.create_sheet("Pressed Keys"), responses, flags, rt_kind)
 
     wb.save(path)

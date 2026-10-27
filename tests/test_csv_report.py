@@ -50,10 +50,11 @@ def test_trials_csv_rows_and_values(tmp_path):
     assert r0["correct"] == "1"
     assert r0["sex"] == "female"
 
-    # Unanswered trial: blank chosen fields, correct=0.
+    # Unanswered trial: blank chosen fields and a blank 'correct' (not 0, which
+    # would make the column's mean differ from the reported % correct).
     r3 = rows[3]
     assert r3["chosen_emotion"] == "" and r3["chosen_code"] == ""
-    assert r3["correct"] == "0"
+    assert r3["correct"] == ""
     assert r3["rt_flag"] == "no response"
 
 

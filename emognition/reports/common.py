@@ -18,6 +18,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
+from decimal import ROUND_HALF_UP, Decimal
 
 from ..core import (
     Response,
@@ -57,19 +58,40 @@ class SessionInfo:
     extra: dict[str, str] = field(default_factory=dict)
 
 
+def round_half_up(value: float, places: int) -> Decimal:
+    """Round like a spreadsheet does: halves go up (6.25 -> 6.3, not 6.2).
+
+    Python's own rounding goes half-to-even on the binary value, so an exact
+    tie such as 6.25 % (common with 16, 32 or 80 trials) showed as 6.2 in the
+    HTML/PDF/CSV but 6.3 in Excel. Rounding the shortest decimal repr half-up
+    makes every format agree with Excel.
+    """
+    return Decimal(repr(float(value))).quantize(Decimal(1).scaleb(-places), rounding=ROUND_HALF_UP)
+
+
 def fmt_pct(value: float | None) -> str:
     """Format a percentage to one decimal, or the empty marker if missing."""
-    return EMPTY if value is None else f"{value:.1f}"
+    return EMPTY if value is None else str(round_half_up(value, 1))
 
 
 def fmt_seconds(value: float | None) -> str:
     """Format a reaction time in seconds to three decimals (ms resolution)."""
-    return EMPTY if value is None else f"{value:.3f}"
+    return EMPTY if value is None else str(round_half_up(value, 3))
 
 
 def fmt_replays(value: float | None) -> str:
     """Format a mean replay count to two decimals."""
-    return EMPTY if value is None else f"{value:.2f}"
+    return EMPTY if value is None else str(round_half_up(value, 2))
+
+
+def fmt_pct_unit(value: float | None) -> str:
+    """'62.5%', or the empty marker alone (never '-%')."""
+    return EMPTY if value is None else fmt_pct(value) + "%"
+
+
+def fmt_seconds_unit(value: float | None) -> str:
+    """'0.512 s', or the empty marker alone (never '- s')."""
+    return EMPTY if value is None else fmt_seconds(value) + " s"
 
 
 def fmt_datetime(value: datetime | None) -> str:
@@ -112,7 +134,9 @@ def info_rows(info: SessionInfo, rt_kind: str) -> list[tuple[str, str]]:
     return rows
 
 
-# Short human labels for RT flags, shown in the per-trial tables.
+# Short human labels for RT flags, shown in the per-trial tables. An OK trial is
+# left blank in the human-readable formats (Excel, HTML, PDF); the CSV writes
+# "ok" so an analysis script never meets an empty cell.
 RT_FLAG_LABEL: dict[RtFlag, str] = {
     RtFlag.OK: "",
     RtFlag.NO_RESPONSE: "no response",
@@ -140,7 +164,17 @@ def prepare_summary(
     Returns ``(summary, flags)`` with ``flags`` aligned to ``responses``.
     """
     flags = flag_responses(responses, rt_kind=rt_kind)
+    if summary is not None and summary.rt_kind != rt_kind:
+        raise ValueError(
+            f"summary uses {summary.rt_kind!r} reaction times but the report was asked "
+            f"for {rt_kind!r}; the flags and the means would disagree"
+        )
     if summary is None:
         source = scrub_flagged_rts(responses, flags) if exclude_flagged else list(responses)
         summary = summarize(source, rt_kind=rt_kind)
     return summary, flags
+
+
+def n_rt_excluded(flags: Sequence[RtFlag]) -> int:
+    """How many answered trials' RTs the means leave out (anticipatory / slow)."""
+    return sum(1 for f in flags if f.is_excluded)

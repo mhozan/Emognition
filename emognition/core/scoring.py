@@ -71,6 +71,7 @@ class GroupStats:
     pct_correct: float | None  # 100 * n_correct / n_answered
     mean_rt: float | None      # mean reaction time (seconds), see rt_kind
     mean_replays: float | None  # mean number of replays per answered trial
+    n_rt: int = 0              # RTs behind mean_rt (answered minus RT-excluded trials)
 
 
 @dataclass(frozen=True, slots=True)
@@ -114,6 +115,7 @@ def _group_stats(responses: Sequence[Response], rt_kind: str) -> GroupStats:
         pct_correct=pct,
         mean_rt=_mean(rts),
         mean_replays=_mean([r.n_replays for r in answered]),
+        n_rt=len(rts),
     )
 
 

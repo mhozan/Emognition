@@ -34,8 +34,10 @@ from .common import (
     EMPTY,
     SessionInfo,
     fmt_pct,
+    fmt_pct_unit,
     fmt_replays,
     fmt_seconds,
+    fmt_seconds_unit,
     info_rows,
     prepare_summary,
 )
@@ -73,9 +75,8 @@ def _session_info(pdf: FPDF, info: SessionInfo, summary: SessionSummary) -> None
         *((k, v or EMPTY) for k, v in info_rows(info, summary.rt_kind) if k != "Participant"),
         ("Trials", f"{summary.total.n_answered}/{summary.total.n_presented} answered, "
                    f"{summary.total.n_correct} correct"),
-        ("Overall accuracy", f"{fmt_pct(summary.total.pct_correct)}%"),
-        ("Mean reaction", f"{fmt_seconds(summary.total.mean_rt)} s "
-                          f"(from {summary.rt_kind})"),
+        ("Overall accuracy", fmt_pct_unit(summary.total.pct_correct)),
+        ("Mean reaction", f"{fmt_seconds_unit(summary.total.mean_rt)} (from {summary.rt_kind})"),
     ]
     pdf.set_font("Helvetica", "", 10)
     for key, val in rows:
@@ -125,7 +126,7 @@ def _trials_table(pdf: FPDF, responses: Sequence[Response], flags) -> None:
             _ascii(fmt_seconds(r.rt_onset)),
             _ascii(fmt_seconds(r.rt_offset)),
             str(r.n_replays),
-            RT_FLAG_LABEL[flag] or "ok",
+            RT_FLAG_LABEL[flag],     # blank for OK, as in Excel and HTML
         ])
     with pdf.table() as table:
         for r in rows:

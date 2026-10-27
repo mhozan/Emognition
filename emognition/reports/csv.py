@@ -28,7 +28,7 @@ from collections.abc import Sequence
 from ..core import SEXES_IN_ORDER, Response, SessionSummary
 from ..core.scoring import DEFAULT_RT_KIND, GroupStats
 from ..io.spreadsheet import neutralize
-from .common import RT_FLAG_LABEL, prepare_summary
+from .common import RT_FLAG_LABEL, prepare_summary, round_half_up
 
 _TRIAL_FIELDS = [
     "trial",
@@ -54,12 +54,13 @@ _SUMMARY_FIELDS = [
     "pct_correct",
     "mean_rt_s",
     "mean_replays",
+    "n_rt",            # RTs averaged into mean_rt_s (flagged trials excluded)
 ]
 
 
 def _round(value: float | None, ndigits: int) -> float | str:
     """Round for CSV, or return '' for missing (so cells are empty, not 'None')."""
-    return "" if value is None else round(value, ndigits)
+    return "" if value is None else float(round_half_up(value, ndigits))
 
 
 def write_trials_csv(
@@ -85,7 +86,7 @@ def write_trials_csv(
                 "true_code": int(r.true_emotion),
                 "chosen_emotion": r.responded.label if r.responded else "",
                 "chosen_code": int(r.responded) if r.responded else "",
-                "correct": int(r.is_correct),
+                "correct": int(r.is_correct) if r.answered else "",   # blank like chosen_*
                 "rt_onset_s": _round(r.rt_onset, 4),
                 "rt_offset_s": _round(r.rt_offset, 4),
                 "replays": r.n_replays,
@@ -104,6 +105,7 @@ def _summary_row(group: str, stats: GroupStats) -> dict:
         "pct_correct": _round(stats.pct_correct, 2),
         "mean_rt_s": _round(stats.mean_rt, 4),
         "mean_replays": _round(stats.mean_replays, 3),
+        "n_rt": stats.n_rt,
     }
 
 

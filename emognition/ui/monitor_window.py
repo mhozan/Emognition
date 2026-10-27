@@ -279,7 +279,8 @@ class MonitorWindow(QWidget):
             self._bar_accuracy.setValue(pct)
 
     def _on_done(self, evt: dict) -> None:
-        n_trials = evt.get("n_trials", self._n_responded)
+        # Same denominator as the reports: answered trials (older senders: all trials).
+        n_trials = evt.get("n_answered", evt.get("n_trials", self._n_responded))
         n_correct = evt.get("n_correct", self._n_correct)
         aborted = evt.get("aborted", False)
         suffix = "  (aborted)" if aborted else ""
