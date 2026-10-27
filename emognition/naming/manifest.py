@@ -27,6 +27,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 
 from ..core.emotions import Emotion, Sex
+from ..io.spreadsheet import neutralize, restore
 from .entities import (
     _EMOTION_VALUES,
     _SEX_VALUES,
@@ -178,14 +179,18 @@ def write_manifest(records: Sequence[StimulusRecord], path: str) -> str:
         writer = csv.DictWriter(fh, fieldnames=list(MANIFEST_COLUMNS), delimiter="\t")
         writer.writeheader()
         for rec in records:
-            writer.writerow(rec.to_row())
+            # The TSV is meant to be edited in a spreadsheet: keep file names inert.
+            writer.writerow({k: neutralize(v) for k, v in rec.to_row().items()})
     return path
 
 
 def read_manifest_tsv(path: str) -> list[StimulusRecord]:
     """Read a TSV manifest back into records."""
     with open(path, newline="", encoding="utf-8") as fh:
-        return [StimulusRecord.from_row(row) for row in csv.DictReader(fh, delimiter="\t")]
+        return [
+            StimulusRecord.from_row({k: restore(v) if isinstance(v, str) else v for k, v in row.items()})
+            for row in csv.DictReader(fh, delimiter="\t")
+        ]
 
 
 def write_data_dictionary(path: str) -> str:

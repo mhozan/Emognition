@@ -27,6 +27,7 @@ from collections.abc import Sequence
 
 from ..core import SEXES_IN_ORDER, Response, SessionSummary
 from ..core.scoring import DEFAULT_RT_KIND, GroupStats
+from ..io.spreadsheet import neutralize
 from .common import RT_FLAG_LABEL, prepare_summary
 
 _TRIAL_FIELDS = [
@@ -78,8 +79,8 @@ def write_trials_csv(
         for i, (r, flag) in enumerate(zip(responses, flags), start=1):
             writer.writerow({
                 "trial": i,
-                "audio_file": r.stimulus.filename,
-                "recording_id": r.stimulus.recording_id,
+                "audio_file": neutralize(r.stimulus.filename),
+                "recording_id": neutralize(r.stimulus.recording_id),
                 "true_emotion": r.true_emotion.label,
                 "true_code": int(r.true_emotion),
                 "chosen_emotion": r.responded.label if r.responded else "",

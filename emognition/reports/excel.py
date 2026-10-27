@@ -46,6 +46,19 @@ _TITLE = Font(bold=True, size=14)
 # small styling helpers
 # --------------------------------------------------------------------------
 
+def _text_cell(ws: Worksheet, row: int, column: int, value):
+    """Write *value* so text is always stored as text, never evaluated as a formula.
+
+    openpyxl turns any string starting with ``=`` into a live formula; a
+    participant label or stimulus file name must not be able to do that
+    (spreadsheet formula injection).
+    """
+    cell = ws.cell(row=row, column=column, value=value)
+    if isinstance(value, str) and cell.data_type == "f":
+        cell.data_type = "s"
+    return cell
+
+
 def _header(cell) -> None:
     """Make a cell a bold, centred header."""
     cell.font = _BOLD
@@ -91,7 +104,7 @@ def _write_session_info(
     ]
     for r, (label, value) in enumerate(rows, start=3):
         ws.cell(row=r, column=1, value=label).font = _BOLD
-        ws.cell(row=r, column=2, value=value)
+        _text_cell(ws, r, 2, value)
     ws.cell(row=len(rows) + 4, column=1, value=rt_label).font = Font(italic=True)
 
     ws.column_dimensions["A"].width = 22
@@ -168,7 +181,7 @@ def _write_pressed_keys(
 
     for i, (r, flag) in enumerate(zip(responses, flags), start=1):
         ws.cell(row=i + 1, column=1, value=i)
-        ws.cell(row=i + 1, column=2, value=r.stimulus.filename)
+        _text_cell(ws, i + 1, 2, r.stimulus.filename)
         ws.cell(row=i + 1, column=3, value=int(r.true_emotion))
         ws.cell(row=i + 1, column=4, value=None if r.responded is None else int(r.responded))
         ws.cell(row=i + 1, column=5, value=r.is_correct)
