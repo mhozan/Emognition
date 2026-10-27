@@ -21,7 +21,10 @@ Three session modes (see :class:`~emognition.core.SessionMode`):
   emotion-face mapping.
 * **ACTIVE_TRAINING** -- participant responds, then the correct answer glows green
   and (if wrong) their choice glows orange for ``feedback_duration`` seconds.
-  Responses are recorded so a learning-curve is available in the report.
+  Responses are recorded so a learning-curve is available in the report. With
+  ``retry_until_correct`` (the original's "Try until you get it right!") a wrong
+  face is greyed out and the participant answers again until right; the first
+  answer is the one scored, and every answer is kept in ``Response.choices``.
 
 A session runs in three steps, mirroring the original's "Begin Test" flow
 (proceed.m -> pb_beginner.m)::
@@ -119,6 +122,10 @@ _PROMPT_POS = (-0.15, 0.05)
 _PROMPT_HEIGHT = 0.05
 _PROMPT_WRAP = 0.7
 _RESPONSE_PROMPT = "Listen, then choose the emotion you heard."
+# Active training, retry until correct: after a wrong pick, then while answering again.
+_WRONG_PROMPT = "Not quite!"
+_RETRY_PROMPT = "Try again!"
+_WRONG_FLASH_SECONDS = 0.8
 
 # Translucent panels behind the text when a picture is the background, so the
 # white prompt and key numbers stay readable over any photo.
@@ -338,6 +345,7 @@ class TestExperiment:
         feedback_duration: float = 1.5,
         background: BackgroundPlan | None = None,
         first_trial: int = 1,
+        retry_until_correct: bool = False,
     ) -> None:
         self.win = win
         self.mouse = event.Mouse(win=win, visible=True)
@@ -346,6 +354,7 @@ class TestExperiment:
         self.volume = max(0.0, min(1.0, volume))
         self.mode = mode
         self.feedback_duration = max(0.3, feedback_duration)
+        self.retry_until_correct = retry_until_correct and mode == SessionMode.ACTIVE_TRAINING
         # > 1 when resuming an interrupted session: trial numbers (progress bar,
         # slideshow, monitor) continue from here instead of restarting at 1.
         self.first_trial = max(1, int(first_trial))
@@ -394,7 +403,7 @@ class TestExperiment:
         # each with a backing panel sized to its text for picture backgrounds.
         self._prompts: dict[str, visual.TextStim] = {}
         self._prompt_panels: dict[str, visual.ShapeStim] = {}
-        for text in (self._listen_prompt, _RESPONSE_PROMPT, "Correct!",
+        for text in (self._listen_prompt, _RESPONSE_PROMPT, "Correct!", _WRONG_PROMPT, _RETRY_PROMPT,
                      *(f"This was: {e.label}" for e in active),
                      *(f"Correct answer: {e.label}" for e in active)):
             self._prompt_panel(text)
@@ -719,15 +728,22 @@ class TestExperiment:
         self.win.clearBuffer()
 
     def _settle(self, seconds: float) -> None:
-        """Hold the (greyed) trial screen briefly; Escape still asks to quit."""
+        """Hold the (greyed) trial screen briefly, before the first clip."""
+        self._hold(seconds, lambda: self._draw_scene(enabled=False), record=False)
+
+    def _hold(self, seconds: float, scene: "Callable[[], None]", *, record: bool = True) -> None:
+        """Show *scene* for *seconds*. P or Escape interrupts (see :meth:`_interrupt`);
+        afterwards the hold restarts, since nothing being shown is timed."""
         countdown = core.CountdownTimer(seconds)
         while countdown.getTime() > 0:
             if self._close_requested:
                 raise ExperimentAborted()
-            if _QUIT_KEY in event.getKeys(keyList=[_QUIT_KEY]):
-                self._interrupt("quit")
+            pressed = event.getKeys(keyList=[_QUIT_KEY, _PAUSE_KEY])
+            if pressed:
+                self._interrupt("quit" if _QUIT_KEY in pressed else "pause", backdrop=scene)
+                self._record_frames(record)
                 countdown.reset(seconds)
-            self._draw_scene(enabled=False)
+            scene()
             self.win.flip()
         event.clearEvents()
 
@@ -773,6 +789,8 @@ class TestExperiment:
 
         Active training adds a visual feedback phase after the response:
         correct button = green, wrong choice = orange (if the participant erred).
+        With ``retry_until_correct``, a wrong answer is followed by more tries
+        (see :meth:`_retry_until_correct`) before the green "Correct!".
         """
         assert self._sound is not None
         self._load_clip(stim.path)
@@ -803,8 +821,13 @@ class TestExperiment:
         )
 
         # Active training: flash feedback before moving on.
+        choices: tuple[Emotion, ...] = ()
         if self.mode == SessionMode.ACTIVE_TRAINING:
-            self._show_feedback(stim.emotion, chosen=press.emotion)
+            if self.retry_until_correct and press.emotion != stim.emotion:
+                choices = self._retry_until_correct(stim.emotion, press.emotion, duration)
+                self._show_feedback(stim.emotion, chosen=stim.emotion)   # "Correct!" at last
+            else:
+                self._show_feedback(stim.emotion, chosen=press.emotion)
 
         self._sound.stop()
         self._record_frames(False)               # loading the next trial isn't a dropped frame
@@ -816,7 +839,39 @@ class TestExperiment:
             n_replays=n_replays,
             background=self.background.label,
             n_pauses=n_pauses,
+            choices=choices,
         )
+
+    def _retry_until_correct(self, correct: Emotion, first: Emotion, duration: float) -> "tuple[Emotion, ...]":
+        """Active training the original's way: grey out a wrong face, ask again.
+
+        Mirrors pb_5emotions_call.m, which disabled just the wrong button until
+        the right one was clicked -- but, unlike the original, keeps every answer.
+        Only the first (already recorded) answer is timed and scored. Replays and
+        pauses are allowed; neither undoes an answer. Returns all answers in order.
+        """
+        choices, wrong = [first], {first}
+        while True:
+            excluded, last = frozenset(wrong), choices[-1]     # built once per round, not per frame
+            self._hold(_WRONG_FLASH_SECONDS, lambda: self._draw_scene(
+                enabled=False, feedback_chosen=last, excluded=excluded,
+                prompt_override=_WRONG_PROMPT))
+            while True:
+                try:
+                    outcome = self._await_response(exclude=excluded, prompt=_RETRY_PROMPT)
+                except _Interrupted:
+                    continue                     # the scored answer is in: just ask again
+                if outcome is _REPLAY:
+                    try:
+                        self._play_and_wait_offset(duration)
+                    except _Interrupted:
+                        pass
+                    continue
+                break
+            choices.append(outcome.emotion)
+            if outcome.emotion == correct:
+                return tuple(choices)
+            wrong.add(outcome.emotion)
 
     def _show_feedback(self, correct: Emotion, chosen: "Emotion | None") -> None:
         """Highlight the correct button (and the wrong choice if any) for a beat.
@@ -834,22 +889,9 @@ class TestExperiment:
         else:
             prompt = f"Correct answer: {correct.label}"
 
-        def scene() -> None:
-            self._draw_scene(enabled=False, feedback_correct=correct,
-                             feedback_chosen=chosen, prompt_override=prompt)
-
-        countdown = core.CountdownTimer(self.feedback_duration)
-        while countdown.getTime() > 0:
-            if self._close_requested:
-                raise ExperimentAborted()
-            pressed = event.getKeys(keyList=[_QUIT_KEY, _PAUSE_KEY])
-            if pressed:   # the answer is already in: afterwards, the feedback just restarts
-                self._interrupt("quit" if _QUIT_KEY in pressed else "pause", backdrop=scene)
-                self._record_frames(True)
-                countdown.reset(self.feedback_duration)
-            scene()
-            self.win.flip()
-        event.clearEvents()
+        self._hold(self.feedback_duration, lambda: self._draw_scene(
+            enabled=False, feedback_correct=correct, feedback_chosen=chosen,
+            prompt_override=prompt))
 
     def _load_clip(self, path: str) -> None:
         """Point the reusable stream at *path* and pick up its LED envelope."""
@@ -916,13 +958,17 @@ class TestExperiment:
             self.win.flip()
         event.clearEvents()
 
-    def _await_response(self) -> "_Press | str":
+    def _await_response(
+        self, exclude: "frozenset[Emotion]" = frozenset(), prompt: str | None = None,
+    ) -> "_Press | str":
         """Poll input until a response (or a replay request) arrives.
 
-        P or Escape interrupts (see :meth:`_interrupt`) and raises
-        :class:`_Interrupted`: the caller replays the trial.
+        Faces in *exclude* (wrong picks while retrying) are greyed out and can't
+        be chosen, by click or key. P or Escape interrupts (see
+        :meth:`_interrupt`) and raises :class:`_Interrupted`.
         """
-        keys = list(self.key_map) + [_QUIT_KEY, _PAUSE_KEY]
+        keys = [k for k, emotion in self.key_map.items() if emotion not in exclude]
+        keys += [_QUIT_KEY, _PAUSE_KEY]
         if self.allow_replays:
             keys.append("r")
         mouse_was_down = self.mouse.getPressed()[0] == 1  # ignore a held-over click
@@ -942,11 +988,11 @@ class TestExperiment:
                 if self.allow_replays and self.replay_button.contains(self.mouse.getPos()):
                     return _REPLAY
                 for button in self.buttons:
-                    if button.clicked_by(self.mouse):
+                    if button.emotion not in exclude and button.clicked_by(self.mouse):
                         return _Press(button.emotion, self.clock.getTime(), "mouse")
             mouse_was_down = mouse_down
 
-            self._draw_scene(enabled=True)
+            self._draw_scene(enabled=True, excluded=exclude, prompt_override=prompt)
             self.win.flip()
 
     def _record_frames(self, on: bool) -> None:
@@ -976,6 +1022,7 @@ class TestExperiment:
         feedback_correct: "Emotion | None" = None,
         feedback_chosen: "Emotion | None" = None,
         prompt_override: str | None = None,
+        excluded: "frozenset[Emotion]" = frozenset(),
     ) -> None:
         """Draw one frame: background, prompt, buttons, progress, LED, replay button.
 
@@ -986,9 +1033,13 @@ class TestExperiment:
             feedback_correct: When set (training modes), the button for this
                               emotion gets a green glow.
             feedback_chosen:  When set and different from *feedback_correct*, this
-                              button gets an orange glow (wrong choice).
+                              button gets an orange glow (wrong choice). Set
+                              without *feedback_correct* (a retry), only the
+                              wrong pick glows: the answer isn't given away.
             prompt_override:  Replace the default prompt text for this frame
                               (used during the feedback phase).
+            excluded:         Faces drawn greyed out even when *enabled* (wrong
+                              picks while retrying).
         """
         # Prompt: pick the pre-built stim for this frame's text.
         if prompt_override is not None:
@@ -1014,9 +1065,11 @@ class TestExperiment:
                     hl = "wrong"
                 else:
                     hl = "dim"
+            elif button.emotion == feedback_chosen:
+                hl = "wrong"
             else:
                 hl = None
-            button.draw(enabled, highlight=hl)
+            button.draw(enabled and button.emotion not in excluded, highlight=hl)
 
         # Progress bar (no text): green fill = fraction of the block completed.
         self._progress_track.draw()

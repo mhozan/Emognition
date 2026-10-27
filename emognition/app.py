@@ -367,6 +367,7 @@ def _run_session(args: argparse.Namespace) -> int:
                 "responded": response.responded.name.lower() if response.responded else None,
                 "correct": response.is_correct,
                 "rt_ms": round(response.rt_offset * 1000) if response.rt_offset is not None else None,
+                "attempts": response.n_attempts,
             })
         else:
             # Passive training: clip was shown but no response collected.
@@ -392,6 +393,7 @@ def _run_session(args: argparse.Namespace) -> int:
             mode=mode,
             background=plan,
             first_trial=len(done) + 1,
+            retry_until_correct=args.retry_until_correct,
         )
         experiment.on_status = _emit             # "paused" / "resumed" -> the monitor
         # A resumed session tells the monitor what's already done, so its trial
@@ -669,6 +671,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--seed", type=int, default=None,
                         help="random seed for the trial (and picture) order; recorded in "
                              "every report so a session can be reproduced (default: random)")
+    parser.add_argument("--retry-until-correct", action="store_true",
+                        help="active training: after a wrong answer, grey out that face and "
+                             "ask again until the right one is chosen (only the first "
+                             "answer is scored)")
     parser.add_argument("--resume", default=None, metavar="LOG",
                         help="continue an interrupted session from its .partial.jsonl "
                              "autosave log (same settings and trial order)")

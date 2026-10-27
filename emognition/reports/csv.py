@@ -46,6 +46,8 @@ _TRIAL_FIELDS = [
     "rt_flag",
     "background",      # picture on screen during the trial ("" = plain)
     "pauses",          # times the trial was paused/interrupted, then replayed
+    "attempts",        # answers given (more than 1 = active training's retries)
+    "choices",         # every answer in order when retried, e.g. "Sad > Happy"
 ]
 
 _SUMMARY_FIELDS = [
@@ -101,6 +103,8 @@ def write_trials_csv(
                 "rt_flag": RT_FLAG_LABEL[flag] or "ok",
                 "background": neutralize(r.background),
                 "pauses": r.n_pauses,
+                "attempts": r.n_attempts,
+                "choices": " > ".join(e.label for e in r.choices),
             })
     return path
 

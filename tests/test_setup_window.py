@@ -321,6 +321,26 @@ def test_monitor_carries_counts_across_a_resume(app):
     assert m._lbl_trial.text() == "8 / 20" and "6 / 8" in m._lbl_accuracy.text()
 
 
+def test_retry_option_applies_to_active_training_only(window):
+    window.mode.setCurrentText("Test")
+    assert not window.retry.isEnabled()
+    window.mode.setCurrentText("Active Training")
+    assert window.retry.isEnabled()
+    window.retry.setChecked(True)
+    s = window.settings_from_form()
+    assert s.mode == "active" and s.retry_until_correct
+    window.apply_settings(ExperimentSettings(mode="test", retry_until_correct=False))
+    assert not window.retry.isChecked() and not window.retry.isEnabled()
+
+
+def test_monitor_shows_retries_on_the_badge(app):
+    m = MonitorWindow()
+    m.handle_event({"status": "start", "total": 2, "mode": "active", "participant": "P1"})
+    m.handle_event({"status": "trial", "index": 1, "total": 2, "emotion": "sad", "sex": "female",
+                    "responded": "angry", "correct": False, "rt_ms": 700, "attempts": 3})
+    assert m._lbl_responded.text().endswith("(3 tries)")
+
+
 def test_monitor_shows_a_pause_and_puts_the_counter_back(app):
     m = MonitorWindow()
     m.handle_event({"status": "start", "total": 10, "mode": "test", "participant": "P1"})

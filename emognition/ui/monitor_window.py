@@ -260,6 +260,8 @@ class MonitorWindow(QWidget):
         responded = evt.get("responded")
         correct = evt.get("correct")
         rt_ms = evt.get("rt_ms")
+        attempts = int(evt.get("attempts") or 1)     # > 1: active training's retries
+        tries = f"   ({attempts} tries)" if attempts > 1 else ""
 
         if responded is None:
             # Passive training — no response
@@ -271,7 +273,7 @@ class MonitorWindow(QWidget):
                 self._n_correct += 1
                 self._set_badge("correct_badge", f"{responded.capitalize()}   ✓ Correct")
             else:
-                self._set_badge("wrong_badge", f"{responded.capitalize()}   ✗ Wrong")
+                self._set_badge("wrong_badge", f"{responded.capitalize()}   ✗ Wrong{tries}")
 
             if rt_ms is not None:
                 self._lbl_rt.setText(f"{rt_ms} ms")

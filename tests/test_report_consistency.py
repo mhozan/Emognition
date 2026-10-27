@@ -159,12 +159,16 @@ def test_reports_carry_hu_kappa_spread_and_background(tmp_path):
     responses = _mixed_session()
     responses[0].background = "Starry night"
     responses[0].n_pauses = 2
+    responses[1].choices = (responses[1].responded, responses[1].true_emotion)
     trials, summary_csv = write_csv_report(responses, str(tmp_path / "r.csv"))
     rows = {row["group"]: row for row in csv.DictReader(open(summary_csv, newline="", encoding="utf-8"))}
     assert rows["Happy"]["hu"] and rows["Total"]["kappa"] and rows["Total"]["median_rt_s"]
     assert rows["Female"]["hu"] == "" and rows["Happy"]["kappa"] == ""
-    first = next(csv.DictReader(open(trials, newline="", encoding="utf-8")))
+    first, second = list(csv.DictReader(open(trials, newline="", encoding="utf-8")))[:2]
     assert first["background"] == "Starry night" and first["pauses"] == "2"
+    assert (first["attempts"], first["choices"]) == ("1", "")
+    assert second["attempts"] == "2"
+    assert second["choices"] == f"{responses[1].responded.label} > {responses[1].true_emotion.label}"
 
     long = list(csv.DictReader(open(write_confusion_csv(responses, str(tmp_path / "c.csv")),
                                     newline="", encoding="utf-8")))

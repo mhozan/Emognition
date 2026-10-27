@@ -44,6 +44,8 @@ def _trial(name="spk1_hap_f.wav", emotion=Emotion.HAPPY, responded=Emotion.HAPPY
     _trial(responded=None, rt=None),                       # unanswered trial
     _trial(name="x_ang_f.wav", emotion=Emotion.ANGRY, responded=Emotion.SAD, rt=-0.0371),
     _trial(n_pauses=2),                                    # paused twice, replayed each time
+    Response(Stimulus("/c/x_sad_f.wav", Emotion.SAD, Sex.FEMALE), Emotion.ANGRY, 1.5, 0.6,
+             choices=(Emotion.ANGRY, Emotion.HAPPY, Emotion.SAD)),   # retried until correct
 ])
 def test_records_round_trip_exactly(response):
     assert response_from_record(response_to_record(response)) == response

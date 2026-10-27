@@ -223,6 +223,10 @@ class ConfigWindow(QWidget):
         self.caption = QComboBox(); self.caption.addItems(_CAPTIONS)
         self.mode = QComboBox()
         self.mode.addItems([_MODE_LABELS[m] for m in _MODES])
+        self.retry = QCheckBox("Retry until correct")
+        self.retry.setToolTip(
+            "Active training: a wrong answer greys out that face and asks again until "
+            "the right one is chosen, as in the original. Only the first answer is scored.")
         self.fullscreen = QCheckBox("Full screen")
         self.shuffle = QCheckBox("Shuffle order"); self.shuffle.setChecked(True)
         self.allow_replays = QCheckBox("Allow replays")
@@ -266,7 +270,8 @@ class ConfigWindow(QWidget):
         grid.addWidget(QLabel("Save folder"), r, 0); grid.addWidget(self.save_dir, r, 1)
         grid.addWidget(self._browse_button(self.save_dir), r, 2); r += 1
         grid.addWidget(QLabel("Caption"), r, 0); grid.addWidget(self.caption, r, 1); r += 1
-        grid.addWidget(QLabel("Mode"), r, 0); grid.addWidget(self.mode, r, 1); r += 1
+        grid.addWidget(QLabel("Mode"), r, 0); grid.addWidget(self.mode, r, 1)
+        grid.addWidget(self.retry, r, 2); r += 1
 
         grid.addWidget(QLabel("Background"), r, 0); grid.addWidget(self.background, r, 1)
         add_picture = QPushButton("Add picture...")
@@ -312,7 +317,7 @@ class ConfigWindow(QWidget):
         grid.addWidget(calib, r, 1)
         self.proceed_btn = QPushButton("Proceed")
         self.proceed_btn.clicked.connect(self._on_proceed)
-        # Update the button label when mode changes.
+        # Update the button label (and what applies) when the mode changes.
         self.mode.currentTextChanged.connect(self._update_proceed_label)
         self._update_proceed_label(self.mode.currentText())
         grid.addWidget(self.proceed_btn, r, 2); r += 1
@@ -331,6 +336,7 @@ class ConfigWindow(QWidget):
             "Active Training": "Start Active Training",
         }
         self.proceed_btn.setText(labels.get(mode_label, "Proceed"))
+        self.retry.setEnabled(mode_label == _MODE_LABELS["active"])   # active training only
 
     def _browse_button(self, target: QLineEdit) -> QPushButton:
         button = QPushButton("Browse...")
@@ -430,6 +436,7 @@ class ConfigWindow(QWidget):
             background=self._background_value(),
             background_every=self.bg_every.value(),
             background_shuffle=self.bg_shuffle.isChecked(),
+            retry_until_correct=self.retry.isChecked(),
         )
 
     def apply_settings(self, s: ExperimentSettings) -> None:
@@ -450,6 +457,7 @@ class ConfigWindow(QWidget):
             self.mode.setCurrentText(_MODE_LABELS[s.mode])
         self.bg_every.setValue(s.background_every)
         self.bg_shuffle.setChecked(s.background_shuffle)
+        self.retry.setChecked(s.retry_until_correct)
         self._select_background(s.background or SPEC_DEFAULT)
 
     # -- actions ---------------------------------------------------------

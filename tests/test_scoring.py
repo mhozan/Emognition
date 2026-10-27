@@ -147,3 +147,13 @@ def test_rt_spread_median_sd_iqr():
     assert t.iqr_rt == pytest.approx(0.3)              # inclusive quartiles 0.65 .. 0.95
     one = summarize(rs[:1]).total
     assert one.median_rt == pytest.approx(0.5) and one.sd_rt is None and one.iqr_rt is None
+
+
+def test_attempts_count_retries_but_only_the_first_answer_is_scored():
+    from emognition.core import Response, Stimulus
+
+    stim = Stimulus("/c/a_sad_f.wav", Emotion.SAD, Sex.FEMALE)
+    retried = Response(stim, Emotion.ANGRY, 1.5, 0.6, choices=(Emotion.ANGRY, Emotion.SAD))
+    assert retried.n_attempts == 2 and not retried.is_correct       # scored on "Angry"
+    assert Response(stim, Emotion.SAD, 1.5, 0.6).n_attempts == 1
+    assert Response(stim).n_attempts == 0                             # unanswered

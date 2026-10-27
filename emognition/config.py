@@ -89,6 +89,9 @@ class ExperimentSettings:
     background: str = SPEC_DEFAULT
     background_every: int = DEFAULT_EVERY_N
     background_shuffle: bool = True
+    # Active training only: a wrong answer greys out that face and asks again
+    # until the right one is chosen (the original's "Try until you get it right!").
+    retry_until_correct: bool = False
 
     def to_argv(self) -> list[str]:
         """Build the ``emognition`` CLI arguments to run a session with these.
@@ -128,6 +131,8 @@ class ExperimentSettings:
             argv += ["--background-every", str(self.background_every)]
         if not self.background_shuffle:
             argv.append("--no-background-shuffle")
+        if self.retry_until_correct:
+            argv.append("--retry-until-correct")
         return argv
 
     def save(self, path: str) -> str:

@@ -41,7 +41,7 @@ and homage.
 | **Millisecond-accurate RTs** | PTB-scheduled audio onset; RT measured from both offset (default, matching legacy) and onset |
 | **Test mode** | Blind test — no feedback — full confusion-matrix report |
 | **Passive training** | Correct label revealed after each clip; participant learns the mapping |
-| **Active training** | Participant responds, then correct (green) / wrong (orange) feedback before advancing |
+| **Active training** | Participant responds, then correct (green) / wrong (orange) feedback before advancing; optionally *retry until correct*, as in the original |
 | **Begin screen** | The participant starts the session with a big **Begin** button (or Space/Enter); the report's start time and duration count from that press |
 | **Background pictures** | Calm, text-free backgrounds to keep children engaged: a soothing gradient by default, five bundled scenes, your own pictures via **Add picture…**, or a slideshow that changes every N trials |
 | **Pause and safe quit** | **P** pauses and resumes; **Esc** asks before quitting. A trial interrupted either way is replayed, and the per-trial CSV counts it |
@@ -251,6 +251,12 @@ Fill in the participant ID, select your audio folder, and choose a session mode:
 | **Test** | Blind test — no feedback |
 | **Passive Training** | Correct answer shown after each clip |
 | **Active Training** | Participant responds, then correct/wrong feedback |
+
+**Retry until correct** (Active Training only) works the way the original
+did: a wrong answer greys out that face ("Not quite!") and the participant
+chooses again until the right one is picked, without being shown the answer.
+Only the first answer is scored and timed. The per-trial CSV's `attempts` and
+`choices` columns keep every answer, e.g. `Sad > Angry > Happy`.
 
 Click **Calibration** before your first run with a new stimulus corpus to
 normalize loudness and inspect file naming.
@@ -462,6 +468,8 @@ Options:
   --background-every N        Slideshow: change picture every N trials (1–20)  [5]
   --[no-]background-shuffle   Slideshow: shuffle the picture order  [on]
   --seed N           Random seed for the trial and picture order  [random; recorded]
+  --retry-until-correct   Active training: grey out a wrong face and ask again
+                          until right (only the first answer is scored)
   --resume LOG       Continue an interrupted session from its .partial.jsonl file
                      (its settings and trial order; only the display is new)
   --no-begin         Start straight away, without the Begin screen (automation)

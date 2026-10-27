@@ -44,6 +44,11 @@ class Response:
             then "keep going") during this trial. Each time, the trial was
             replayed from the start, so the RT is valid, but the participant
             heard the clip more than once -- worth knowing in an analysis.
+        choices: Every answer, in order, when active training's "retry until
+            correct" made the participant try again (wrong faces are greyed
+            out until the right one is chosen); empty when the first answer
+            stood. Only the first -- :attr:`responded` -- is scored and timed;
+            the rest show how the participant homed in on the right face.
     """
 
     stimulus: Stimulus
@@ -53,6 +58,12 @@ class Response:
     n_replays: int = 0
     background: str = ""
     n_pauses: int = 0
+    choices: tuple[Emotion, ...] = ()
+
+    @property
+    def n_attempts(self) -> int:
+        """Answers given on this trial: 1 normally, more after retries, 0 if unanswered."""
+        return len(self.choices) if self.choices else int(self.responded is not None)
 
     @property
     def true_emotion(self) -> Emotion:

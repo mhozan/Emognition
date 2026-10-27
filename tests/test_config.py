@@ -78,6 +78,13 @@ def test_old_settings_files_get_background_defaults(tmp_path):
     p.write_text('{"participant": "P05", "mode": "active"}', encoding="utf-8")
     s = ExperimentSettings.load(str(p))
     assert (s.background, s.background_every, s.background_shuffle) == ("default", 5, True)
+    assert s.retry_until_correct is False
+
+
+def test_retry_until_correct_reaches_the_command_line():
+    assert not _parse(ExperimentSettings(mode="active")).retry_until_correct
+    args = _parse(ExperimentSettings(mode="active", retry_until_correct=True))
+    assert args.retry_until_correct and args.mode == "active"
 
 
 def test_save_is_atomic_and_leaves_no_temp_file(tmp_path):

@@ -54,6 +54,7 @@ def response_to_record(r: Response) -> dict:
         "n_replays": r.n_replays,
         "background": r.background,
         "n_pauses": r.n_pauses,
+        "choices": [int(e) for e in r.choices],
     }
 
 
@@ -70,6 +71,7 @@ def response_from_record(d: dict) -> Response:
         n_replays=int(d.get("n_replays", 0)),
         background=d.get("background", ""),
         n_pauses=int(d.get("n_pauses", 0)),
+        choices=tuple(Emotion(c) for c in d.get("choices", ())),
     )
 
 
