@@ -129,3 +129,39 @@ def test_sidecar_is_written_right_after_the_csv(tmp_path, monkeypatch):
 def test_seed_flag_is_accepted():
     assert app.build_parser().parse_args(["--participant=P", "--seed", "123"]).seed == 123
     assert app.build_parser().parse_args(["--participant=P"]).seed is None
+
+
+# --- RT from the end of speech (Phase 5) -------------------------------------------------
+
+def _clip(tmp_path, name, lead=0.2, speech=0.5, tail=0.6, rate=16000):
+    import numpy as np
+    import soundfile as sf
+
+    t = np.arange(int(speech * rate)) / rate
+    data = np.concatenate([np.zeros(int(lead * rate)), 0.2 * np.sin(2 * np.pi * 330 * t),
+                           np.zeros(int(tail * rate))])
+    path = tmp_path / name
+    sf.write(str(path), data, rate, subtype="PCM_16")
+    return str(path)
+
+
+def test_speech_offset_rt_counts_from_the_end_of_speech_not_of_the_file(tmp_path):
+    path = _clip(tmp_path, "a_hap_f.wav")                     # speech ends at 0.7 s; file at 1.3 s
+    stim = Stimulus(path=path, emotion=Emotion.HAPPY, sex=Sex.FEMALE)
+    answered = Response(stimulus=stim, responded=Emotion.HAPPY, rt_onset=1.6, rt_offset=0.3)
+    unanswered = Response(stimulus=stim)
+    spans = app._add_speech_offset_rts([answered, unanswered], [stim])
+    assert answered.rt_speech_offset == pytest.approx(0.9, abs=0.02)   # 1.6 - 0.7
+    assert unanswered.rt_speech_offset is None
+    assert spans["a_hap_f.wav"] == pytest.approx([0.2, 0.7], abs=0.02)
+
+
+def test_speech_offset_rt_survives_moved_or_missing_clips(tmp_path):
+    moved = _clip(tmp_path, "b_sad_m.wav")
+    old = Stimulus(path="/old/install/b_sad_m.wav", emotion=Emotion.SAD, sex=Sex.MALE)
+    gone = Stimulus(path="/old/install/c_ang_f.wav", emotion=Emotion.ANGRY, sex=Sex.FEMALE)
+    r1 = Response(stimulus=old, responded=Emotion.SAD, rt_onset=1.0, rt_offset=-0.3)
+    r2 = Response(stimulus=gone, responded=Emotion.SAD, rt_onset=1.0, rt_offset=-0.3)
+    app._add_speech_offset_rts([r1, r2], [Stimulus(path=moved, emotion=Emotion.SAD, sex=Sex.MALE)])
+    assert r1.rt_speech_offset == pytest.approx(0.3, abs=0.02)        # found by name
+    assert r2.rt_speech_offset is None                                 # unreadable: no value

@@ -394,6 +394,13 @@ Reaction times are measured **two ways**, matching the original tool:
   when the clip *ends* to the response. Positive = answered after the clip.
 - **From audio onset** — time from when the clip *starts*. Both are included in
   the Excel and HTML reports.
+- **From the end of speech** *(per-trial CSV, `rt_speech_offset_s`)* — time
+  from the moment the voice actually stops: the last moment within 40 dB of
+  the clip's peak. A file's trailing silence and any calibration padding
+  don't shift it. The bundled clips end with 188–276 ms of silence, so the
+  file-offset RT starts a quarter of a second late, by an amount that varies
+  from clip to clip. The session's `.json` lists where speech starts and ends
+  in every clip.
 
 The RT quality flags `anticipatory` (< 150 ms from onset; since answers unlock
 only when the clip ends, this can only happen with clips shorter than that) and

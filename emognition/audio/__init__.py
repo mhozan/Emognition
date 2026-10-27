@@ -23,7 +23,7 @@ never modified).
 """
 
 from .loudness import NormalizationMethod, apply_gain, gain_db_to_target, measure
-from .endpoints import detect_endpoints, trim_samples
+from .endpoints import detect_endpoints, speech_span, trim_samples
 from .preprocess import ClipPlan, BatchPlan, plan_batch, apply_plan
 from .tone import average_rms, calibration_tone
 
@@ -35,6 +35,7 @@ __all__ = [
     "gain_db_to_target",
     "apply_gain",
     "detect_endpoints",
+    "speech_span",
     "trim_samples",
     "ClipPlan",
     "BatchPlan",

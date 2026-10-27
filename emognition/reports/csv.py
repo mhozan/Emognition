@@ -48,6 +48,7 @@ _TRIAL_FIELDS = [
     "pauses",          # times the trial was paused/interrupted, then replayed
     "attempts",        # answers given (more than 1 = active training's retries)
     "choices",         # every answer in order when retried, e.g. "Sad > Happy"
+    "rt_speech_offset_s",  # RT from the detected end of speech, not of the file
 ]
 
 _SUMMARY_FIELDS = [
@@ -105,6 +106,7 @@ def write_trials_csv(
                 "pauses": r.n_pauses,
                 "attempts": r.n_attempts,
                 "choices": " > ".join(e.label for e in r.choices),
+                "rt_speech_offset_s": _round(r.rt_speech_offset, 4),
             })
     return path
 

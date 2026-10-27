@@ -80,6 +80,14 @@ def detect_endpoints(
     return onset_s, offset_s
 
 
+def speech_span(path: str, **kwargs) -> tuple[float, float]:
+    """:func:`detect_endpoints` for a sound file: ``(onset_s, offset_s)`` from its start."""
+    import soundfile as sf     # local: keeps `import emognition.audio` light
+
+    samples, rate = sf.read(path, dtype="float32", always_2d=True)
+    return detect_endpoints(samples, rate, **kwargs)
+
+
 def trim_samples(
     samples: np.ndarray,
     rate: int,

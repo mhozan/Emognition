@@ -44,6 +44,10 @@ class Response:
             then "keep going") during this trial. Each time, the trial was
             replayed from the start, so the RT is valid, but the participant
             heard the clip more than once -- worth knowing in an analysis.
+        rt_speech_offset: Reaction time from the end of *speech* -- the last
+            moment within 40 dB of the clip's peak (audio/endpoints.py) --
+            rather than the end of the file, so trailing silence and
+            calibration padding don't shift it. Filled in after the session.
         choices: Every answer, in order, when active training's "retry until
             correct" made the participant try again (wrong faces are greyed
             out until the right one is chosen); empty when the first answer
@@ -59,6 +63,7 @@ class Response:
     background: str = ""
     n_pauses: int = 0
     choices: tuple[Emotion, ...] = ()
+    rt_speech_offset: float | None = None
 
     @property
     def n_attempts(self) -> int:

@@ -164,6 +164,38 @@ def _timing_rows(seed: int, timing: dict) -> dict[str, str]:
     return rows
 
 
+def _add_speech_offset_rts(responses, trials) -> dict[str, list[float]]:
+    """Fill in each response's RT from the end of speech; return the speech spans.
+
+    The "offset" RT counts from the end of the *file*, so trailing silence or
+    calibration padding shifts it (100 ms of padding is 100 ms of RT). This one
+    counts from the detected end of speech in each clip. Done after the session:
+    it costs nothing while anything is timed. A clip that can't be read (or a
+    trial without an RT) just gets no value.
+
+    Returns ``{file name: [speech onset s, speech end s]}`` for the sidecar.
+    """
+    from .audio import speech_span
+
+    by_name = {os.path.basename(t.path): t.path for t in trials}   # clips found after a move
+    spans: dict[str, tuple[float, float] | None] = {}
+    for r in responses:
+        path = r.stimulus.path
+        if not os.path.exists(path):
+            path = by_name.get(os.path.basename(path), path)
+        if path not in spans:
+            try:
+                spans[path] = speech_span(path)
+            except Exception as exc:  # noqa: BLE001 -- extra measure only, never fatal
+                print(f"No speech endpoints for {path}: {exc!r}", file=sys.stderr)
+                spans[path] = None
+        span = spans[path]
+        if span is not None and r.rt_onset is not None:
+            r.rt_speech_offset = r.rt_onset - span[1]
+    return {os.path.basename(path): [round(span[0], 4), round(span[1], 4)]
+            for path, span in spans.items() if span is not None}
+
+
 def _write_reports(responses, base: str, info, record: dict | None = None) -> tuple[str | None, list[str]]:
     """Write every report format; return (HTML path or None, formats that failed).
 
@@ -501,6 +533,7 @@ def _run_session(args: argparse.Namespace) -> int:
         app_version=__version__,
         extra=_timing_rows(seed, timing),
     )
+    speech_spans = _add_speech_offset_rts(responses, trials)
     record = {
         "app_version": __version__,
         "participant": args.participant,
@@ -522,6 +555,8 @@ def _run_session(args: argparse.Namespace) -> int:
         "n_pauses": sum(r.n_pauses for r in responses),   # each one replayed its trial
         # Practice answers: kept for the record, never scored (or in the CSV).
         "practice": [response_to_record(r) for r in practice_responses],
+        # Where speech starts and ends in each clip (rt_speech_offset_s is from the end).
+        "speech_span_s": speech_spans,
         "background": {"description": plan.describe(), "sources": list(plan.sources),
                        "every_n_trials": plan.every_n, "shuffled": plan.shuffled},
         "timing": timing,

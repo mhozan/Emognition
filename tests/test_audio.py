@@ -183,3 +183,12 @@ def test_untrimmed_normalisation_hits_the_target_and_sidecar_records_it(tmp_path
     record = json.load(open(tmp_path / "out" / SIDECAR_NAME, encoding="utf-8"))
     assert record["method"] == "rms" and record["trimmed"] is False and record["pad_s"] == plan.pad_s
     assert record["clips"][0]["file"] == "s_hap_f.wav" and record["clips"][0]["lead_trim_s"] == 0.0
+
+
+# --- the end of speech, for the speech-offset RT (Phase 5) ------------------------------
+
+def test_speech_span_finds_the_speech_inside_the_silence(tmp_path):
+    from emognition.audio import speech_span
+
+    onset, offset = speech_span(_tone_file(tmp_path / "x_hap_f.wav", seconds=0.5, lead=0.3, tail=0.7))
+    assert onset == pytest.approx(0.3, abs=0.02) and offset == pytest.approx(0.8, abs=0.02)
