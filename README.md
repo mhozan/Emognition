@@ -344,12 +344,18 @@ all formats show the same details and numbers.
 <details>
 <summary><strong>Building a standalone executable</strong></summary>
 
-Requires PyInstaller (included in the dev environment):
+Requires the pinned build tools (the same PyInstaller CI uses):
 
 ```bash
+.venv/bin/pip install -r requirements-build.txt
 scripts/build_executable.sh       # Linux / macOS
 scripts\build_executable.bat      # Windows
 ```
+
+CI (`.github/workflows/build.yml`) runs the test suite on Linux and Windows for
+every push to `master` and every pull request; version tags (`v*`) also build
+both bundles, smoke-test them with `--selfcheck`, and publish them with a
+`SHA256SUMS.txt`.
 
 Output: `dist/emognition/` (about 0.55 GB unzipped; zip it to distribute).
 

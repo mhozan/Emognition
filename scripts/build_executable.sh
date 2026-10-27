@@ -13,6 +13,8 @@ cd "$(dirname "$0")/.."
 
 PY=".venv/bin/python"
 [ -x "$PY" ] || { echo "No .venv found. See README setup."; exit 1; }
+"$PY" -m PyInstaller --version >/dev/null 2>&1 || {
+  echo "PyInstaller missing: .venv/bin/pip install -r requirements-build.txt"; exit 1; }
 
 echo "Building Emognition standalone with PyInstaller..."
 "$PY" -m PyInstaller --noconfirm emognition.spec

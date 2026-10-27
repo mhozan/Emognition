@@ -14,6 +14,12 @@ if not exist ".venv\Scripts\python.exe" (
     exit /b 1
 )
 
+.venv\Scripts\python.exe -m PyInstaller --version >nul 2>&1
+if errorlevel 1 (
+    echo PyInstaller missing: .venv\Scripts\pip install -r requirements-build.txt
+    exit /b 1
+)
+
 echo Building Emognition standalone with PyInstaller...
 .venv\Scripts\python.exe -m PyInstaller --noconfirm emognition.spec
 
