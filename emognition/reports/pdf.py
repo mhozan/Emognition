@@ -128,7 +128,9 @@ def _trials_table(pdf: FPDF, responses: Sequence[Response], flags) -> None:
             str(r.n_replays),
             RT_FLAG_LABEL[flag],     # blank for OK, as in Excel and HTML
         ])
-    with pdf.table() as table:
+    # Relative widths: equal columns wrapped every file name mid-word (canonical
+    # names like speaker-01_emotion-angry_sex-f.wav are long); give File the room.
+    with pdf.table(col_widths=(4, 40, 10, 10, 4, 8, 8, 5, 11)) as table:
         for r in rows:
             table.row([_ascii(c) for c in r])
 

@@ -232,10 +232,10 @@ class MonitorWindow(QWidget):
         self._bar_accuracy.setValue(0)
 
     def _on_trial(self, evt: dict) -> None:
-        index = evt.get("index", 0)
-        total = evt.get("total", 1)
+        index = int(evt.get("index") or 0)
+        total = int(evt.get("total") or 0)
         self._lbl_trial.setText(f"{index} / {total}")
-        self._bar_progress.setValue(round(100 * index / total))
+        self._bar_progress.setValue(round(100 * index / total) if total > 0 else 0)
 
         emotion = evt.get("emotion") or "—"
         sex_tag = evt.get("sex", "")
@@ -251,21 +251,15 @@ class MonitorWindow(QWidget):
 
         if responded is None:
             # Passive training — no response
-            self._lbl_responded.setObjectName("neutral_badge")
-            self._lbl_responded.setText("(passive)")
+            self._set_badge("neutral_badge", "(passive)")
             self._lbl_rt.setText("—")
         else:
             self._n_responded += 1
             if correct:
                 self._n_correct += 1
-                self._lbl_responded.setObjectName("correct_badge")
-                self._lbl_responded.setText(f"{responded.capitalize()}   ✓ Correct")
+                self._set_badge("correct_badge", f"{responded.capitalize()}   ✓ Correct")
             else:
-                self._lbl_responded.setObjectName("wrong_badge")
-                self._lbl_responded.setText(f"{responded.capitalize()}   ✗ Wrong")
-            # Force Qt to re-evaluate the stylesheet after objectName change.
-            self._lbl_responded.style().unpolish(self._lbl_responded)
-            self._lbl_responded.style().polish(self._lbl_responded)
+                self._set_badge("wrong_badge", f"{responded.capitalize()}   ✗ Wrong")
 
             if rt_ms is not None:
                 self._lbl_rt.setText(f"{rt_ms} ms")
@@ -277,6 +271,18 @@ class MonitorWindow(QWidget):
                 f"Accuracy:  {self._n_correct} / {self._n_responded}   ({pct} %)"
             )
             self._bar_accuracy.setValue(pct)
+
+    def _set_badge(self, name: str, text: str) -> None:
+        """Show *text* styled as *name* (re-polished so the stylesheet follows).
+
+        Qt doesn't re-apply a stylesheet when an object name changes; the passive
+        branch used to skip this, so its badge kept the previous colour.
+        """
+        self._lbl_responded.setObjectName(name)
+        self._lbl_responded.setText(text)
+        style = self._lbl_responded.style()
+        style.unpolish(self._lbl_responded)
+        style.polish(self._lbl_responded)
 
     def _on_done(self, evt: dict) -> None:
         # Same denominator as the reports: answered trials (older senders: all trials).

@@ -44,6 +44,15 @@ def configure_prefs(
     adds is irrelevant to RTs measured from the *scheduled* onset.
 
     Importing :mod:`psychopy.preferences` here is cheap and starts no threads.
+
+    Note (PsychoPy 2026.1.3): both of these are now *legacy* preferences that the
+    sound system no longer reads. The backend is the class attribute
+    ``psychopy.sound.sound.Sound.backend`` (default ``"ptb"``), and the latency
+    class is ``SpeakerDevice(latencyClass=1)``, the default every ``Sound``
+    gets. Those defaults are exactly what this function asks for, so behaviour
+    is unchanged; we keep setting the prefs for older PsychoPy versions, and
+    ``tests/test_modes_runtime.py`` fails loudly if an upgrade ever changes the
+    real defaults.
     """
     from psychopy import prefs
 

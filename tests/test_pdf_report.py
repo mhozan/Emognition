@@ -44,3 +44,29 @@ def test_handles_unicode_participant(tmp_path):
     write_pdf_report(_responses(), str(path),
                      info=SessionInfo(participant="Pärticipant—✓"))
     assert path.read_bytes().startswith(b"%PDF-")
+
+
+def _pdf_text(data: bytes) -> str:
+    """Text drawn in a PDF written by fpdf2 (inflate its content streams)."""
+    import re
+    import zlib
+
+    chunks = []
+    for stream in re.findall(rb"stream\r?\n(.*?)\r?\nendstream", data, re.S):
+        try:
+            chunks.append(zlib.decompress(stream).decode("latin-1"))
+        except zlib.error:
+            continue                              # images etc.
+    return "".join(chunks)
+
+
+def test_pdf_shows_the_session_details_and_numbers(tmp_path):
+    path = tmp_path / "r.pdf"
+    write_pdf_report(_responses(), str(path),
+                     info=SessionInfo(participant="P01", experimenter="Dr Lee",
+                                      background="Rolling hills", audio_folder="/clips"))
+    text = _pdf_text(path.read_bytes())
+    for expected in ("Session Report", "P01", "Dr Lee", "Rolling hills", "/clips",
+                     "66.7%", "04_ang_m.wav"):
+        assert expected in text, expected
+    assert "-%" not in text                       # no unit after a missing value

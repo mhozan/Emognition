@@ -68,3 +68,83 @@ def test_a_summary_with_the_other_rt_basis_is_rejected():
     onset_summary = summarize(_responses(), rt_kind="onset")
     with pytest.raises(ValueError, match="onset"):
         prepare_summary(_responses(), summary=onset_summary, rt_kind="offset")
+
+
+# --- cross-format agreement and edge-case sessions (Phase 4) ------------------
+
+def _mixed_session():
+    from emognition.core import Emotion as E
+
+    def r(i, true, chosen, rt):
+        stim = Stimulus(path=f"/c/{i}_{true.tag}_f.wav", emotion=true, sex=Sex.FEMALE)
+        if chosen is None:
+            return Response(stimulus=stim)
+        return Response(stimulus=stim, responded=chosen, rt_onset=rt + 1.6, rt_offset=rt)
+
+    plan = [(E.HAPPY, E.HAPPY, 0.41), (E.HAPPY, E.HAPPY, 0.52), (E.HAPPY, E.SAD, 0.93),
+            (E.SAD, E.SAD, 0.61), (E.SAD, E.NEUTRAL, 0.77), (E.SAD, E.SAD, 0.58),
+            (E.ANGRY, E.ANGRY, 0.66), (E.ANGRY, E.SCARED, 1.05), (E.NEUTRAL, None, None)]
+    return [r(i, t, c, rt) for i, (t, c, rt) in enumerate(plan)]
+
+
+def test_csv_excel_and_html_report_the_same_numbers(tmp_path):
+    import re
+
+    from emognition.core import EMOTIONS_IN_ORDER
+    from emognition.reports import render_html_report
+    from emognition.reports.common import round_half_up
+
+    responses = _mixed_session()
+    reference, _flags = prepare_summary(responses, summary=None, rt_kind="offset")
+    _, summary_csv = write_csv_report(responses, str(tmp_path / "r.csv"))
+    csv_rows = {row["group"]: row for row in csv.DictReader(open(summary_csv, newline="", encoding="utf-8"))}
+    ws = load_workbook(write_excel_report(responses, str(tmp_path / "r.xlsx")))["Percentages"]
+    excel_rows = {ws.cell(row=r, column=1).value: (ws.cell(row=r, column=2).value, ws.cell(row=r, column=3).value)
+                  for r in range(2, ws.max_row + 1)}
+    html = render_html_report(responses)
+
+    for emo in EMOTIONS_IN_ORDER:
+        ref = reference.per_emotion[emo]
+        pct_x, rt_x = excel_rows[emo.label]
+        m = re.search(rf"<th class='rowhead'>{emo.label}</th><td>([^<]*)</td><td>([^<]*)</td>"
+                      rf"<td>([^<]*)</td></tr>", html)
+        assert m, emo.label
+        if ref.pct_correct is None:                          # never answered
+            assert csv_rows[emo.label]["pct_correct"] == "" and pct_x is None and m.group(1) == EMPTY
+            continue
+        assert float(csv_rows[emo.label]["pct_correct"]) == float(round_half_up(ref.pct_correct, 2))
+        assert pct_x == pytest.approx(ref.pct_correct)
+        assert m.group(1) == fmt_pct(ref.pct_correct)
+        assert float(csv_rows[emo.label]["mean_rt_s"]) == float(round_half_up(ref.mean_rt, 4))
+        assert rt_x == pytest.approx(ref.mean_rt) and m.group(2) == fmt_seconds(ref.mean_rt)
+
+
+def _session(kind):
+    one = Stimulus(path="/c/01_hap_f.wav", emotion=Emotion.HAPPY, sex=Sex.FEMALE)
+    if kind == "empty":
+        return []
+    if kind == "single":
+        return [Response(stimulus=one, responded=Emotion.HAPPY, rt_onset=1.5, rt_offset=0.5)]
+    if kind == "all wrong":
+        return [Response(stimulus=one, responded=Emotion.SAD, rt_onset=1.5 + i / 10, rt_offset=0.5 + i / 10)
+                for i in range(4)]
+    return [Response(stimulus=one) for _ in range(3)]          # all unanswered
+
+
+@pytest.mark.parametrize("kind", ["empty", "single", "all wrong", "all unanswered"])
+def test_every_writer_copes_with_edge_case_sessions(tmp_path, kind):
+    from emognition.reports import write_html_report, write_pdf_report
+
+    responses = _session(kind)
+    base = str(tmp_path / "r")
+    trials, summary_csv = write_csv_report(responses, base + ".csv")
+    write_excel_report(responses, base + ".xlsx", info=SessionInfo())
+    write_html_report(responses, base + ".html", info=SessionInfo())
+    write_pdf_report(responses, base + ".pdf", info=SessionInfo())
+    total = {row["group"]: row for row in csv.DictReader(open(summary_csv, newline="", encoding="utf-8"))}["Total"]
+    expected_answered = {"empty": "0", "single": "1", "all wrong": "4", "all unanswered": "0"}[kind]
+    assert total["n_answered"] == expected_answered
+    if kind == "all wrong":
+        assert float(total["pct_correct"]) == 0.0
+    if kind in ("empty", "all unanswered"):
+        assert total["pct_correct"] == "" and total["mean_rt_s"] == ""

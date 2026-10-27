@@ -50,3 +50,15 @@ def test_escapes_user_input():
     )
     assert "<script>x</script>" not in html
     assert "&lt;script&gt;" in html
+
+
+def test_escapes_every_free_text_field():
+    nasty = "<img src=x onerror=alert(1)>"
+    html = render_html_report(
+        [_resp(Emotion.HAPPY, Sex.FEMALE, Emotion.HAPPY, 0.5, 0, f"{nasty}_hap_f.wav")],
+        info=SessionInfo(participant=nasty, experimenter=nasty, mode=nasty, audio_folder=nasty,
+                         background=nasty, app_version=nasty, notes=nasty, extra={nasty: nasty}),
+    )
+    assert "<img" not in html                     # nothing injected anywhere
+    assert html.count("&lt;img") >= 9             # every field shown, escaped
+

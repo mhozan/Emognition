@@ -234,3 +234,28 @@ def test_audio_package_no_longer_loads_scipy_at_import():
     out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True,
                          cwd=os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     assert out.stdout.strip() == "False", out.stderr
+
+
+# --- monitor events (Phase 4) ---------------------------------------------------
+
+def test_monitor_tracks_trials_badges_and_final_accuracy(app):
+    m = MonitorWindow()
+    m.handle_event({"status": "start", "total": 3, "mode": "active", "participant": "P1"})
+    m.handle_event({"status": "trial", "index": 1, "total": 3, "emotion": "happy", "sex": "female",
+                    "responded": "happy", "correct": True, "rt_ms": 640})
+    m.handle_event({"status": "trial", "index": 2, "total": 3, "emotion": "sad", "sex": "male",
+                    "responded": "angry", "correct": False, "rt_ms": 900})
+    assert m._lbl_trial.text() == "2 / 3" and m._lbl_rt.text() == "900 ms"
+    assert "1 / 2" in m._lbl_accuracy.text() and m._lbl_responded.objectName() == "wrong_badge"
+    m.handle_event({"status": "trial", "index": 3, "total": 3, "responded": None, "correct": None})
+    assert m._lbl_responded.objectName() == "neutral_badge" and m._lbl_responded.text() == "(passive)"
+    m.handle_event({"status": "done", "n_correct": 1, "n_trials": 3, "n_answered": 2, "aborted": True})
+    assert "1 / 2" in m._lbl_accuracy.text() and "aborted" in m._lbl_trial.text()
+
+
+def test_monitor_shrugs_off_unknown_or_odd_events(app):
+    m = MonitorWindow()
+    m.handle_event({"status": "something-new"})
+    m.handle_event({})
+    m.handle_event({"status": "trial", "index": 1, "total": 0})     # used to divide by zero
+    assert m._lbl_trial.text() == "1 / 0"

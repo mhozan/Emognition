@@ -110,15 +110,15 @@ def test_plan_and_apply_on_bundled_clips(tmp_path):
     assert len(written) == 10
     assert all(os.path.exists(p) for p in written)
 
-    # A normalized clip that wasn't peak-limited should sit near the target.
+    # Every normalized clip that wasn't peak-limited should sit near the target
+    # (the old loop checked only the first one, and passed vacuously if all
+    # clips were limited).
     import soundfile as sf
-    for c, p in zip(plan.clips, written):
-        if not c.will_limit:
-            data, rate = sf.read(p)
-            assert measure_loudness(data, rate, NormalizationMethod.LUFS) == pytest.approx(
-                -23.0, abs=1.5
-            )
-            break
+    unlimited = [(c, p) for c, p in zip(plan.clips, written) if not c.will_limit]
+    assert unlimited, "expected at least one clip to reach the target without limiting"
+    for _c, p in unlimited:
+        data, rate = sf.read(p)
+        assert measure_loudness(data, rate, NormalizationMethod.LUFS) == pytest.approx(-23.0, abs=1.5)
 
 
 # --- preprocess safety and provenance (Phase 3) ----------------------------
