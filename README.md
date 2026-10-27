@@ -277,14 +277,23 @@ your folder and confirm each file's detected emotion and sex before running.
 
 ### 3. Reports
 
-After each session, four reports are written to your chosen save folder:
+After each session these files are written to your chosen save folder. The raw
+CSV goes first, so the data is safe even if a later format fails:
 
-- `ParticipantID_YYYYMMDD_HHMMSS.html` — self-contained dark-themed report with
-  confusion matrix, RT distribution charts (onset + offset), per-trial table
+- `ParticipantID_YYYYMMDD_HHMMSS.csv` — per-trial raw data, plus `_summary.csv`
+- `.json` — how the session was run: every setting, the **random seed** and the
+  resulting trial order, the background plan, timing quality (refresh rate,
+  dropped frames, predicted audio latency) and software versions. Re-run the
+  exact same order with `--seed <seed>`.
+- `.html` — self-contained dark-themed report with confusion matrix, RT
+  distribution charts (onset + offset), per-trial table
 - `.pdf` — same content, portable
 - `.xlsx` — four sheets: Session Info, Confusion Matrix (heat-mapped), Percentages
   (by sex), Pressed Keys (with RT + quality flags + recording ID)
-- `.csv` — per-trial raw data + summary
+
+Every format shows the same session details, including the seed, the refresh
+rate and the share of dropped frames (reaction times are sampled once per
+frame, so these say how precise the RTs were).
 
 <details>
 <summary><strong>Reaction-time definition</strong></summary>
@@ -398,6 +407,7 @@ Options:
   --background SPEC  default | none | slideshow | picture file | picture folder  [default]
   --background-every N        Slideshow: change picture every N trials (1–20)  [5]
   --[no-]background-shuffle   Slideshow: shuffle the picture order  [on]
+  --seed N           Random seed for the trial and picture order  [random; recorded]
   --no-begin         Start straight away, without the Begin screen (automation)
   --version          Print version and exit
 ```

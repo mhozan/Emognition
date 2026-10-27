@@ -333,6 +333,10 @@ class TestExperiment:
         self._progress_width: float | None = None   # last width assigned to the fill
         self._led_level: int | None = None          # last quantised LED level
         self._close_requested = False              # set when the window's X is clicked
+        # Frame timing is recorded only while the screen animates continuously
+        # (playback, waiting for the answer, feedback) -- the deliberate pauses
+        # (the 200 ms onset spin, loading between trials) are not dropped frames.
+        self.record_timing = True
 
         # Background: None keeps the plain window colour (what scripts expect).
         self.background = BackgroundLayer(win, background or BackgroundPlan(sources=()))
@@ -502,6 +506,8 @@ class TestExperiment:
                 far are attached on the exception's ``.partial`` attribute.
         """
         self.prepare(trials)
+        self.win.frameIntervals = []
+        self.win.nDroppedFrames = 0
 
         responses: list[Response] = []
         try:
@@ -520,7 +526,36 @@ class TestExperiment:
         except ExperimentAborted as abort:
             abort.partial = responses  # type: ignore[attr-defined]
             raise
+        finally:
+            self._record_frames(False)
         return responses
+
+    def timing_summary(self) -> dict:
+        """Display/audio timing QA for the reports (refresh rate, dropped frames, latency).
+
+        Reaction times are sampled once per frame, so the refresh rate and the
+        share of dropped frames say how precise this session's RTs really were.
+        """
+        intervals = np.asarray(self.win.frameIntervals, dtype=float)
+        measured = getattr(self.win, "_monitorFrameRate", None)
+        period = float(getattr(self.win, "monitorFramePeriod", 0.0) or 0.0)
+        summary = {
+            "refresh_hz": round(float(measured), 2) if measured else (round(1.0 / period, 2) if period else None),
+            "refresh_measured": bool(measured),
+            "frames_recorded": int(intervals.size),
+            "frames_dropped": int(getattr(self.win, "nDroppedFrames", 0)),
+            "frame_interval_ms_mean": round(float(intervals.mean()) * 1000, 3) if intervals.size else None,
+            "frame_interval_ms_sd": round(float(intervals.std(ddof=1)) * 1000, 3) if intervals.size > 1 else None,
+            "frame_interval_ms_max": round(float(intervals.max()) * 1000, 3) if intervals.size else None,
+            "audio_predicted_latency_ms": None,
+        }
+        try:   # PsychPortAudio's own estimate of output latency
+            latency = self._sound.stream.status.get("PredictedLatency") if self._sound else None
+            if latency is not None:
+                summary["audio_predicted_latency_ms"] = round(float(latency) * 1000, 2)
+        except Exception:  # noqa: BLE001 -- QA info only, never fatal
+            pass
+        return summary
 
     def close(self) -> None:
         """Release helper resources (the background prefetch thread)."""
@@ -613,6 +648,7 @@ class TestExperiment:
         self._play_and_wait_offset(duration)
         self._show_feedback(stim.emotion, chosen=None)
         self._sound.stop()
+        self._record_frames(False)               # loading the next trial isn't a dropped frame
         return None
 
     def _present_responding_trial(
@@ -653,6 +689,7 @@ class TestExperiment:
             self._show_feedback(stim.emotion, chosen=press.emotion)
 
         self._sound.stop()
+        self._record_frames(False)               # loading the next trial isn't a dropped frame
         return Response(
             stimulus=stim,
             responded=press.emotion,
@@ -733,6 +770,7 @@ class TestExperiment:
         except Exception:
             pass
         event.clearEvents("keyboard")
+        self._record_frames(False)                # the spin below is a deliberate pause
         now = ptb.GetSecs()
         onset = now + _ONSET_LEAD_SECONDS
         self._sound.play(when=onset)             # sample-accurate scheduled start
@@ -740,6 +778,7 @@ class TestExperiment:
             pass
         self.clock.reset()                        # t = 0 is the audio onset
         self.mouse.clickReset()
+        self._record_frames(True)                 # continuous flips from here to the answer
 
         while self.clock.getTime() < duration:
             if "escape" in event.getKeys() or self._close_requested:  # drains presses
@@ -775,6 +814,10 @@ class TestExperiment:
 
             self._draw_scene(enabled=True)
             self.win.flip()
+
+    def _record_frames(self, on: bool) -> None:
+        """Start/stop PsychoPy's frame-interval recording (restarting resets the clock)."""
+        self.win.recordFrameIntervals = bool(on and self.record_timing)
 
     def _set_progress(self, fraction: float) -> None:
         """Size the progress fill (assigned only when it changes: Rect.width allocates)."""

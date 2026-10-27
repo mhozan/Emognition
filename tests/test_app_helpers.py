@@ -84,3 +84,48 @@ def test_emit_survives_a_broken_pipe(monkeypatch):
 
     monkeypatch.setattr("sys.stdout", BrokenStdout())
     app._emit({"status": "done"})          # must not raise
+
+
+# --- seed, timing QA and the JSON sidecar (Phase 5) ------------------------------
+
+def test_sidecar_is_plain_json_with_iso_times_and_versions(tmp_path):
+    import json
+
+    from emognition.reports.sidecar import SIDECAR_FORMAT, environment_info, write_session_sidecar
+
+    path = write_session_sidecar(str(tmp_path / "s.json"), {
+        "random_seed": 42, "started_at": datetime(2026, 10, 27, 9, 0, 0), "environment": environment_info(),
+    })
+    data = json.load(open(path, encoding="utf-8"))
+    assert data["format"] == SIDECAR_FORMAT and data["format_version"] == 1
+    assert data["random_seed"] == 42 and data["started_at"] == "2026-10-27T09:00:00"
+    assert data["environment"]["python"] and "psychopy" in data["environment"]["packages"]
+
+
+def test_timing_rows_describe_seed_refresh_and_drops():
+    rows = app._timing_rows(7, {"refresh_hz": 59.94, "refresh_measured": True, "frames_recorded": 12000,
+                                "frames_dropped": 6, "audio_predicted_latency_ms": 9.6})
+    assert rows == {"Random seed": "7", "Refresh rate": "59.9 Hz",
+                    "Dropped frames": "6 of 12,000 (0.05%)", "Audio latency (predicted)": "9.6 ms"}
+    assert app._timing_rows(1, {}) == {"Random seed": "1"}            # nothing measured: just the seed
+    assert "(assumed)" in app._timing_rows(1, {"refresh_hz": 60.0})["Refresh rate"]
+
+
+def test_sidecar_is_written_right_after_the_csv(tmp_path, monkeypatch):
+    import emognition.reports as reports
+    import emognition.reports.sidecar as sidecar
+
+    order = []
+    for module, name in ((reports, "write_csv_report"), (sidecar, "write_session_sidecar"),
+                         (reports, "write_excel_report")):
+        real = getattr(module, name)
+        monkeypatch.setattr(module, name, lambda *a, _r=real, _n=name, **k: (order.append(_n), _r(*a, **k))[1])
+    base = str(tmp_path / "P01_x")
+    app._write_reports(_responses(), base, SessionInfo(participant="P01"), {"random_seed": 3})
+    assert order[:3] == ["write_csv_report", "write_session_sidecar", "write_excel_report"]
+    assert os.path.exists(base + ".json")
+
+
+def test_seed_flag_is_accepted():
+    assert app.build_parser().parse_args(["--participant=P", "--seed", "123"]).seed == 123
+    assert app.build_parser().parse_args(["--participant=P"]).seed is None

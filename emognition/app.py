@@ -25,6 +25,8 @@ from __future__ import annotations
 import argparse
 import json as _json
 import os
+import random
+import secrets
 import sys
 import tempfile
 from datetime import datetime
@@ -128,17 +130,45 @@ def _report_base(save_dir: str, participant: str, started: datetime) -> str:
     return os.path.join(save_dir, f"{stem}_{started.strftime('%Y%m%d_%H%M%S')}")
 
 
-def _write_reports(responses, base: str, info) -> tuple[str | None, list[str]]:
+def _safe_timing(experiment) -> dict:
+    """The experiment's timing QA, or {} -- QA must never cost the session's data."""
+    try:
+        return experiment.timing_summary()
+    except Exception as exc:  # noqa: BLE001
+        print(f"Timing summary unavailable: {exc!r}", file=sys.stderr)
+        return {}
+
+
+def _timing_rows(seed: int, timing: dict) -> dict[str, str]:
+    """Session-details rows for the reports: the seed and the timing quality."""
+    rows = {"Random seed": str(seed)}
+    hz = timing.get("refresh_hz")
+    if hz:
+        rows["Refresh rate"] = f"{hz:.1f} Hz" + ("" if timing.get("refresh_measured") else " (assumed)")
+    recorded = timing.get("frames_recorded")
+    if recorded:
+        dropped = timing.get("frames_dropped", 0)
+        rows["Dropped frames"] = f"{dropped} of {recorded:,} ({100.0 * dropped / recorded:.2f}%)"
+    latency = timing.get("audio_predicted_latency_ms")
+    if latency is not None:
+        rows["Audio latency (predicted)"] = f"{latency:.1f} ms"
+    return rows
+
+
+def _write_reports(responses, base: str, info, record: dict | None = None) -> tuple[str | None, list[str]]:
     """Write every report format; return (HTML path or None, formats that failed).
 
-    The raw per-trial CSV goes first, so the data is on disk before anything
-    fancier is attempted, and each format is isolated: a plotting or font
-    problem in the PDF can't take the others (or the data) with it.
+    The raw per-trial CSV goes first, then the JSON sidecar (*record*: how the
+    session was run), so the data is on disk before anything fancier is
+    attempted; each format is isolated, so a plotting or font problem in the
+    PDF can't take the others (or the data) with it.
     """
     from .reports import write_csv_report, write_excel_report, write_html_report, write_pdf_report
+    from .reports.sidecar import write_session_sidecar
 
     writers = (
         ("CSV", lambda: write_csv_report(responses, base + ".csv")),
+        ("JSON", lambda: write_session_sidecar(base + ".json", record or {})),
         ("Excel", lambda: write_excel_report(responses, base + ".xlsx", info=info)),
         ("HTML", lambda: write_html_report(responses, base + ".html", info=info)),
         ("PDF", lambda: write_pdf_report(responses, base + ".pdf", info=info)),
@@ -192,7 +222,12 @@ def _run_session(args: argparse.Namespace) -> int:
     if not stimuli:
         print(f"No audio stimuli found in {audio_folder}.", file=sys.stderr)
         return 1
-    trials = build_trial_list(stimuli, emotions=emotions, shuffle=not args.no_shuffle)
+    # One recorded seed drives every random choice, so a session's order can be
+    # reproduced exactly (--seed) -- the original never seeded its RNG at all,
+    # so the first session after each launch always got the same order.
+    seed = args.seed if args.seed is not None else secrets.randbelow(2**31 - 1)
+    trials = build_trial_list(stimuli, emotions=emotions, shuffle=not args.no_shuffle,
+                              rng=random.Random(seed))
     if not trials:
         chosen = ", ".join(e.label for e in emotions) if emotions else "the selected emotions"
         print(f"No clips in {audio_folder} match {chosen}; nothing to present.", file=sys.stderr)
@@ -201,6 +236,7 @@ def _run_session(args: argparse.Namespace) -> int:
         plan = resolve_background(
             args.background, picture_folders=background_folders(),
             every_n=args.background_every, shuffle=args.background_shuffle,
+            rng=random.Random(seed + 1),
         )
     except ValueError as exc:
         print(str(exc), file=sys.stderr)
@@ -267,6 +303,7 @@ def _run_session(args: argparse.Namespace) -> int:
     except ExperimentAborted as abort:
         responses, aborted = getattr(abort, "partial", []), True
     finally:
+        timing = _safe_timing(experiment)
         experiment.close()
         win.close()
     finished_at = datetime.now()
@@ -286,6 +323,7 @@ def _run_session(args: argparse.Namespace) -> int:
     # now, after the window has closed, instead of delaying the window opening.
     from .io import open_path
     from .reports import SessionInfo
+    from .reports.sidecar import environment_info
 
     started = begun_at or launched      # the session starts when Begin is pressed
     base = _report_base(save_dir, args.participant, started)
@@ -297,8 +335,30 @@ def _run_session(args: argparse.Namespace) -> int:
         background=plan.describe(),
         started_at=started, finished_at=finished_at,
         app_version=__version__,
+        extra=_timing_rows(seed, timing),
     )
-    html, failed = _write_reports(responses, base, info)
+    record = {
+        "app_version": __version__,
+        "participant": args.participant,
+        "experimenter": args.experimenter,
+        "mode": args.mode,
+        "aborted": aborted,
+        "launched_at": launched,
+        "started_at": started,
+        "finished_at": finished_at,
+        "random_seed": seed,
+        "settings": dict(vars(args)),
+        "audio_folder": audio_folder,
+        "trial_order": [t.filename for t in trials],
+        "n_trials_planned": len(trials),
+        "n_responses": len(responses),
+        "n_answered": n_answered,
+        "background": {"description": plan.describe(), "sources": list(plan.sources),
+                       "every_n_trials": plan.every_n, "shuffled": plan.shuffled},
+        "timing": timing,
+        "environment": environment_info(),
+    }
+    html, failed = _write_reports(responses, base, info, record)
     if failed:
         print(f"Reports saved to: {base}.* -- FAILED: {', '.join(failed)} (see messages above)",
               file=sys.stderr)
@@ -455,6 +515,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--background-shuffle", action=argparse.BooleanOptionalAction,
                         default=True,
                         help="slideshow: shuffle the picture order (default: on)")
+    parser.add_argument("--seed", type=int, default=None,
+                        help="random seed for the trial (and picture) order; recorded in "
+                             "every report so a session can be reproduced (default: random)")
     parser.add_argument("--no-begin", action="store_true",
                         help="start straight away, without the Begin screen (automation)")
     return parser
