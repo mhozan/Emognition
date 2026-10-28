@@ -382,13 +382,19 @@ tooltip.
   of clips per emotion and sex (unequal counts let a response bias score above
   chance), the `stimuli.tsv` manifest with its `stimuli.json` data dictionary,
   and renaming legacy names to BIDS style.
-- **Clip check**: a card per recording, all on one time scale: the waveform, a
-  spectrogram (0–8 kHz) and the short-time RMS curve the end-of-speech detector
-  decides on, with its threshold and the detected speech. Flags point at the
-  clips worth a listen: clipped samples, a DC offset, a low level (peak below
-  −20 dBFS), noise within 30 dB of the speech, speech running into the start or
-  end of the file, a sample rate or channel count unlike the rest. Click a card
-  for a large view with axes, which also shows what trimming would cut.
+- **Clip check**: every recording is quick-checked at once (about a
+  millisecond a clip) into a sortable table — duration, peak and RMS level,
+  silence before and after the speech, noise floor, format, and a small
+  waveform. Flags point at the clips worth a listen, which come first: clipped
+  samples, a DC offset, a low level (peak below −20 dBFS), noise within 30 dB of
+  the speech, speech running into the start or end of the file, a sample rate
+  or channel count unlike the rest. The selected clip is analysed in full for a
+  large view — waveform, spectrogram (0–8 kHz) and the short-time RMS curve the
+  end-of-speech detector decides on, with what trimming would cut — and
+  **Play** (or Space) plays it through the session's own audio path, at its
+  Volume, with a playhead. **Deep analysis**, on request, makes a spectrogram
+  card for every clip on one time scale; its button estimates how long that
+  will take on your computer, and it can be cancelled.
 - **Loudness & trim**: *Preview* shows what calibration would change for every
   clip (duration, silence before and after the speech, loudness, peak), as a
   table and as before/after charts with the target, ceiling and padding.
