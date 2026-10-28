@@ -46,7 +46,7 @@ _TRIAL_FIELDS = [
     "rt_flag",
     "background",      # picture on screen during the trial ("" = plain)
     "pauses",          # times the trial was paused/interrupted, then replayed
-    "attempts",        # answers given (more than 1 = active training's retries)
+    "attempts",        # answers given (more than 1 = practice's retries)
     "choices",         # every answer in order when retried, e.g. "Sad > Happy"
     "rt_speech_offset_s",  # RT from the detected end of speech, not of the file
 ]

@@ -329,7 +329,6 @@ def _run_session(args: argparse.Namespace) -> int:
     from psychopy import visual
 
     from .core import SessionMode, build_trial_list
-    from .core.trials import pick_practice
     from .core.backgrounds import resolve_background
     from .io.autosave import PARTIAL_SUFFIX
     from .naming import scan_stimuli
@@ -368,7 +367,7 @@ def _run_session(args: argparse.Namespace) -> int:
         plan = resolve_background(
             args.background, picture_folders=background_folders(),
             every_n=args.background_every, shuffle=args.background_shuffle,
-            rng=random.Random(seed + 1),
+            rng=random.Random(seed + 1), first=args.background_first,
         )
     except ValueError as exc:
         print(str(exc), file=sys.stderr)
@@ -381,17 +380,6 @@ def _run_session(args: argparse.Namespace) -> int:
         return 1
 
     mode = SessionMode(args.mode)
-    # Practice trials (answered, with feedback, never scored) lead into a
-    # training session -- not a Test -- and not after a resume that has answers.
-    practice = []
-    if args.practice > 0 and not done and mode != SessionMode.TEST:
-        source = scan_stimuli(args.practice_dir) if args.practice_dir else trials
-        practice = pick_practice(source, args.practice, emotions=emotions,
-                                 rng=random.Random(seed + 2))
-        if not practice:
-            print(f"No practice clips in {args.practice_dir or audio_folder}.", file=sys.stderr)
-            return 1
-    practice_responses = []
     launched = datetime.now()
     log = None
     aborted = False
@@ -422,13 +410,9 @@ def _run_session(args: argparse.Namespace) -> int:
                 "attempts": response.n_attempts,
             })
         else:
-            # Passive training: clip was shown but no response collected.
+            # Familiarization (passive): the clip was shown, no response collected.
             _emit({"status": "trial", "index": index, "total": total,
                    "responded": None, "correct": None, "rt_ms": None})
-
-    def _on_practice(response, index: int, total: int) -> None:
-        _emit({"status": "practice", "index": index, "total": total,
-               "correct": response.is_correct if response is not None else None})
 
     if remaining:
         win = visual.Window(
@@ -470,7 +454,7 @@ def _run_session(args: argparse.Namespace) -> int:
                 _emit({"status": "waiting"})
                 begun_at = experiment.wait_for_begin()
             _emit({"status": "begun", "total": len(trials), "done": len(done)})
-            if mode != SessionMode.PASSIVE_TRAINING:   # passive training records nothing
+            if mode != SessionMode.PASSIVE_TRAINING:   # familiarization records nothing
                 if resume_header:
                     log = _open_session_log(args.resume, None)
                 else:
@@ -487,8 +471,6 @@ def _run_session(args: argparse.Namespace) -> int:
                         # Absolute, so a resume started from another folder finds them.
                         "trial_order": [os.path.abspath(t.path) for t in trials],
                     })
-            if practice:                        # answered with feedback, never scored
-                practice_responses = experiment.run_practice(practice, on_trial=_on_practice)
             new_responses = experiment.run(remaining, on_trial=_on_trial)
         except ExperimentAborted as abort:
             new_responses, aborted = getattr(abort, "partial", []), True
@@ -509,7 +491,7 @@ def _run_session(args: argparse.Namespace) -> int:
         if log is not None:
             log.discard()                       # nothing to resume
         if mode == SessionMode.PASSIVE_TRAINING:
-            print(f"Passive training session complete ({len(trials)} clips presented).")
+            print(f"Familiarization complete ({len(trials)} clips presented).")
         else:
             print("No responses recorded.")
         _psychopy_quit(0)
@@ -517,7 +499,6 @@ def _run_session(args: argparse.Namespace) -> int:
     # Report writers (openpyxl, fpdf2, matplotlib: ~0.5 s of imports) load only
     # now, after the window has closed, instead of delaying the window opening.
     from .io import open_path
-    from .io.autosave import response_to_record
     from .reports import SessionInfo
     from .reports.sidecar import environment_info
 
@@ -558,8 +539,6 @@ def _run_session(args: argparse.Namespace) -> int:
         "n_responses": len(responses),
         "n_answered": n_answered,
         "n_pauses": sum(r.n_pauses for r in responses),   # each one replayed its trial
-        # Practice answers: kept for the record, never scored (or in the CSV).
-        "practice": [response_to_record(r) for r in practice_responses],
         # Where speech starts and ends in each clip (rt_speech_offset_s is from the end).
         "speech_span_s": speech_spans,
         "background": {"description": plan.describe(), "sources": list(plan.sources),
@@ -744,8 +723,9 @@ def build_parser() -> argparse.ArgumentParser:
                              "the app, or in the current folder when run from source)")
     parser.add_argument("--mode", choices=["test", "passive", "active"],
                         default="test",
-                        help="session mode: test (default), passive training, "
-                             "or active training with feedback")
+                        help="session mode: test (default; no feedback), passive "
+                             "(Familiarization: each clip, then its answer is shown) or "
+                             "active (Practice: the participant answers and gets feedback)")
     parser.add_argument("--background", default="default", metavar="SPEC",
                         help="participant-window background: 'default' (calm gradient), "
                              "'none' (plain), 'slideshow' (all pictures), a picture file, "
@@ -756,22 +736,19 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--background-shuffle", action=argparse.BooleanOptionalAction,
                         default=True,
                         help="slideshow: shuffle the picture order (default: on)")
+    parser.add_argument("--background-first", default=None, metavar="PICTURE",
+                        help="slideshow: the picture to start with (the one chosen in the "
+                             "setup window; default: the first in the order)")
     parser.add_argument("--seed", type=int, default=None,
                         help="random seed for the trial (and picture) order; recorded in "
                              "every report so a session can be reproduced (default: random)")
     parser.add_argument("--retry-until-correct", action="store_true",
-                        help="active training: after a wrong answer, grey out that face and "
+                        help="practice (active): after a wrong answer, grey out that face and "
                              "ask again until the right one is chosen (only the first "
                              "answer is scored)")
     parser.add_argument("--max-run", type=_non_negative_int, default=0, metavar="N",
                         help="shuffle so that at most N clips of one emotion come in a row "
                              "(default 0 = no limit)")
-    parser.add_argument("--practice", type=_non_negative_int, default=0, metavar="N",
-                        help="training modes: N practice trials with feedback before the "
-                             "session, not scored (default 0 = none)")
-    parser.add_argument("--practice-dir", default=None, metavar="PATH",
-                        help="clips for the practice trials (default: the session's own "
-                             "clips, which are then heard twice)")
     parser.add_argument("--next-button", action="store_true",
                         help="between trials, wait for a click on 'Ready for the next one?' "
                              "(the original's Extra button)")

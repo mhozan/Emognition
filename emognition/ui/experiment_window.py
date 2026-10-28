@@ -129,7 +129,7 @@ _PROMPT_POS = (-0.15, 0.05)
 _PROMPT_HEIGHT = 0.05
 _PROMPT_WRAP = 0.7
 _RESPONSE_PROMPT = "Listen, then choose the emotion you heard."
-# Active training, retry until correct: after a wrong pick, then while answering again.
+# Practice, retry until correct: after a wrong pick, then while answering again.
 _WRONG_PROMPT = "Not quite!"
 _RETRY_PROMPT = "Try again!"
 _WRONG_FLASH_SECONDS = 0.8
@@ -162,10 +162,7 @@ _NEXT_MESSAGES = (
 _NEXT_BUTTON_HEIGHT = 0.11
 _BREAK_TITLE = "Time for a short break!"
 _BREAK_LABEL = "Continue"
-# After the (optional) practice trials, before the real ones.
-_PRACTICE_DONE_TITLE = "Well done! Now for the real thing."
-_PRACTICE_DONE_LABEL = "Start"
-# What's shown while a clip plays, per mode (practice borrows active training's).
+# What's shown while a clip plays, per mode.
 _LISTEN_PROMPTS = {
     SessionMode.TEST: "Listen...",
     SessionMode.PASSIVE_TRAINING: "Listen carefully.",
@@ -522,11 +519,9 @@ class TestExperiment:
             [BeginButton(win, text, pos=_PROMPT_POS, height=_NEXT_BUTTON_HEIGHT) for text in _NEXT_MESSAGES]
             if self.next_button else []
         )
-        # Title screens (a title on a panel, readable over any picture, and a button):
-        # the break, and the end of the practice trials.
+        # Title screens (a title on a panel, readable over any picture, and a button).
         self._title_screens = {
             "break": self._build_title_screen(_BREAK_TITLE, _BREAK_LABEL),
-            "practice_done": self._build_title_screen(_PRACTICE_DONE_TITLE, _PRACTICE_DONE_LABEL),
         }
 
         # Pause / quit overlays, built once: the screen dimmed, a panel, two lines.
@@ -599,8 +594,8 @@ class TestExperiment:
     ) -> list[Response]:
         """Present every trial in order; return one Response per responding trial.
 
-        Passive training returns no responses (the list will be empty). Active
-        training and Test return one Response per trial.
+        Familiarization returns no responses (the list will be empty). Practice
+        and Test return one Response per trial.
 
         Args:
             on_trial: Optional callback invoked after each trial with
@@ -624,7 +619,7 @@ class TestExperiment:
                 # texture upload; the clip isn't scheduled yet, nothing is timed).
                 self.background.select(i)
                 result = self._present_trial(stim, i, total)
-                if result is not None:       # passive training produces no response
+                if result is not None:       # familiarization produces no response
                     responses.append(result)
                 if on_trial is not None:
                     try:
@@ -639,46 +634,6 @@ class TestExperiment:
             raise
         finally:
             self._record_frames(False)
-        return responses
-
-    def run_practice(
-        self,
-        trials: list[Stimulus],
-        *,
-        on_trial: "callable | None" = None,
-    ) -> list[Response]:
-        """Practice trials before the real ones; returns their (unscored) responses.
-
-        Each answer gets active-training feedback (green / orange), whatever the
-        session's mode. Then a "Now for the real thing" screen waits for Start.
-        The caller keeps these responses out of the scores; :meth:`run` starts
-        the timing QA afresh, so practice frames don't count either.
-
-        Raises:
-            ExperimentAborted: if quit during practice (``.partial`` is empty:
-                practice answers aren't data).
-        """
-        mode, listen = self.mode, self._listen_prompt
-        self.mode, self._listen_prompt = (SessionMode.ACTIVE_TRAINING,
-                                          _LISTEN_PROMPTS[SessionMode.ACTIVE_TRAINING])
-        responses: list[Response] = []
-        try:
-            for i, stim in enumerate(trials, start=1):
-                result = self._present_trial(stim, i, len(trials))
-                responses.append(result)
-                if on_trial is not None:
-                    try:
-                        on_trial(result, i, len(trials))
-                    except Exception as exc:  # noqa: BLE001
-                        print(f"Practice callback failed: {exc!r}", file=sys.stderr)
-        except ExperimentAborted as abort:
-            abort.partial = []  # type: ignore[attr-defined]
-            raise
-        finally:
-            self.mode, self._listen_prompt = mode, listen
-            self._record_frames(False)
-        self._show_title_screen("practice_done")
-        self._progress_frac = 0.0
         return responses
 
     def timing_summary(self) -> dict:
@@ -966,7 +921,7 @@ class TestExperiment:
     def _present_passive_trial(
         self, stim: Stimulus, index: int, total: int
     ) -> None:
-        """Passive training: play the clip, reveal the correct label, advance.
+        """Familiarization (passive): play the clip, reveal the correct label, advance.
 
         No response is collected. The correct button glows green for
         ``self.feedback_duration`` seconds so the participant learns the mapping.
@@ -993,9 +948,9 @@ class TestExperiment:
     def _present_responding_trial(
         self, stim: Stimulus, index: int, total: int
     ) -> Response:
-        """Test / Active-training: play, collect response, optionally show feedback.
+        """Test / Practice: play, collect response, optionally show feedback.
 
-        Active training adds a visual feedback phase after the response:
+        Practice (active) adds a visual feedback phase after the response:
         correct button = green, wrong choice = orange (if the participant erred).
         With ``retry_until_correct``, a wrong answer is followed by more tries
         (see :meth:`_retry_until_correct`) before the green "Correct!".
@@ -1028,7 +983,7 @@ class TestExperiment:
             clip_duration=duration,
         )
 
-        # Active training: flash feedback before moving on.
+        # Practice: flash feedback before moving on.
         choices: tuple[Emotion, ...] = ()
         if self.mode == SessionMode.ACTIVE_TRAINING:
             if self.retry_until_correct and press.emotion != stim.emotion:
@@ -1053,7 +1008,7 @@ class TestExperiment:
     def _retry_until_correct(
         self, correct: Emotion, first: Emotion, duration: float, replays_used: int = 0,
     ) -> "tuple[Emotion, ...]":
-        """Active training the original's way: grey out a wrong face, ask again.
+        """Practice the original's way: grey out a wrong face, ask again.
 
         Mirrors pb_5emotions_call.m, which disabled just the wrong button until
         the right one was clicked -- but, unlike the original, keeps every answer.
@@ -1091,8 +1046,8 @@ class TestExperiment:
         """Highlight the correct button (and the wrong choice if any) for a beat.
 
         Drives the training feedback display:
-        * Passive training  -- ``chosen`` is None; only the correct button glows.
-        * Active training   -- correct glows green; if ``chosen != correct`` the
+        * Familiarization -- ``chosen`` is None; only the correct button glows.
+        * Practice        -- correct glows green; if ``chosen != correct`` the
           participant's choice also glows orange so they see what they got wrong.
         All other buttons dim to near-invisible so the focus is clear.
         """

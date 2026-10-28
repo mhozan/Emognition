@@ -223,8 +223,6 @@ class MonitorWindow(QWidget):
             if self._held_text:
                 self._lbl_trial.setText(self._held_text)
                 self._held_text = ""
-        elif kind == "practice":
-            self._lbl_trial.setText(f"Practice {evt.get('index', 0)} / {evt.get('total', 0)}")
         elif kind == "trial":
             self._on_trial(evt)
         elif kind == "done":
@@ -236,7 +234,7 @@ class MonitorWindow(QWidget):
         self._n_correct = int(evt.get("n_correct") or 0)
         self._n_responded = int(evt.get("n_answered") or 0)
         self._lbl_participant.setText(evt.get("participant", "—"))
-        mode_labels = {"test": "Test", "passive": "Passive", "active": "Active"}
+        mode_labels = {"test": "Test", "passive": "Familiarization", "active": "Practice"}
         self._lbl_mode.setText(mode_labels.get(evt.get("mode", "test"), "Test"))
         total = int(evt.get("total") or 0)
         self._lbl_trial.setText(f"{self._n_done} / {total}")
@@ -263,12 +261,12 @@ class MonitorWindow(QWidget):
         responded = evt.get("responded")
         correct = evt.get("correct")
         rt_ms = evt.get("rt_ms")
-        attempts = int(evt.get("attempts") or 1)     # > 1: active training's retries
+        attempts = int(evt.get("attempts") or 1)     # > 1: practice's retries
         tries = f"   ({attempts} tries)" if attempts > 1 else ""
 
         if responded is None:
-            # Passive training — no response
-            self._set_badge("neutral_badge", "(passive)")
+            # Familiarization: nothing to answer; the participant was shown the answer
+            self._set_badge("neutral_badge", "(answer shown)")
             self._lbl_rt.setText("—")
         else:
             self._n_responded += 1

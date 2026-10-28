@@ -27,7 +27,7 @@ import os
 from collections.abc import Iterable
 from datetime import date, datetime
 
-from ..config import session_file_pattern
+from ..config import CLEARED_DIR, session_file_pattern
 from ..core.emotions import Emotion, Stimulus, TAG_TO_SEX
 from ..core.responses import Response
 
@@ -129,6 +129,25 @@ def read_session_log(path: str) -> tuple[dict, list[Response]]:
     if header is None:
         raise ValueError(f"empty session log: {path}")
     return header, responses
+
+
+def clear_session(log_path: str) -> str:
+    """Clear an unfinished session: move its log into ``cleared/`` beside it.
+
+    It is then no longer offered for Resume, but nothing is lost: its trials
+    stay in the file (move it back to resume it after all), and its participant
+    ID still counts as used. Never overwrites: a taken name gets a number.
+    Returns the new path.
+    """
+    folder = os.path.join(os.path.dirname(os.path.abspath(log_path)), CLEARED_DIR)
+    os.makedirs(folder, exist_ok=True)
+    name = os.path.basename(log_path)
+    target, n = os.path.join(folder, name), 2
+    while os.path.exists(target):
+        target = os.path.join(folder, f"{name[: -len(PARTIAL_SUFFIX)]}-{n}{PARTIAL_SUFFIX}")
+        n += 1
+    os.replace(log_path, target)
+    return target
 
 
 def find_interrupted(folder: str, participant: str | None = None) -> list[str]:

@@ -13,9 +13,9 @@ stimuli discovered in the audio folder, keep only the emotions being tested, and
 put them in presentation order (optionally shuffled). Deterministic when given a
 seeded RNG, which is what makes it testable and lets a session be reproduced.
 
-Two additions the original didn't have: a shuffle that never puts more than N
+One addition the original didn't have: a shuffle that never puts more than N
 clips of one emotion in a row (long runs invite response strategies like "it's
-been sad four times, so...") and a small practice set picked from the clips.
+been sad four times, so...").
 """
 
 from __future__ import annotations
@@ -119,37 +119,6 @@ def _shuffle_with_max_run(clips: list[Stimulus], max_run: int, rng: random.Rando
         last = clip.emotion
         order.append(clip)
     return order
-
-
-def pick_practice(
-    stimuli: Iterable[Stimulus],
-    n: int,
-    *,
-    emotions: Iterable[Emotion] | None = None,
-    rng: random.Random | None = None,
-) -> list[Stimulus]:
-    """*n* practice clips of the tested emotions, as varied as possible.
-
-    Takes one clip of each emotion (in random order) before any emotion gets a
-    second, so even a 3-trial practice shows three different emotions.
-    """
-    rng = rng or random.Random()
-    wanted = set(EMOTIONS_IN_ORDER if emotions is None else emotions)
-    by_emotion: dict[Emotion, list[Stimulus]] = {}
-    for clip in stimuli:
-        if clip.emotion in wanted:
-            by_emotion.setdefault(clip.emotion, []).append(clip)
-    for group in by_emotion.values():
-        rng.shuffle(group)
-    picked: list[Stimulus] = []
-    while len(picked) < n and any(by_emotion.values()):
-        round_ = [e for e in by_emotion if by_emotion[e]]
-        rng.shuffle(round_)
-        for emotion in round_:
-            if len(picked) == n:
-                break
-            picked.append(by_emotion[emotion].pop())
-    return picked
 
 
 @dataclass(frozen=True, slots=True)

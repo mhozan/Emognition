@@ -73,15 +73,24 @@ def test_closing_calibration_brings_the_setup_window_back(app, window):
     assert code == 0
 
 
-def test_background_picker_round_trips_settings(window):
+def test_the_slideshow_is_a_switch_that_starts_with_the_chosen_picture(window):
     labels = [window.background.itemText(i) for i in range(window.background.count())]
-    assert labels[0] == "Calm gradient (default)" and labels[-2:] == ["Slideshow (all pictures)", "None (plain)"]
-    assert window.slideshow_row.isHidden()                 # slideshow settings: only for a slideshow
+    assert labels[0] == "Calm gradient (default)" and labels[-1] == "None (plain)"
+    assert not any("Slideshow" in label for label in labels)        # not hidden in the list any more
+    assert not window.slideshow.isChecked() and window.slideshow_options.isHidden()
     window.apply_settings(ExperimentSettings(background="slideshow", background_every=3,
-                                             background_shuffle=False))
-    assert not window.slideshow_row.isHidden() and window.bg_every.value() == 3
+                                             background_shuffle=False))   # how it used to be saved
+    assert window.slideshow.isChecked() and not window.slideshow_options.isHidden()
     s = window.settings_from_form()
-    assert (s.background, s.background_every, s.background_shuffle) == ("slideshow", 3, False)
+    assert (s.slideshow, s.background, s.background_every, s.background_shuffle) == (True, "default", 3, False)
+    window.background.setCurrentIndex(2)                           # a picture: the show starts there
+    s = window.settings_from_form()
+    assert s.slideshow_first == window._background_value()
+    assert "--background=slideshow" in s.to_argv()
+    assert f"--background-first={s.slideshow_first}" in s.to_argv()
+    window.slideshow.setChecked(False)
+    assert window.slideshow_options.isHidden()
+    assert window.settings_from_form().background_spec == window._background_value()
 
 
 def test_add_picture_imports_and_selects_it(window, tmp_path, monkeypatch):
@@ -266,7 +275,7 @@ def test_monitor_tracks_trials_badges_and_final_accuracy(app):
     assert m._lbl_trial.text() == "2 / 3" and m._lbl_rt.text() == "900 ms"
     assert "1 / 2" in m._lbl_accuracy.text() and m._lbl_responded.objectName() == "wrong_badge"
     m.handle_event({"status": "trial", "index": 3, "total": 3, "responded": None, "correct": None})
-    assert m._lbl_responded.objectName() == "neutral_badge" and m._lbl_responded.text() == "(passive)"
+    assert m._lbl_responded.objectName() == "neutral_badge" and m._lbl_responded.text() == "(answer shown)"
     m.handle_event({"status": "done", "n_correct": 1, "n_trials": 3, "n_answered": 2, "aborted": True})
     assert "1 / 2" in m._lbl_accuracy.text() and "aborted" in m._lbl_trial.text()
 
@@ -283,18 +292,20 @@ def test_monitor_carries_counts_across_a_resume(app):
     assert m._lbl_trial.text() == "8 / 20" and "6 / 8" in m._lbl_accuracy.text()
 
 
-def test_mode_options_show_only_in_their_modes(window):
-    window.mode.setCurrentText("Test")
-    assert window.retry.isHidden() and window.practice_row.isHidden()
-    window.mode.setCurrentText("Passive Training")
-    assert window.retry.isHidden() and not window.practice_row.isHidden()
-    window.mode.setCurrentText("Active Training")
-    assert not window.retry.isHidden() and not window.practice_row.isHidden()
+def test_modes_are_named_for_what_they_do_and_show_only_their_options(window):
+    items = [window.mode.itemText(i) for i in range(window.mode.count())]
+    assert items == ["Familiarization (answer shown)", "Practice (with feedback)", "Test (no feedback)"]
+    assert window._mode_value() == "test" and window.retry.isHidden()        # the default
+    window._select_mode("passive")
+    assert window.retry.isHidden() and window.proceed_btn.text() == "Start Familiarization"
+    window._select_mode("active")
+    assert not window.retry.isHidden() and window.proceed_btn.text() == "Start Practice"
     window.retry.setChecked(True)
     s = window.settings_from_form()
     assert s.mode == "active" and s.retry_until_correct
     window.apply_settings(ExperimentSettings(mode="test", retry_until_correct=False))
     assert not window.retry.isChecked() and window.retry.isHidden()
+    assert not hasattr(window, "practice")                    # no practice trials any more
 
 
 def test_replay_limit_starts_at_the_number_of_emotions(window):
@@ -333,19 +344,81 @@ def test_resume_button_lists_unfinished_sessions(window, tmp_path, monkeypatch):
 
 def test_pacing_controls_round_trip_and_read_off_at_zero(window):
     assert window.stars_every.text() == "off" and window.break_every.text() == "off"
-    assert window.practice.text() == "off" and window.max_run.text() == "off"
+    assert window.max_run.text() == "off"
     window.apply_settings(ExperimentSettings(next_button=True, stars_every=5, break_every=10,
-                                             max_run=2, practice=3))
+                                             max_run=2))
     s = window.settings_from_form()
-    assert (s.next_button, s.stars_every, s.break_every) == (True, 5, 10)
-    assert (s.max_run, s.practice) == (2, 3)
+    assert (s.next_button, s.stars_every, s.break_every, s.max_run) == (True, 5, 10, 2)
 
 
-def test_monitor_counts_practice_trials_separately(app):
-    m = MonitorWindow()
-    m.handle_event({"status": "start", "total": 10, "mode": "test", "participant": "P1"})
-    m.handle_event({"status": "practice", "index": 2, "total": 3, "correct": True})
-    assert m._lbl_trial.text() == "Practice 2 / 3" and m._lbl_accuracy.text() == "Accuracy:  —"
+# --- defaults, remembered settings, New ID, Clear and Reset -----------------------
+
+def test_a_first_run_starts_from_the_defaults(window):
+    s = window.settings_from_form()
+    assert s.mode == "test" and sorted(s.emotions) == sorted(ExperimentSettings().emotions)
+    assert s.shuffle and s.fullscreen
+    assert not (s.allow_replays or s.amp_visualizer or s.slideshow)
+    assert s.caption == "none" and s.background == "default"
+
+
+def test_settings_are_remembered_when_the_window_closes(app, tmp_path, monkeypatch):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    path = str(tmp_path / "settings.json")
+    first = ConfigWindow(settings_path=path)
+    first.shuffle.setChecked(False)
+    first._select_mode("active")
+    first.close()                                  # no session was started: saved anyway
+    second = ConfigWindow(settings_path=path)
+    assert not second.shuffle.isChecked() and second._mode_value() == "active"
+    second.deleteLater()
+
+
+def test_new_id_is_clickable_only_when_it_would_change_the_field(window, tmp_path):
+    out = tmp_path / "out"
+    out.mkdir()
+    (out / "sub-001_20261027_101500.csv").write_text("trial\n")
+    window.save_dir.setText(str(out))
+    window._on_save_dir_changed()
+    assert window.participant.text() == "sub-002" and not window.new_id_btn.isEnabled()
+    assert "already the next free ID" in window.new_id_btn.toolTip()
+    window.participant.setText("typed-by-hand")
+    assert window.new_id_btn.isEnabled()
+    window.new_id_btn.click()
+    assert window.participant.text() == "sub-002" and "sub-002" in window.status.text()
+    assert not window.new_id_btn.isEnabled()
+
+
+def test_clear_puts_unfinished_sessions_away_without_deleting_them(window, tmp_path, monkeypatch):
+    out = tmp_path / "reports"
+    out.mkdir()
+    log = _unfinished_log(out, participant="sub-004")
+    window.save_dir.setText(str(out))
+    window._on_save_dir_changed()
+    assert window.clear_btn.isEnabled()
+    monkeypatch.setattr(config_window.QInputDialog, "getItem", lambda *a: (a[3][0], True))
+    asked = []
+    window._choose = lambda *a: asked.append(a) or "Clear"
+    window._clear_dialog()
+    assert "cleared" in asked[0][2] and not os.path.exists(log)
+    assert os.path.exists(out / "cleared" / os.path.basename(log))          # moved, not deleted
+    assert not window.resume_btn.isEnabled() and not window.clear_btn.isEnabled()
+    window._on_save_dir_changed()
+    assert window.participant.text() == "sub-005"          # a cleared session's ID stays used
+
+
+def test_reset_restores_the_defaults_but_keeps_folders_experimenter_and_volume(window, tmp_path):
+    window.apply_settings(ExperimentSettings(mode="active", shuffle=False, allow_replays=True,
+                                             fullscreen=False, caption="spanish", slideshow=True))
+    window.experimenter.setText("Dr. K")
+    window.audio_dir.setText(str(tmp_path))
+    window.volume.setValue(0.55)
+    window._choose = lambda *a: "Reset"
+    window._reset_settings()
+    s = window.settings_from_form()
+    assert (s.mode, s.shuffle, s.allow_replays, s.fullscreen, s.caption, s.slideshow) == (
+        "test", True, False, True, "none", False)
+    assert (s.experimenter, s.audio_dir, s.volume) == ("Dr. K", str(tmp_path), 0.55)
+    assert ExperimentSettings.load(window.settings_path).mode == "test"      # and saved
 
 
 def test_monitor_shows_a_break(app):

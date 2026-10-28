@@ -102,6 +102,18 @@ def test_plan_shuffles_once_reproducibly():
     assert plain.sources == tuple(pics) and not plain.shuffled
 
 
+def test_a_slideshow_starts_with_the_chosen_picture():
+    pics = [f"p{i}.jpg" for i in range(6)]
+    in_order = plan_backgrounds(pics, shuffle=False, first="p3.jpg")
+    assert in_order.sources == ("p3.jpg", "p4.jpg", "p5.jpg", "p0.jpg", "p1.jpg", "p2.jpg")
+    shuffled = plan_backgrounds(pics, shuffle=True, rng=random.Random(7), first="p3.jpg")
+    assert shuffled.sources[0] == "p3.jpg" and sorted(shuffled.sources) == sorted(pics)
+    again = plan_backgrounds(pics, shuffle=True, rng=random.Random(7), first="p3.jpg")
+    assert again.sources == shuffled.sources                       # still reproducible
+    outside = plan_backgrounds(pics, shuffle=False, first="mine.jpg")
+    assert outside.sources[0] == "mine.jpg" and len(outside.sources) == 7
+
+
 def test_single_picture_is_never_marked_shuffled():
     plan = plan_backgrounds(["only.jpg"], shuffle=True, every_n=50)
     assert not plan.shuffled and not plan.is_slideshow and plan.every_n == 20

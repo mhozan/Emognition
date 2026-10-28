@@ -65,7 +65,7 @@ def test_summarize_stimuli_counts():
     assert bd.by_emotion_sex[(Emotion.ANGRY, Sex.MALE)] == 1
 
 
-# --- run-limited shuffle and practice picks (Phase 5) ---------------------------------
+# --- run-limited shuffle (Phase 5) ---------------------------------
 
 def _longest_run(order) -> int:
     import itertools
@@ -100,15 +100,3 @@ def test_an_impossible_max_run_is_refused():
     with pytest.raises(ValueError, match="in a row"):
         build_trial_list(lopsided, rng=random.Random(1), max_run=2)      # 5 happy, 1 separator
     assert _longest_run(build_trial_list(lopsided, rng=random.Random(1), max_run=3)) <= 3
-
-
-def test_practice_picks_different_emotions_first():
-    from emognition.core.trials import pick_practice
-
-    clips = _big_set()
-    picked = pick_practice(clips, 3, rng=random.Random(2))
-    assert len(picked) == 3 and len({s.emotion for s in picked}) == 3
-    assert len({s.emotion for s in pick_practice(clips, 7, rng=random.Random(2))}) == 5
-    only = pick_practice(clips, 4, emotions=[Emotion.SAD], rng=random.Random(2))
-    assert len(only) == 4 and {s.emotion for s in only} == {Emotion.SAD}
-    assert len(pick_practice(clips[:2], 10, rng=random.Random(2))) == 2  # can't pick more than exist

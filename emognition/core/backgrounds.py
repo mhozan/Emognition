@@ -189,15 +189,26 @@ def plan_backgrounds(
     every_n: int = DEFAULT_EVERY_N,
     shuffle: bool = True,
     rng: random.Random | None = None,
+    first: str | None = None,
 ) -> BackgroundPlan:
     """Build a plan from candidate pictures, shuffling once if asked.
 
     Like MATLAB (``S.picsshuffled = xtemp(randperm(...))``) the order is shuffled
     once up front and then cycled; pass a seeded *rng* for a reproducible order.
+    *first* (the picture chosen in the setup window) opens the slideshow: in
+    order, the list is rotated to start at it; shuffled, it leads and the rest
+    are shuffled. A *first* that isn't among *sources* is added in front.
     """
     ordered = list(sources)
+    if first and first not in ordered:
+        ordered.insert(0, first)
     if shuffle and len(ordered) > 1:
-        (rng or random.Random()).shuffle(ordered)
+        rest = [s for s in ordered if s != first] if first else ordered
+        (rng or random.Random()).shuffle(rest)
+        ordered = [first, *rest] if first else rest
+    elif first:
+        start = ordered.index(first)
+        ordered = ordered[start:] + ordered[:start]
     return BackgroundPlan(
         sources=tuple(ordered),
         every_n=clamp_every_n(every_n),
@@ -212,12 +223,14 @@ def resolve_background(
     every_n: int = DEFAULT_EVERY_N,
     shuffle: bool = True,
     rng: random.Random | None = None,
+    first: str | None = None,
 ) -> BackgroundPlan:
     """Turn a background setting into a plan.
 
     ``spec`` is ``"default"`` (the calm gradient), ``"none"`` (plain window),
     ``"slideshow"`` (every picture in *picture_folders*), a picture file (shown
-    for the whole session) or a folder (a slideshow of that folder).
+    for the whole session) or a folder (a slideshow of that folder). A slideshow
+    starts with *first* when given (see :func:`plan_backgrounds`).
 
     Raises:
         ValueError: with a message fit for the experimenter, if the path doesn't
@@ -234,12 +247,12 @@ def resolve_background(
         pictures = list_pictures(*picture_folders)
         if not pictures:
             raise ValueError("Slideshow selected, but no background pictures were found.")
-        return plan_backgrounds(pictures, every_n=every_n, shuffle=shuffle, rng=rng)
+        return plan_backgrounds(pictures, every_n=every_n, shuffle=shuffle, rng=rng, first=first)
     if os.path.isdir(value):
         pictures = list_pictures(value)
         if not pictures:
             raise ValueError(f"No pictures found in background folder: {value}")
-        return plan_backgrounds(pictures, every_n=every_n, shuffle=shuffle, rng=rng)
+        return plan_backgrounds(pictures, every_n=every_n, shuffle=shuffle, rng=rng, first=first)
     if os.path.isfile(value):
         if not is_picture_file(value):
             raise ValueError(f"Not a supported picture (png/jpg/bmp/gif/webp): {value}")

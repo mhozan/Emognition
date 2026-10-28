@@ -48,7 +48,7 @@ class Response:
             moment within 40 dB of the clip's peak (audio/endpoints.py) --
             rather than the end of the file, so trailing silence and
             calibration padding don't shift it. Filled in after the session.
-        choices: Every answer, in order, when active training's "retry until
+        choices: Every answer, in order, when practice's "retry until
             correct" made the participant try again (wrong faces are greyed
             out until the right one is chosen); empty when the first answer
             stood. Only the first -- :attr:`responded` -- is scored and timed;

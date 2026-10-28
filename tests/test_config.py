@@ -23,13 +23,14 @@ def _parse(settings: ExperimentSettings):
 def test_default_argv_is_minimal():
     argv = ExperimentSettings().to_argv()
     assert argv[:2] == ["--participant=sub-001", "--experimenter=APPstaff"]
-    # defaults: shuffle on, no replays/viz/fullscreen, full emotion set, default background
-    for flag in ("--no-shuffle", "--allow-replays", "--amp-visualizer", "--fullscreen",
+    # defaults: shuffle on, no replays/viz, full emotion set, default background
+    for flag in ("--no-shuffle", "--allow-replays", "--amp-visualizer",
                  "--emotions", "--audio-dir", "--save-dir", "--background",
-                 "--background-every", "--no-background-shuffle"):
+                 "--background-every", "--no-background-shuffle", "--background-first"):
         assert not any(a == flag or a.startswith(flag + "=") for a in argv)
     args = _parse(ExperimentSettings())
     assert args.participant == "sub-001" and args.caption == "none"
+    assert args.fullscreen and args.mode == "test"                  # full screen by default
     assert args.background == "default" and args.background_every == 5 and args.background_shuffle
 
 
@@ -110,10 +111,35 @@ def test_pacing_options_reach_the_command_line():
     assert (args.next_button, args.stars_every, args.break_every) == (True, 5, 20)
 
 
-def test_ordering_and_practice_reach_the_command_line():
-    args = _parse(ExperimentSettings(max_run=2, practice=3))
-    assert (args.max_run, args.practice, args.practice_dir) == (2, 3, None)
-    assert (_parse(ExperimentSettings()).max_run, _parse(ExperimentSettings()).practice) == (0, 0)
+def test_ordering_reaches_the_command_line():
+    assert _parse(ExperimentSettings(max_run=2)).max_run == 2
+    assert _parse(ExperimentSettings()).max_run == 0
+
+
+def test_practice_trials_are_gone():
+    import pytest
+
+    assert not hasattr(ExperimentSettings(), "practice")
+    with pytest.raises(SystemExit):
+        build_parser().parse_args(["--practice", "3"])
+
+
+def test_the_slideshow_switch_starts_with_the_chosen_picture(tmp_path):
+    picture = tmp_path / "sea.jpg"
+    picture.write_bytes(b"not decoded here")
+    on = ExperimentSettings(background=str(picture), slideshow=True)
+    args = _parse(on)
+    assert (args.background, args.background_first) == ("slideshow", str(picture))
+    assert _parse(ExperimentSettings(slideshow=True)).background_first is None   # gradient: none
+    off = _parse(ExperimentSettings(background=str(picture)))
+    assert (off.background, off.background_first) == (str(picture), None)
+
+
+def test_a_slideshow_saved_the_old_way_loads_as_the_switch(tmp_path):
+    path = tmp_path / "settings.json"
+    path.write_text('{"background": "slideshow", "background_every": 3}', encoding="utf-8")
+    s = ExperimentSettings.load(str(path))
+    assert (s.background, s.slideshow, s.background_every) == ("default", True, 3)
 
 
 def test_negative_every_n_is_refused():

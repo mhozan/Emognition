@@ -14,7 +14,7 @@ from emognition.core import SessionMode
 
 
 @pytest.mark.parametrize("value, label", [
-    ("test", "Test"), ("passive", "Passive Training"), ("active", "Active Training"),
+    ("test", "Test"), ("passive", "Familiarization"), ("active", "Practice"),
 ])
 def test_session_mode_values_double_as_cli_arguments(value, label):
     mode = SessionMode(value)

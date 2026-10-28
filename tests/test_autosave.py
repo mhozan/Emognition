@@ -85,6 +85,21 @@ def test_discard_removes_the_log_once_reports_are_safe(tmp_path):
     assert not os.path.exists(path)
 
 
+def test_clearing_moves_a_log_aside_and_keeps_its_id_used(tmp_path):
+    from emognition.config import next_participant_id
+    from emognition.io.autosave import clear_session
+
+    path = str(tmp_path / f"sub-003_20261027_101500{PARTIAL_SUFFIX}")
+    SessionLog(path, HEADER).close()
+    moved = clear_session(path)
+    assert not os.path.exists(path) and moved == str(tmp_path / "cleared" / os.path.basename(path))
+    assert find_interrupted(str(tmp_path)) == []                  # no longer offered for Resume
+    assert len(read_session_log(moved)[0]) > 0                    # but nothing was lost
+    assert next_participant_id(str(tmp_path)) == "sub-004"        # and the ID isn't handed out again
+    SessionLog(path, HEADER).close()                              # the same name, cleared again:
+    assert clear_session(path).endswith(f"-2{PARTIAL_SUFFIX}")    # never overwrites
+
+
 @pytest.mark.parametrize("content", ["", '{"not": "a log"}\n', "garbage\n"])
 def test_other_files_are_rejected(tmp_path, content):
     path = tmp_path / "other.partial.jsonl"

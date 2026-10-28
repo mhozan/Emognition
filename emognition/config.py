@@ -14,7 +14,8 @@ Qt and the pyglet experiment window out of each other's process (they crash if
 they share one). Settings also persist to JSON ("keep previous settings").
 
 The ``mode`` field maps to :class:`~emognition.core.SessionMode` string values
-(``"test"`` / ``"passive"`` / ``"active"``).
+(``"test"`` / ``"passive"`` / ``"active"``, shown as Test / Familiarization /
+Practice).
 """
 
 from __future__ import annotations
@@ -24,7 +25,7 @@ import os
 import re
 from dataclasses import asdict, dataclass, field
 
-from .core.backgrounds import DEFAULT_EVERY_N, SPEC_DEFAULT
+from .core.backgrounds import DEFAULT_EVERY_N, SPEC_DEFAULT, SPEC_SLIDESHOW
 
 # The five emotion tags, default = all selected.
 ALL_EMOTION_TAGS: tuple[str, ...] = ("hap", "sca", "neu", "sad", "ang")
@@ -60,12 +61,20 @@ def session_file_pattern(participant: str, suffix: str) -> re.Pattern[str]:
                       + re.escape(suffix))
 
 
+# Unfinished sessions put away from the setup window (Clear...) are moved here,
+# inside the save folder. Their IDs still count as used, so none is handed out twice.
+CLEARED_DIR = "cleared"
+
+
 def _session_files(folder: str) -> list[str]:
-    """Report CSVs and autosave logs in *folder* (none if it can't be listed)."""
-    try:
-        return [n for n in os.listdir(folder) if n.endswith((".csv", ".partial.jsonl"))]
-    except OSError:
-        return []
+    """Report CSVs and autosave logs in *folder* and its cleared/ (none if unlisted)."""
+    names: list[str] = []
+    for where in (folder, os.path.join(folder, CLEARED_DIR)):
+        try:
+            names += [n for n in os.listdir(where) if n.endswith((".csv", ".partial.jsonl"))]
+        except OSError:
+            pass
+    return names
 
 
 def participants_in(folder: str) -> set[str]:
@@ -134,7 +143,7 @@ class ExperimentSettings:
     audio_dir: str = ""          # "" -> use the bundled stimuli
     save_dir: str = ""           # "" -> default (./save_location)
     caption: str = "none"        # none | english | mandarin | spanish
-    fullscreen: bool = False
+    fullscreen: bool = True      # the participant window covers the screen
     screen: int = 0              # display index for the experiment window
     shuffle: bool = True
     allow_replays: bool = False
@@ -146,11 +155,14 @@ class ExperimentSettings:
     emotions: list[str] = field(default_factory=lambda: list(ALL_EMOTION_TAGS))
     mode: str = "test"           # "test" | "passive" | "active"
     # Participant-window background (MATLAB: "Pictures Directory", "Pics Interval",
-    # "Shuffle images randomly"): "default" | "none" | "slideshow" | file/folder path.
+    # "Shuffle images randomly"): "default" (the calm gradient) | "none" | a picture
+    # file or folder. With *slideshow* on, every picture takes turns instead, every
+    # *background_every* trials, starting with *background* when that is a picture.
     background: str = SPEC_DEFAULT
+    slideshow: bool = False
     background_every: int = DEFAULT_EVERY_N
     background_shuffle: bool = True
-    # Active training only: a wrong answer greys out that face and asks again
+    # Practice (active) only: a wrong answer greys out that face and asks again
     # until the right one is chosen (the original's "Try until you get it right!").
     retry_until_correct: bool = False
     # Optional pacing between trials (core/pacing.py), all off by default:
@@ -158,10 +170,18 @@ class ExperimentSettings:
     next_button: bool = False
     stars_every: int = 0
     break_every: int = 0
-    # Ordering and practice: at most N of one emotion in a row (0 = no limit), and
-    # N practice trials with feedback before the test, never scored (0 = none).
+    # Ordering: at most N clips of one emotion in a row (0 = no limit).
     max_run: int = 0
-    practice: int = 0
+
+    @property
+    def background_spec(self) -> str:
+        """What ``--background`` gets: "slideshow" when the slideshow is on, else the picture."""
+        return SPEC_SLIDESHOW if self.slideshow else (self.background or SPEC_DEFAULT)
+
+    @property
+    def slideshow_first(self) -> str:
+        """The picture a slideshow starts with ("" = the first in its order)."""
+        return self.background if self.slideshow and os.path.isfile(self.background) else ""
 
     def to_argv(self) -> list[str]:
         """Build the ``emognition`` CLI arguments to run a session with these.
@@ -197,8 +217,10 @@ class ExperimentSettings:
             argv += ["--emotions", ",".join(self.emotions)]
         if self.mode != "test":
             argv += ["--mode", self.mode]
-        if self.background and self.background != SPEC_DEFAULT:
-            argv.append(f"--background={self.background}")
+        if self.background_spec != SPEC_DEFAULT:
+            argv.append(f"--background={self.background_spec}")
+        if self.slideshow_first:
+            argv.append(f"--background-first={self.slideshow_first}")
         if self.background_every != DEFAULT_EVERY_N:
             argv += ["--background-every", str(self.background_every)]
         if not self.background_shuffle:
@@ -213,8 +235,6 @@ class ExperimentSettings:
             argv += ["--break-every", str(self.break_every)]
         if self.max_run > 0:
             argv += ["--max-run", str(self.max_run)]
-        if self.practice > 0:
-            argv += ["--practice", str(self.practice)]
         return argv
 
     def save(self, path: str) -> str:
@@ -234,5 +254,8 @@ class ExperimentSettings:
         """Load from JSON, ignoring unknown/missing keys (forward-compatible)."""
         with open(path, encoding="utf-8") as fh:
             data = json.load(fh)
+        if data.get("background") == SPEC_SLIDESHOW and "slideshow" not in data:
+            # Saved before the slideshow became its own switch.
+            data.update(background=SPEC_DEFAULT, slideshow=True)
         fields = {f for f in cls.__slots__}  # type: ignore[attr-defined]
         return cls(**{k: v for k, v in data.items() if k in fields})
