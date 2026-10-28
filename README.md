@@ -110,6 +110,40 @@ chmod +x emognition/emognition
 
 </details>
 
+<details>
+<summary><strong>macOS (Apple Silicon) — pre-built (no Python needed)</strong></summary>
+
+For Macs with an Apple chip (M1 or later) on **macOS 14 Sonoma or newer**. On
+an Intel Mac, run from source (below).
+
+1. Go to the [**Releases page**](https://github.com/mhozan/Emognition/releases),
+   click the latest release, and under **Assets** download
+   **`emognition-macos-arm64.zip`**.
+
+2. **Double-click the zip** in your `Downloads` folder. This creates an
+   **`emognition`** folder next to it.
+
+3. **Clear the download flag (once).** The app isn't signed with an Apple
+   developer certificate yet, so macOS won't open a downloaded copy. Open
+   **Terminal** (press `Cmd + Space`, type `Terminal`, press Return) and run:
+   ```bash
+   xattr -dr com.apple.quarantine ~/Downloads/emognition
+   ```
+   (If you moved the folder, drag it onto the Terminal window instead of typing
+   the path.)
+
+4. **Start it** — in Terminal:
+   ```bash
+   ~/Downloads/emognition/emognition
+   ```
+   or double-click **`emognition`** inside the folder. A Terminal window opens
+   beside the app; leave it open while you work.
+
+> **Slow first launch** — the first start can take a little while as macOS
+> checks the bundle. Later launches are faster.
+
+</details>
+
 **Which Python?** The pre-built downloads above include their own Python. To
 run from source you need **Python 3.11**, the newest version the whole stack
 runs on reliably. PsychoPy 2026.2 installs on Python 3.10–3.12, but its audio
@@ -172,9 +206,13 @@ python -m emognition
 <details>
 <summary><strong>macOS — from source</strong></summary>
 
+This runs natively on Apple Silicon and on Intel Macs. PsychToolbox brings its
+own audio library, so Python is the only thing to install (macOS offers to
+install `git` the first time it's used).
+
 **Step 1 — Install Python 3.11**
 
-Option A (Homebrew, which keeps 3.11 at its newest patch release):
+Option A ([Homebrew](https://brew.sh), which keeps 3.11 at its newest patch release):
 ```bash
 brew install python@3.11
 ```
@@ -183,15 +221,7 @@ Option B: download the **macOS 64-bit universal2 installer** from
 [python.org/downloads/release/python-3119](https://www.python.org/downloads/release/python-3119/)
 and run it. 3.11.9 is the newest 3.11 release with an installer.
 
-**Step 2 — Install PortAudio** (required for PsychoPy audio)
-
-```bash
-brew install portaudio
-```
-
-No Homebrew? Install it first: [brew.sh](https://brew.sh).
-
-**Step 3 — Download and set up**
+**Step 2 — Download and set up**
 
 ```bash
 git clone https://github.com/mhozan/Emognition.git
@@ -555,10 +585,10 @@ scripts/build_executable.sh       # Linux / macOS
 scripts\build_executable.bat      # Windows
 ```
 
-CI (`.github/workflows/build.yml`) runs the test suite on Linux and Windows for
-every push to `master` and every pull request; version tags (`v*`) also build
-both bundles, smoke-test them with `--selfcheck`, and publish them with a
-`SHA256SUMS.txt`.
+CI (`.github/workflows/build.yml`) runs the test suite on Linux, Windows and
+macOS (Apple Silicon) for every push to `master` and every pull request;
+version tags (`v*`) also build the three bundles, smoke-test them with
+`--selfcheck`, and publish them with a `SHA256SUMS.txt`.
 
 Output: `dist/emognition/` (about 0.55 GB unzipped; zip it to distribute).
 
