@@ -26,7 +26,7 @@ filename (a quirk we inherit from the original MATLAB assets):
     "2happy.png"  -> no caption          (rb0, the original default)
     "3happy.png"  -> Spanish caption     (new)
 
-They are drawn by ``scripts/generate_emoticons.py`` (512 px, from the original
+They are drawn by ``scripts/generate_buttons.py`` (512 px, from the original
 artwork's measured geometry); edit and re-run that, not the PNGs.
 """
 

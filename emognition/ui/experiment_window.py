@@ -514,8 +514,9 @@ class TestExperiment:
         # allowed ('r' also replays). Re-zeros the RT clock to the new onset.
         self.replay_button = visual.ImageStim(
             win, image=replay_button_path(), pos=(-0.42, -0.38), size=(0.12, 0.12),
-            autoLog=False,
+            interpolate=True, autoLog=False,
         )
+        _trilinear(self.replay_button)            # 512 px, shown at ~100-260 px
         self._begin_button = BeginButton(win)
         self._next_buttons = (
             [BeginButton(win, text, pos=_PROMPT_POS, height=_NEXT_BUTTON_HEIGHT) for text in _NEXT_MESSAGES]
