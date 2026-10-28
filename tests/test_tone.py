@@ -103,3 +103,50 @@ def test_tone_plays_stereo_at_the_session_volume(monkeypatch):
     assert exited.value.code == 0
     (snd,) = made
     assert snd.stereo is True and snd.volume == pytest.approx(0.6) and snd.played
+
+
+def test_the_clip_player_reuses_one_stereo_stream_at_the_session_volume(monkeypatch, capsys):
+    """--audition: commands on stdin, JSON events on stdout, ONE Sound for every clip
+    (a second stream fails on exclusive ALSA), stereo, at --volume."""
+    import io
+    import json
+    import sys
+    import types
+
+    from emognition import app, runtime
+
+    made = []
+
+    class FakeSound:
+        def __init__(self, value, stereo=None, **kwargs):
+            self.value, self.stereo, self.volume, self.plays, self.isFinished = value, stereo, 1.0, 0, False
+            made.append(self)
+
+        def setSound(self, value):
+            self.value = value
+
+        def play(self):
+            self.plays += 1
+
+        def stop(self):
+            pass
+
+        def getDuration(self):
+            return 1.5
+
+    fake = types.ModuleType("psychopy")
+    fake.sound = types.SimpleNamespace(Sound=FakeSound)
+    fake.core = types.SimpleNamespace(quit=lambda: None)
+    monkeypatch.setitem(sys.modules, "psychopy", fake)
+    monkeypatch.setattr(runtime, "bootstrap", lambda: None)
+    monkeypatch.setattr(runtime, "ptb_audio_problem", lambda *a, **k: None)
+    monkeypatch.setattr(sys, "stdin", types.SimpleNamespace(
+        buffer=io.BytesIO("play /a.wav\nplay /José b.wav\nstop\nquit\n".encode("utf-8"))))
+    with pytest.raises(SystemExit) as exited:
+        app.main(["--audition", "--volume", "0.6"])
+    assert exited.value.code == 0
+    events = [json.loads(line) for line in capsys.readouterr().out.splitlines() if line.startswith("{")]
+    assert [e["status"] for e in events] == ["ready", "playing", "playing", "stopped"]
+    assert events[2]["path"] == "/José b.wav" and events[1]["duration"] == 1.5
+    (snd,) = made
+    assert snd.stereo is True and snd.volume == pytest.approx(0.6) and snd.plays == 2

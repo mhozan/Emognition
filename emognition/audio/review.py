@@ -26,7 +26,7 @@ from __future__ import annotations
 
 import math
 import os
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 
 import numpy as np
@@ -59,7 +59,8 @@ class Written:
     peak_db: float
 
 
-def measure_written(paths: Sequence[str], method: NormalizationMethod) -> list[Written]:
+def measure_written(paths: Sequence[str], method: NormalizationMethod,
+                    progress: Callable[[int, int], None] | None = None) -> list[Written]:
     """Measure the calibrated files the way the plan measured the originals."""
     import soundfile as sf
 
@@ -76,6 +77,8 @@ def measure_written(paths: Sequence[str], method: NormalizationMethod) -> list[W
             loudness_db=measure(data, rate, method),
             peak_db=20.0 * math.log10(max(peak, 1e-12)),
         ))
+        if progress is not None:
+            progress(len(out), len(paths))
     return out
 
 

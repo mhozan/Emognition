@@ -93,12 +93,35 @@ TIPS: dict[str, str] = {
         "Clips per emotion and speaker sex. Unequal counts let a response bias score above "
         "chance: always answering the commonest emotion is right as often as it occurs."),
     # Clip check
-    "analyse": (
-        "Measure every file: waveform, spectrogram, the RMS curve the end-of-speech detector "
-        "uses, levels and flags. Nothing is written."),
-    "sort": "Order the cards. 'Flagged first' puts the clips worth a listen at the top.",
+    "check_again": (
+        "Read the folder again and quick-check every file: level, clipping, DC offset, noise "
+        "floor, speech span and flags. About a millisecond a clip; nothing is written."),
+    "deep": (
+        "Make a spectrogram card for every clip (the Cards view), on one time scale, to look "
+        "over the whole set at once. The estimate is measured on this computer; Cancel stops "
+        "it and keeps the cards made so far."),
+    "cancel": "Stop the deep analysis; the cards made so far stay.",
+    "view_table": (
+        "One row per clip: the quick check's numbers and flags. Click a column header to sort; "
+        "flagged clips come first."),
+    "view_cards": "The deep analysis' spectrogram cards (run Deep analysis to fill it).",
     "flagged_only": "Show only the clips with a flag.",
-    "card": "Click for the large view, with time, frequency and level axes.",
+    "play": (
+        "Hear the selected clip as a participant will: through the session's audio path, at its "
+        "Volume (Space, or a double-click, does the same). The first play takes a second or two "
+        "to open the audio device."),
+    "col_flag": "\u26a0 = at least one flag: worth a listen. Hover the row for the details.",
+    "col_wave": "The waveform (full scale = the cell's height), the detected speech shaded.",
+    "col_duration_clip": "File length.",
+    "col_peak_clip": "The highest sample, dBFS (0 = full scale).",
+    "col_rms_clip": "RMS level of the whole file, silence included, dBFS.",
+    "col_lead_clip": "Silence before the detected start of speech.",
+    "col_tail_clip": "Silence after the detected end of speech: what the file-offset RT includes.",
+    "col_noise": (
+        "The level of the quietest 5 % of 20 ms frames: the background. 'digital silence': at "
+        "the 16-bit floor or below."),
+    "col_format": "Sample rate and channels.",
+    "col_flags": "What the quick check found; hover the row for what each means and what to do.",
     # Loudness & trim
     "method": (
         "What to equalise. Perceived loudness (LUFS) is the recommended default: clips that "
@@ -198,9 +221,22 @@ overwrites a file, and the manifest rows follow their files.</p>
 
 def clips_help() -> str:
     return f"""
-<h3>Reading a card</h3>
-<p>One card per file, all on one time scale (the longest file's), so an odd
-length stands out; the grey area is past the end of that file.</p>
+<h3>Quick check first, then in depth</h3>
+<p>The table checks every file at once, about a millisecond a clip: its level,
+clipping, DC offset, noise floor and where the speech starts and ends. Clips
+with a flag come first &mdash; those are the ones worth a listen. Click a column
+header to sort; hover a row for every number.</p>
+<p>Select a clip to see it in full below: waveform, spectrogram and RMS curve,
+with the detected speech and, washed out, what trimming would cut. <b>Play</b>
+(or Space, or a double-click) plays it through the session's own audio path, at
+its Volume, with a playhead.</p>
+<p><b>Deep analysis</b> makes a spectrogram card for every clip (the Cards
+view), so the whole set can be looked over at once. The button says roughly how
+long it will take on this computer, and it can be cancelled.</p>
+
+<h3>Reading the large view and the cards</h3>
+<p>The cards are all on one time scale (the longest file's), so an odd length
+stands out; the grey area is past the end of that file.</p>
 <ul>
 <li><b>Waveform</b> (top): the samples, channels averaged; the edges are full
 scale. Red bars at the top and bottom: clipped samples.</li>

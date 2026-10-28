@@ -96,7 +96,8 @@ w1.apply_settings(ExperimentSettings(
     audio_dir="<your audio folder>",
     save_dir="<your save folder>",
 ))
-w1._refresh_resume()                 # the placeholder folder has no unfinished sessions
+w1._refresh_resume()                 # the placeholder folder has no unfinished sessions...
+w1._refresh_next_id()                 # ...and no IDs yet: not this computer's own save folder
 img = grab_widget(w1)
 w1.close()
 save(annotate(img, "Experimenter setup: configure participant, audio folder, mode, and emotions before each session."), "setup.png")
@@ -112,7 +113,8 @@ from emognition.ui.calibration_window import CalibrationWindow
 def settle(window, timeout_ms: int = 30000) -> None:
     """Wait for the tab's background measurement (each tab measures when shown)."""
     loop, timer = QEventLoop(), QTimer()
-    done = lambda: window._busy is None and not window._refresh_after_task  # noqa: E731
+    done = lambda: (window._busy is None and not window._refresh_after_task  # noqa: E731
+                    and not window.clip_check.busy)
     timer.timeout.connect(lambda: done() and loop.quit())
     timer.start(20)
     QTimer.singleShot(timeout_ms, loop.quit)
@@ -130,8 +132,8 @@ for index, name, caption in (
      "Stimuli / naming: what each file name says (emotion, speaker sex), how balanced the set is, "
      "and the manifest. Every tab explains its methods in the panel on the right."),
     (1, "calibration_clips.png",
-     "Clip check: a card per recording (waveform, spectrogram, and the RMS curve the end-of-speech "
-     "detector uses) with sanity flags; click one for the large view."),
+     "Clip check: every recording quick-checked at once (levels, noise, speech span, flags), "
+     "the selected one in full (waveform, spectrogram, RMS curve), playable; cards for all on request."),
     (2, "calibration_loudness.png",
      "Loudness & trim: every clip before and after calibration (duration, silence around the speech, "
      "loudness, peak); Apply writes a calibrated copy and measures it again."),

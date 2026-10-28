@@ -23,7 +23,7 @@ from __future__ import annotations
 import numpy as np
 from PIL import Image, ImageDraw
 
-from ..audio.analysis import SPEC_RANGE_DB, ClipAnalysis
+from ..audio.analysis import SPEC_RANGE_DB, ClipAnalysis, ClipStats
 
 # A perceptual "magma" ramp (dark -> bright), interpolated from 9 stops.
 _MAGMA = np.array([
@@ -54,7 +54,7 @@ def spectrogram_image(analysis: ClipAnalysis, width: int, height: int, span: flo
     return image
 
 
-def curve_image(analysis: ClipAnalysis, width: int, height: int, span: float) -> Image.Image:
+def curve_image(analysis: ClipStats, width: int, height: int, span: float) -> Image.Image:
     """The RMS curve, threshold and speech span over *span* seconds."""
     image = Image.new("RGB", (width, height), _PAPER)
     draw = ImageDraw.Draw(image)
@@ -84,7 +84,7 @@ def curve_image(analysis: ClipAnalysis, width: int, height: int, span: float) ->
     return image
 
 
-def waveform_image(analysis: ClipAnalysis, width: int, height: int, span: float) -> Image.Image:
+def waveform_image(analysis: ClipStats, width: int, height: int, span: float) -> Image.Image:
     """The waveform's outline (min..max per pixel column) on a fixed -1..1 axis."""
     image = Image.new("RGB", (width, height), _PAPER)
     draw = ImageDraw.Draw(image)

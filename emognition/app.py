@@ -663,6 +663,81 @@ def _play_tone(rms: float, seconds: float, volume: float = 0.8) -> int:
     _psychopy_quit(0)
 
 
+def _audition(volume: float) -> int:
+    """Play clips on request for the Calibration window (a subprocess, no window).
+
+    Reads one command per line on stdin -- ``play <path>``, ``stop``, ``quit``
+    -- and answers on stdout with one JSON line per event: ``ready``,
+    ``playing`` (with the clip's duration), ``finished``, ``stopped``,
+    ``error``. It keeps ONE Sound for its whole life and swaps clips with
+    ``setSound()``, as a session does (a second stream fails on exclusive
+    ALSA), and plays it stereo at the session's *volume*: the experimenter
+    hears a clip as a participant will. Closing its stdin also ends it.
+    """
+    import queue
+    import threading
+
+    from .runtime import bootstrap, ptb_audio_problem
+
+    def say(**event) -> None:
+        print(_json.dumps(event), flush=True)
+
+    bootstrap()
+    problem = ptb_audio_problem()
+    if problem:
+        say(status="error", message=problem)
+        return 1
+    from psychopy import sound
+
+    commands: queue.Queue[str | None] = queue.Queue()
+
+    def read_commands() -> None:
+        for raw in sys.stdin.buffer:                     # bytes: a path may be any UTF-8
+            commands.put(raw.decode("utf-8", "replace").rstrip("\r\n"))
+        commands.put(None)                               # the window went away
+
+    threading.Thread(target=read_commands, daemon=True).start()
+    snd = None
+    playing = ""
+    say(status="ready")
+    while True:
+        try:
+            line = commands.get(timeout=0.05)
+        except queue.Empty:                              # meanwhile, notice the end of a clip
+            if playing and snd is not None and snd.isFinished:
+                say(status="finished", path=playing)
+                playing = ""
+            continue
+        if line is None:
+            break
+        command, _, arg = line.partition(" ")
+        if command == "play":
+            try:
+                if snd is None:
+                    snd = sound.Sound(arg, stereo=True)  # opens the one stream
+                else:
+                    snd.stop()
+                    snd.setSound(arg)
+                snd.volume = max(0.0, min(1.0, volume))
+                snd.play()
+                playing = arg
+                say(status="playing", path=arg, duration=float(snd.getDuration()))
+            except Exception as exc:  # noqa: BLE001 -- reported to the window
+                playing = ""
+                say(status="error", message=f"{os.path.basename(arg)}: {exc}")
+        elif command == "stop":
+            if snd is not None:
+                snd.stop()
+            if playing:
+                say(status="stopped", path=playing)
+            playing = ""
+        elif command == "quit":
+            break
+    if snd is not None:
+        snd.stop()
+    _psychopy_quit(0)
+
+
 def _non_negative_int(text: str) -> int:
     """argparse type: a whole number, 0 or more (0 means "off")."""
     value = int(text)
@@ -684,6 +759,9 @@ def build_parser() -> argparse.ArgumentParser:
                         help="open the experimenter setup screen (config UI)")
     parser.add_argument("--calibrate", action="store_true",
                         help="open the Calibration window (naming, loudness, SPL tone)")
+    parser.add_argument("--audition", action="store_true",
+                        help="play clips on request, read from stdin, at --volume (used by "
+                             "the Calibration window)")
     parser.add_argument("--play-tone", action="store_true",
                         help="play the SPL calibration tone and exit (used by the UI)")
     parser.add_argument("--tone-rms", type=float, default=0.05,
@@ -774,6 +852,8 @@ def main(argv: list[str] | None = None) -> int:
         return _selfcheck()
     if args.play_tone:
         return _play_tone(args.tone_rms, args.tone_seconds, args.volume)
+    if args.audition:
+        return _audition(args.volume)
     if args.calibrate:
         return _open_calibration_ui()
     # Bare launch (no args) or explicit --setup opens the experimenter screen;

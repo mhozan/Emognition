@@ -10,8 +10,8 @@
 
 * :class:`StripChart` -- every clip before and after calibration, one dot each.
 * :class:`BalanceChart` -- clips per emotion and speaker sex.
-* :class:`ClipDetail` -- one clip, large, with axes: waveform, spectrogram, RMS.
-* :class:`ClipGallery` -- a card per clip (imaging/clips.py), re-flowed to the width.
+* :class:`ClipDetail` -- one clip, large, with axes: waveform, spectrogram, RMS,
+  and a playhead while it plays.
 
 As in the HTML report's charts (reports/charts.py), a chart is just linear maps
 from data to pixels; drawing them by hand rather than through a plotting
@@ -28,13 +28,13 @@ import math
 from collections.abc import Sequence
 from html import escape
 
-from PyQt6.QtCore import QPointF, QRectF, QSize, Qt, pyqtSignal
+from PyQt6.QtCore import QPointF, QRect, QRectF, QSize, Qt
 from PyQt6.QtGui import (
-    QBrush, QColor, QFont, QFontMetricsF, QImage, QPainter, QPainterPath, QPen, QPixmap, QPolygonF,
+    QBrush, QColor, QFont, QFontMetricsF, QImage, QPainter, QPainterPath, QPen, QPolygonF,
 )
-from PyQt6.QtWidgets import QFrame, QGridLayout, QLabel, QScrollArea, QSizePolicy, QToolTip, QVBoxLayout, QWidget
+from PyQt6.QtWidgets import QSizePolicy, QToolTip, QWidget
 
-from ..audio.analysis import DIGITAL_SILENCE_DB, THRESHOLD_DB, ClipAnalysis, Flag
+from ..audio.analysis import DIGITAL_SILENCE_DB, THRESHOLD_DB, ClipAnalysis, ClipStats, Flag
 from ..audio.preprocess import DEFAULT_PAD_S
 from ..audio.review import Metric
 from ..imaging.clips import CURVE_FLOOR_DB, curve_image, spectrogram_image, waveform_image
@@ -515,12 +515,12 @@ class BalanceChart(QWidget):
 
 # -- one clip, large -----------------------------------------------------------
 
-def _noise_text(clip: ClipAnalysis) -> str:
+def noise_text(clip: ClipStats) -> str:
     floor = clip.noise_floor_db
     return "digital silence" if floor <= DIGITAL_SILENCE_DB else f"{minus(f'{floor:.1f}')} dBFS"
 
 
-def card_tooltip(clip: ClipAnalysis, flags: Sequence[Flag] = ()) -> str:
+def card_tooltip(clip: ClipStats, flags: Sequence[Flag] = ()) -> str:
     """Every number about one clip, for its card's tooltip."""
     rows = [
         ("Duration", f"{clip.duration:.3f} s"),
@@ -528,7 +528,7 @@ def card_tooltip(clip: ClipAnalysis, flags: Sequence[Flag] = ()) -> str:
         ("Peak", f"{minus(f'{clip.peak_db:.1f}')} dBFS"),
         ("RMS (whole file)", f"{minus(f'{clip.rms_db:.1f}')} dBFS"),
         ("Loudest 20 ms", f"{minus(f'{clip.loudest_db:.1f}')} dBFS"),
-        ("Noise floor", _noise_text(clip)),
+        ("Noise floor", noise_text(clip)),
         ("Speech", f"{clip.onset:.3f} to {clip.offset:.3f} s"),
         ("Silence before / after", f"{clip.lead_silence * 1000:.0f} / {clip.tail_silence * 1000:.0f} ms"),
         ("DC offset", f"{minus(f'{clip.dc_offset * 100:+.2f}')} % FS"),
@@ -558,6 +558,9 @@ class ClipDetail(QWidget):
         self._flags: tuple[Flag, ...] = ()
         self._pad = DEFAULT_PAD_S
         self._cache: dict[tuple[str, int, int], QImage] = {}
+        self._message = ""                      # shown while there is no clip (e.g. measuring)
+        self._playhead: float | None = None     # seconds into the clip, while it plays
+        self._area = QRectF()                   # where the panels were last drawn
         self.setMinimumHeight(260)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
 
@@ -569,7 +572,23 @@ class ClipDetail(QWidget):
                  pad_s: float = DEFAULT_PAD_S) -> None:
         self._clip, self._flags, self._pad = clip, tuple(flags), pad_s
         self._cache.clear()
+        self._playhead = None
         self.update()
+
+    def set_message(self, text: str) -> None:
+        """What to say while there's no clip to draw (e.g. "Measuring...")."""
+        self._message = text
+        self.update()
+
+    def set_playhead(self, seconds: float | None) -> None:
+        """Move the playhead to *seconds* (None hides it); repaints just the strips it touched."""
+        if seconds == self._playhead:
+            return
+        for t in (self._playhead, seconds):
+            if t is not None and self._clip is not None and self._area.width() > 0:
+                x = self._area.left() + min(max(t / max(self._clip.duration, 1e-3), 0.0), 1.0) * self._area.width()
+                self.update(QRect(int(x) - 4, int(self._area.top()) - 8, 9, int(self._area.height()) + 10))
+        self._playhead = seconds
 
     def sizeHint(self) -> QSize:  # noqa: N802
         return QSize(760, 330)
@@ -592,7 +611,8 @@ class ClipDetail(QWidget):
         fm, sfm = QFontMetricsF(font), QFontMetricsF(small)
         if clip is None:
             p.setPen(MUTED)
-            p.drawText(QRectF(self.rect()), Qt.AlignmentFlag.AlignCenter, "Click a card to see it here, large.")
+            p.drawText(QRectF(self.rect()), Qt.AlignmentFlag.AlignCenter,
+                       self._message or "Select a clip to see it here, large.")
             return
 
         # Header: the name, then the numbers that matter most here.
@@ -601,7 +621,7 @@ class ClipDetail(QWidget):
         p.setPen(INK)
         p.drawText(QPointF(10, y), clip.filename)
         stats = (f"{clip.duration:.2f} s · peak {minus(f'{clip.peak_db:.1f}')} dBFS · "
-                 f"RMS {minus(f'{clip.rms_db:.1f}')} dBFS · noise {_noise_text(clip)}")
+                 f"RMS {minus(f'{clip.rms_db:.1f}')} dBFS · noise {noise_text(clip)}")
         p.setFont(font)
         p.setPen(MUTED)
         p.drawText(QPointF(18 + QFontMetricsF(bold).horizontalAdvance(clip.filename), y), stats)
@@ -629,6 +649,7 @@ class ClipDetail(QWidget):
         def x(t: float) -> float:
             return area.left() + min(max(t / span, 0.0), 1.0) * area.width()
 
+        self._area = QRectF(area.left(), area.top(), area.width(), rects["rms"].bottom() - area.top())
         for kind, title, _share in self.PANELS:
             rect = rects[kind]
             p.drawImage(rect, self._image(kind, rect))
@@ -714,137 +735,11 @@ class ClipDetail(QWidget):
                 label += " s"                                   # the unit rides on the last tick
             p.drawText(QPointF(x(t) - width / 2, rms.bottom() + sfm.ascent() + 4), label)
 
-
-# -- the gallery -------------------------------------------------------------------
-
-class ClipCard(QFrame):
-    """One clip's card: its picture, name, key numbers and any flags."""
-
-    clicked = pyqtSignal(int)
-
-    def __init__(self, index: int, clip: ClipAnalysis, flags: Sequence[Flag], image: QImage,
-                 parent: QWidget | None = None) -> None:
-        super().__init__(parent)
-        self.index = index
-        self.clip = clip
-        self.flags = tuple(flags)
-        self.setObjectName("clipCard")
-        self.setProperty("selected", False)
-        self.setCursor(Qt.CursorShape.PointingHandCursor)
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(6, 6, 6, 6)
-        layout.setSpacing(2)
-        picture = QLabel()
-        picture.setPixmap(QPixmap.fromImage(image))
-        picture.setFixedSize(CARD_W, CARD_H)
-        layout.addWidget(picture)
-        name = QLabel()
-        name.setObjectName("cardName")
-        name.setText(name.fontMetrics().elidedText(clip.filename, Qt.TextElideMode.ElideMiddle, CARD_W))
-        layout.addWidget(name)
-        stats = QLabel(
-            f"{clip.duration:.2f} s · peak {minus(f'{clip.peak_db:.1f}')} · "
-            f"RMS {minus(f'{clip.rms_db:.1f}')} dBFS<br>"
-            f"silence before {clip.lead_silence * 1000:.0f} · after {clip.tail_silence * 1000:.0f} ms")
-        stats.setObjectName("cardStats")
-        layout.addWidget(stats)
-        if self.flags:
-            chips = " ".join(
-                f"<span style='background:{FLAG_BG}; color:{FLAG_INK};'>&nbsp;⚠ {escape(f.label)}&nbsp;</span>"
-                for f in self.flags)
-            label = QLabel(chips)
-            label.setWordWrap(True)
-            label.setMaximumWidth(CARD_W)
-            layout.addWidget(label)
-        layout.addStretch(1)
-        self.setToolTip(card_tooltip(clip, flags) + "<p><i>Click for the large view.</i></p>")
-        self.setFixedWidth(CARD_W + 16)
-
-    def set_selected(self, on: bool) -> None:
-        self.setProperty("selected", on)
-        self.style().unpolish(self)
-        self.style().polish(self)
-
-    def mousePressEvent(self, event) -> None:  # noqa: N802
-        if event.button() == Qt.MouseButton.LeftButton:
-            self.clicked.emit(self.index)
-        super().mousePressEvent(event)
-
-
-class ClipGallery(QScrollArea):
-    """The cards, as many to a row as fit, in a chosen order (or a filtered subset)."""
-
-    selected = pyqtSignal(int)
-    SPACING = 10
-
-    def __init__(self, parent: QWidget | None = None) -> None:
-        super().__init__(parent)
-        self.setWidgetResizable(True)
-        self.setFrameShape(QFrame.Shape.NoFrame)
-        self._inner = QWidget()
-        self._inner.setObjectName("gallery")
-        self._grid = QGridLayout(self._inner)
-        self._grid.setSpacing(self.SPACING)
-        self._grid.setContentsMargins(4, 4, 4, 4)
-        self._grid.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
-        self.setWidget(self._inner)
-        self._cards: list[ClipCard] = []
-        self._order: list[int] = []
-        self._columns = 0
-        self._current: int | None = None
-
-    @property
-    def cards(self) -> list[ClipCard]:
-        return list(self._cards)
-
-    @property
-    def order(self) -> list[int]:
-        return list(self._order)
-
-    def set_cards(self, cards: Sequence[ClipCard]) -> None:
-        for card in self._cards:
-            card.setParent(None)
-            card.deleteLater()
-        self._cards = list(cards)
-        for card in self._cards:
-            card.clicked.connect(self.select)
-        self._order = list(range(len(self._cards)))
-        self._current = None
-        self._relayout()
-
-    def show_order(self, order: Sequence[int]) -> None:
-        self._order = list(order)
-        self._relayout()
-
-    def select(self, index: int) -> None:
-        if self._current is not None and self._current < len(self._cards):
-            self._cards[self._current].set_selected(False)
-        self._current = index
-        if 0 <= index < len(self._cards):
-            self._cards[index].set_selected(True)
-            self.ensureWidgetVisible(self._cards[index])
-            self.selected.emit(index)
-
-    def _columns_for_width(self) -> int:
-        if not self._cards:
-            return 1
-        margins = self._grid.contentsMargins()
-        width = self.viewport().width() - margins.left() - margins.right()
-        card = self._cards[0].width() or self._cards[0].sizeHint().width()
-        return max(1, int((width + self.SPACING) // (card + self.SPACING)))
-
-    def _relayout(self) -> None:
-        self._columns = self._columns_for_width()
-        while self._grid.count():
-            self._grid.takeAt(0)
-        shown = set(self._order)
-        for i, card in enumerate(self._cards):
-            card.setVisible(i in shown)
-        for position, i in enumerate(self._order):
-            row, col = divmod(position, self._columns)
-            self._grid.addWidget(self._cards[i], row, col)
-
-    def resizeEvent(self, event) -> None:  # noqa: N802
-        super().resizeEvent(event)
-        if self._cards and self._columns_for_width() != self._columns:
-            self._relayout()
+        if self._playhead is not None:                          # where the playback is
+            xp = x(self._playhead)
+            p.setPen(QPen(INK, 2.0))
+            p.drawLine(QPointF(xp, area.top()), QPointF(xp, rms.bottom()))
+            p.setPen(Qt.PenStyle.NoPen)
+            p.setBrush(QBrush(INK))
+            p.drawPolygon(QPolygonF([QPointF(xp - 4, area.top() - 6), QPointF(xp + 4, area.top() - 6),
+                                     QPointF(xp, area.top())]))

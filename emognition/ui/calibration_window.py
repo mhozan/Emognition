@@ -13,9 +13,10 @@ One recordings folder, chosen at the top, for four tabs:
 * **Stimuli / naming** -- what each file name says (emotion, speaker sex), how
   balanced the set is, the manifest (stimuli.tsv + .json), legacy -> BIDS names.
   (wraps emognition.naming)
-* **Clip check** -- a card per file (waveform, spectrogram, and the RMS curve the
-  end-of-speech detector works from) with sanity flags, and a large view of any
-  one: a whole database checked at a glance. (audio.analysis, imaging.clips)
+* **Clip check** -- a quick check of every file (level, clipping, DC offset,
+  noise, speech span, flags) in a sortable table, the selected clip fully
+  analysed and playable, and spectrogram cards for all on request: a whole
+  database checked at a glance. (ui/clip_check.py)
 * **Loudness & trim** -- what calibration would change, clip by clip (a table,
   and charts before vs after), then Apply -> a new ``*_calibrated`` folder; the
   written files are measured again, so the charts show what was written.
@@ -25,7 +26,8 @@ One recordings folder, chosen at the top, for four tabs:
   session's Volume (audio never touches this Qt process).
 
 Every tab explains its methods in a "How it works" panel (ui/calibration_help.py)
-and every control has a tooltip. Anything slow runs on a worker thread. Nothing
+and every control has a tooltip. Anything slow runs on a thread pool, with its
+progress shown (ui/jobs.py), and anything audible in a separate process. Nothing
 writes to the recordings folder except the explicit Rename.
 """
 
@@ -33,12 +35,9 @@ from __future__ import annotations
 
 import os
 import sys
-from collections import Counter
-
-from PyQt6.QtCore import QObject, QProcess, Qt, QThread, QTimer, pyqtSignal
+from PyQt6.QtCore import QProcess, Qt, QThreadPool, QTimer
 from PyQt6.QtWidgets import (
     QApplication,
-    QCheckBox,
     QComboBox,
     QDoubleSpinBox,
     QFileDialog,
@@ -56,11 +55,10 @@ from PyQt6.QtWidgets import (
 )
 
 from ..audio import NormalizationMethod, apply_plan, average_rms, plan_batch
-from ..audio.analysis import analyse_clip, check_folder, db
+from ..audio.analysis import db, wav_files
 from ..audio.review import before_after, measure_written
 from ..config import DEFAULT_VOLUME
 from ..core.emotions import EMOTIONS_IN_ORDER
-from ..imaging.clips import clip_card
 from ..naming import (
     apply_rename_plan,
     build_manifest,
@@ -71,18 +69,7 @@ from ..naming import (
     write_manifest,
 )
 from .assets import audio_dir, self_command
-from .calibration_charts import (
-    CARD_H,
-    CARD_W,
-    BalanceChart,
-    ClipCard,
-    ClipDetail,
-    ClipGallery,
-    StripChart,
-    fmt_value,
-    qimage_from_rgb,
-    range_text,
-)
+from .calibration_charts import BalanceChart, StripChart, fmt_value
 from .calibration_help import (
     HELP_CSS,
     TIPS,
@@ -93,6 +80,8 @@ from .calibration_help import (
     tone_help,
     tone_numbers,
 )
+from .clip_check import ClipCheckTab
+from .jobs import Job
 from .theme import apply_theme
 
 # Layout and accents only; colours, fields and popups come from the shared theme.
@@ -113,27 +102,12 @@ QPushButton#secondary { background: #ececf5; color: #3a3a5a; font-weight: 600; }
 QPushButton#secondary:hover { background: #dedeee; }
 QPushButton#secondary:checked { background: #dcd8fa; color: #2a2250; }
 QTextBrowser { background: #fbfbfe; border: 1px solid #e3e3ef; border-radius: 8px; padding: 4px; }
-QFrame#clipCard { background: #ffffff; border: 2px solid #ececf5; border-radius: 8px; }
-QFrame#clipCard:hover { border-color: #cfcbf3; }
-QFrame#clipCard[selected="true"] { border-color: #6c5ce7; }
-QLabel#cardName { font-weight: 700; color: #20203a; }
-QLabel#cardStats { color: #5a5a7a; font-size: 12px; }
-QWidget#gallery { background: #f4f4f9; }
+QPushButton#secondary:disabled { background: #f2f2f7; color: #a3a3b8; }
 """
 
 # The loudness table's short headers (the chart panels carry the long titles).
 _COLUMNS = {"duration": "Duration (s)", "lead": "Before speech (ms)", "tail": "After speech (ms)",
             "peak": "Peak (dBFS)"}
-
-_CLIP_ORDERS = {
-    "File name": lambda c, f: c.filename.lower(),
-    "Flagged first": lambda c, f: (not f, c.filename.lower()),
-    "Longest first": lambda c, f: -c.duration,
-    "Loudest peak first": lambda c, f: -c.peak_db,
-    "Loudest RMS first": lambda c, f: -c.rms_db,
-    "Most silence after speech": lambda c, f: -c.tail_silence,
-}
-
 
 def _table(headers: list[str], tips: list[str] | None = None) -> QTableWidget:
     t = QTableWidget(0, len(headers))
@@ -185,38 +159,6 @@ def _calibrated_dir(folder: str) -> str:
     return os.path.normpath(folder) + "_calibrated"
 
 
-class _Task(QObject):
-    """Runs one function on a worker thread and reports the outcome.
-
-    Reading and writing a whole folder of recordings takes seconds; on the GUI
-    thread that froze the window. The signals are connected to *methods of the
-    window* (a QObject living on the GUI thread), so Qt delivers them there as
-    queued calls -- widgets are only ever touched from the GUI thread.
-    """
-
-    done = pyqtSignal(object)
-    failed = pyqtSignal(str)
-
-    def __init__(self, fn) -> None:
-        super().__init__()
-        self._fn = fn
-
-    def run(self) -> None:
-        try:
-            result = self._fn()
-        except Exception as exc:  # noqa: BLE001 -- reported to the experimenter
-            self.failed.emit(str(exc) or exc.__class__.__name__)
-        else:
-            self.done.emit(result)
-
-
-def _wavs(folder: str) -> list[str]:
-    """The .wav files in *folder*, sorted (raises OSError if it can't be listed)."""
-    return sorted(
-        os.path.join(folder, f) for f in os.listdir(folder) if f.lower().endswith(".wav")
-    )
-
-
 class CalibrationWindow(QWidget):
     """Tabbed calibration tools for the experimenter.
 
@@ -233,14 +175,13 @@ class CalibrationWindow(QWidget):
         self._volume = DEFAULT_VOLUME if volume is None else max(0.0, min(1.0, volume))
         self._tone_proc: QProcess | None = None
         self._tone_stopping = False
-        self._busy: tuple[QThread, _Task] | None = None   # the one background task
+        self._pool = QThreadPool(self)
+        self._pool.setMaxThreadCount(1)                    # these tabs: one step at a time
+        self._busy: Job | None = None                      # the step running now
         self._refresh_after_task = False                   # a tab asked while busy
         self._helps: list[QTextBrowser] = []
         # What each tab shows, and for which folder (each refreshes when shown).
         self._stim_for: str | None = None
-        self._clips: list = []
-        self._clip_flags: list = []
-        self._clips_for: str | None = None
         self._plan = None
         self._plan_for: str | None = None
         self._written_dir: str | None = None
@@ -410,118 +351,21 @@ class CalibrationWindow(QWidget):
         if result.applied and os.path.exists(os.path.join(folder, "stimuli.tsv")):
             self._write_manifest(renamed=result.applied)   # rows follow their files
         self._inspect_stimuli()
-        self._clips_for = self._plan_for = self._tone_for = None   # the file names changed
+        self.clip_check.forget()                             # the file names changed
+        self._plan_for = self._tone_for = None
         self.stim_status.setText(result.summary())
 
     # -- Clip check ---------------------------------------------------------
 
     def _clips_tab(self) -> QWidget:
-        analyse = self._button("Analyse", TIPS["analyse"])
-        analyse.clicked.connect(lambda: self._analyse_clips())
-        self.clip_sort = QComboBox()
-        self.clip_sort.addItems(list(_CLIP_ORDERS))
-        self.clip_sort.setToolTip(TIPS["sort"])
-        self.clip_sort.currentIndexChanged.connect(lambda _i: self._sort_clips())
-        self.clip_flagged_only = QCheckBox("Flagged only")
-        self.clip_flagged_only.setToolTip(TIPS["flagged_only"])
-        self.clip_flagged_only.toggled.connect(lambda _on: self._sort_clips())
-        sort_label = QLabel("Order")
-        sort_label.setToolTip(TIPS["sort"])
-        self.clips_status = _status()
-        self.gallery = ClipGallery()
-        self.gallery.selected.connect(self._show_clip)
-        self.clip_detail = ClipDetail()
-
-        split = QSplitter(Qt.Orientation.Vertical)
-        split.addWidget(self.gallery)
-        split.addWidget(self.clip_detail)
-        split.setSizes([380, 340])
-        split.setChildrenCollapsible(False)
-        content = QWidget()
-        layout = QVBoxLayout(content)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.addLayout(_row(analyse, 12, sort_label, self.clip_sort, 12, self.clip_flagged_only))
-        layout.addWidget(self.clips_status)
-        layout.addWidget(split, 1)
-        outer, self.clips_help = self._with_help(content, clips_help())
+        self.clip_check = ClipCheckTab(self._volume, folder_source=lambda: self.folder.text(),
+                                       before_play=self._free_audio_for_clips)
+        outer, self.clips_help = self._with_help(self.clip_check, clips_help())
         return outer
 
-    def _analyse_clips(self, queue: bool = False) -> None:
-        folder = self.folder.text()
-        dpr = self.devicePixelRatioF()
-
-        def work():
-            clips, failed = [], []
-            for path in _wavs(folder):
-                try:
-                    clips.append(analyse_clip(path))
-                except Exception as exc:  # noqa: BLE001 -- listed; the others are still shown
-                    failed.append(os.path.basename(path))
-                    print(f"Could not analyse {path}: {exc!r}", file=sys.stderr)
-            flags = check_folder(clips)
-            span = max((c.duration for c in clips), default=1.0)
-            size = (round(CARD_W * dpr), round(CARD_H * dpr))
-            pictures = [clip_card(c, width=size[0], height=size[1], span=span).tobytes() for c in clips]
-            return folder, clips, flags, pictures, size, dpr, failed
-
-        self._start_task(work, self._show_clips, self._clips_failed, self.clips_status,
-                         "Measuring every recording...", queue=queue)
-
-    def _show_clips(self, result) -> None:
-        folder, clips, flags, pictures, (w, h), dpr, failed = result
-        self._clips, self._clip_flags, self._clips_for = clips, flags, folder
-        self.gallery.set_cards([
-            ClipCard(i, clip, clip_flags, qimage_from_rgb(data, w, h, dpr))
-            for i, (clip, clip_flags, data) in enumerate(zip(clips, flags, pictures))
-        ])
-        self._sort_clips()
-        self.clips_status.setText(self._clips_summary(clips, flags, failed))
-        order = self.gallery.order
-        first = next((i for i in order if flags[i]), order[0] if order else None)
-        if first is None:
-            self.clip_detail.set_clip(None)
-        else:
-            self.gallery.select(first)
-
-    def _clips_failed(self, message: str) -> None:
-        self.clips_status.setText(f"Could not read the folder: {message}")
-
-    def _show_clip(self, index: int) -> None:
-        if 0 <= index < len(self._clips):
-            self.clip_detail.set_clip(self._clips[index], self._clip_flags[index])
-
-    def _sort_clips(self) -> None:
-        key = _CLIP_ORDERS[self.clip_sort.currentText()]
-        order = sorted(range(len(self._clips)), key=lambda i: key(self._clips[i], self._clip_flags[i]))
-        if self.clip_flagged_only.isChecked():
-            order = [i for i in order if self._clip_flags[i]]
-        self.gallery.show_order(order)
-
-    @staticmethod
-    def _clips_summary(clips, flags, failed) -> str:
-        """The folder in one line: count, format, ranges, and how many clips are flagged."""
-        parts: list[str] = []
-        if clips:
-            rates = sorted(Counter(c.rate for c in clips))
-            channels = set(c.channels for c in clips)
-            durations = [c.duration for c in clips]
-            peaks = [c.peak_db for c in clips]
-            tails = [c.tail_silence * 1000.0 for c in clips]
-            n_flagged = sum(1 for f in flags if f)
-            parts += [
-                f"{len(clips)} clip{'s' if len(clips) != 1 else ''}",
-                "/".join(f"{r / 1000:g}" for r in rates) + " kHz" + (" (mixed)" if len(rates) > 1 else ""),
-                {frozenset({1}): "mono", frozenset({2}): "stereo"}.get(frozenset(channels), "mono and stereo"),
-                f"{range_text(min(durations), max(durations), 's')} s",
-                f"peak {range_text(min(peaks), max(peaks), 'dB')} dBFS",
-                f"silence after speech {range_text(min(tails), max(tails), 'ms')} ms",
-                f"⚠ {n_flagged} flagged" if n_flagged else "no flags",
-            ]
-        else:
-            parts.append("No .wav files here.")
-        if failed:
-            parts.append(f"{len(failed)} unreadable: " + ", ".join(failed[:3]) + ("..." if len(failed) > 3 else ""))
-        return " · ".join(parts)
+    def _free_audio_for_clips(self) -> None:
+        """Before a clip plays: the SPL tone lets go of the audio device."""
+        self._stop_tone(wait=True)
 
     # -- Loudness & trim --------------------------------------------------
 
@@ -566,43 +410,40 @@ class CalibrationWindow(QWidget):
 
     def _start_task(self, fn, on_done, on_failed, status: QLabel, message: str,
                     queue: bool = False) -> bool:
-        """Run *fn* in the background (one task at a time); False if one is running.
+        """Run *fn(job)* in the background (one step at a time); False if one is running.
 
-        With *queue*, a refused task's tab is refreshed once the running one ends
-        (switching tabs during a long analysis then catches up by itself).
+        *status* shows *message*, then how far *fn* has got (it calls
+        ``job.report(done, total)``). With *queue*, a refused step's tab is
+        refreshed once the running one ends (switching tabs during a long
+        analysis then catches up by itself).
         """
         if self._busy is not None:
             if queue:
                 self._refresh_after_task = True
             status.setText("Still working on the previous step...")
             return False
-        thread, task = QThread(self), _Task(fn)
-        task.moveToThread(thread)
-        thread.started.connect(task.run)
-        task.done.connect(on_done)
-        task.failed.connect(on_failed)
-        task.done.connect(thread.quit)
-        task.failed.connect(thread.quit)
-        thread.finished.connect(self._task_finished)
-        self._busy = (thread, task)
+        job = Job(fn, self)
+        job.progress.connect(lambda done, total: status.setText(f"{message} {done} / {total}"))
+        job.done.connect(on_done)
+        job.failed.connect(on_failed)
+        job.done.connect(self._task_finished)            # after on_done/on_failed (connection order)
+        job.failed.connect(self._task_finished)
+        self._busy = job
         status.setText(message)
-        thread.start()
+        job.start(self._pool)
         return True
 
-    def _task_finished(self) -> None:
+    def _task_finished(self, *_args) -> None:
         if self._busy is not None:
-            thread, task = self._busy
+            self._busy.deleteLater()
             self._busy = None
-            task.deleteLater()
-            thread.deleteLater()
         if self._refresh_after_task:
             self._refresh_after_task = False
             QTimer.singleShot(0, self._refresh_tab)
 
     def _wait_for_task(self, timeout_ms: int = 60000) -> None:
-        """Block until a running task ends (closing mid-task would destroy its thread)."""
-        if self._busy is not None:
-            self._busy[0].wait(timeout_ms)
+        """Block until a running step ends (before the window closes)."""
+        self._pool.waitForDone(timeout_ms)
 
     def _on_method_changed(self, _index: int) -> None:
         self._plan_for = None                              # the plan was for the old method
@@ -613,7 +454,8 @@ class CalibrationWindow(QWidget):
         folder = self.folder.text()
         out = _calibrated_dir(folder)
         method = self.method.currentData()
-        self._start_task(lambda: (folder, plan_batch(_wavs(folder), out, method=method)),
+        self._start_task(lambda job: (folder, plan_batch(wav_files(folder), out, method=method,
+                                                         progress=job.report)),
                          self._show_plan, self._loudness_failed, self.loud_status,
                          "Analysing recordings...", queue=queue)
 
@@ -668,9 +510,12 @@ class CalibrationWindow(QWidget):
             return
         plan = self._plan
 
-        def work():
-            written = apply_plan(plan)
-            return written, measure_written(written, plan.method)
+        def work(job):
+            n = len(plan.clips)                            # writing, then measuring: one bar
+            written = apply_plan(plan, progress=lambda done, total: job.report(done, 2 * total))
+            measured = measure_written(written, plan.method,
+                                       progress=lambda done, total: job.report(n + done, 2 * n))
+            return written, measured
 
         self._start_task(work, self._show_written, self._loudness_failed,
                          self.loud_status, f"Writing calibrated files to {plan.out_dir}...")
@@ -748,7 +593,7 @@ class CalibrationWindow(QWidget):
     def _measure_tone(self, queue: bool = False, then_play: bool = False) -> None:
         folder = self.folder.text()
         done = self._measured_then_play if then_play else self._show_tone_level
-        self._start_task(lambda: (folder, average_rms(_wavs(folder))), done,
+        self._start_task(lambda job: (folder, average_rms(wav_files(folder))), done,
                          self._tone_failed, self.tone_status, "Measuring the recordings' level...",
                          queue=queue)
 
@@ -778,6 +623,7 @@ class CalibrationWindow(QWidget):
         if rms <= 0:
             self.tone_status.setText("No recordings found to match.")
             return
+        self.clip_check.stop_audio()                      # the clip player lets go of the device
         cmd = self_command(self._tone_argv(rms))
         self._tone_proc = QProcess(self)
         self._tone_proc.finished.connect(self._tone_finished)
@@ -801,10 +647,13 @@ class CalibrationWindow(QWidget):
     def _tone_failed(self, message: str) -> None:
         self.tone_status.setText(f"Could not measure the recordings: {message}")
 
-    def _stop_tone(self) -> None:
+    def _stop_tone(self, wait: bool = False) -> None:
+        """Stop the tone; with *wait*, until its process has let go of the audio device."""
         if self._tone_proc is not None and self._tone_proc.state() != QProcess.ProcessState.NotRunning:
             self._tone_stopping = True
             self._tone_proc.kill()
+            if wait:
+                self._tone_proc.waitForFinished(2000)
 
     # -- the shared folder -----------------------------------------------
 
@@ -827,7 +676,7 @@ class CalibrationWindow(QWidget):
     def _count_files(self) -> None:
         folder = self.folder.text()
         try:
-            n = len(_wavs(folder))
+            n = len(wav_files(folder))
             self.folder_info.setText(f"{n} .wav file{'s' if n != 1 else ''}")
         except OSError:
             self.folder_info.setText("folder not found")
@@ -841,8 +690,8 @@ class CalibrationWindow(QWidget):
         tab = self.tabs.currentIndex()
         if tab == 0 and self._stim_for != folder:
             self._inspect_stimuli()
-        elif tab == 1 and self._clips_for != folder:
-            self._analyse_clips(queue=True)
+        elif tab == 1 and self.clip_check.folder != folder:
+            self.clip_check.refresh(folder)
         elif tab == 2 and self._plan_for != folder:
             self._preview_loudness(queue=True)
         elif tab == 3 and self._tone_for != folder:
@@ -854,6 +703,7 @@ class CalibrationWindow(QWidget):
 
     def closeEvent(self, event) -> None:  # noqa: N802
         self._stop_tone()
+        self.clip_check.shutdown()
         self._wait_for_task()
         super().closeEvent(event)
 

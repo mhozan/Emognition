@@ -21,7 +21,7 @@ from __future__ import annotations
 import json
 import math
 import os
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 
 import numpy as np
@@ -117,8 +117,12 @@ def plan_batch(
     threshold_db: float = -40.0,
     pad_s: float = DEFAULT_PAD_S,
     ceiling_db: float = DEFAULT_CEILING_DB,
+    progress: Callable[[int, int], None] | None = None,
 ) -> BatchPlan:
-    """Analyse every clip and return what preprocessing *would* do (no writes)."""
+    """Analyse every clip and return what preprocessing *would* do (no writes).
+
+    *progress*, if given, is told ``(done, total)`` after each clip.
+    """
     if target_db is None:
         target_db = DEFAULT_TARGET_DB[method]
 
@@ -153,6 +157,8 @@ def plan_batch(
             will_limit=will_limit,
             peak_db=20.0 * math.log10(max(peak, 1e-12)),
         ))
+        if progress is not None:
+            progress(len(clips), len(paths))
 
     return BatchPlan(
         clips=clips, method=method, target_db=target_db,
@@ -214,6 +220,7 @@ def apply_plan(
     *,
     trim: bool = True,
     normalize: bool = True,
+    progress: Callable[[int, int], None] | None = None,
 ) -> list[str]:
     """Write the calibrated clips to ``plan.out_dir``; return the written paths.
 
@@ -241,5 +248,7 @@ def apply_plan(
         out_path = os.path.join(plan.out_dir, clip.filename)
         sf.write(out_path, data, rate, subtype=subtype)
         written.append(out_path)
+        if progress is not None:
+            progress(len(written), len(plan.clips))
     _write_sidecar(plan, trim=trim, normalize=normalize)
     return written

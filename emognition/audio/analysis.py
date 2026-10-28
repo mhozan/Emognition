@@ -8,12 +8,18 @@
 
 """What's in each recording -- the numbers and curves behind the calibration plots.
 
-A sanity check of a stimulus set, at a glance: for every clip, its level (peak,
-RMS), any clipping or DC offset, where the speech starts and ends, its waveform,
-the RMS curve the endpoint detector worked from, and a spectrogram -- plus the
-flags (:func:`check_folder`) that point the experimenter at the clips worth a
-listen. Numpy only (no UI, no plotting), so it runs on a worker thread and is
-unit-tested.
+A sanity check of a stimulus set, in two depths:
+
+* the **quick check** (:class:`ClipStats`, :func:`quick_check`): one pass over
+  the samples -- level (peak, RMS), clipping, DC offset, the RMS curve the
+  endpoint detector works from, where the speech starts and ends, a coarse
+  waveform -- about a millisecond for a 2 s clip, so a whole folder is checked
+  at once. The flags (:func:`check_folder`) need nothing more;
+* the **full analysis** (:class:`ClipAnalysis`, :func:`analyse_clip`): all of
+  that plus a spectrogram and a finer waveform, for the clip being looked at
+  (or, on request, every clip).
+
+Numpy only (no UI, no plotting), so it runs on a worker thread and is unit-tested.
 
 Levels are dBFS = 20 log10(value), full scale = 1.0: a full-scale sine has an
 RMS of -3 dBFS (AES17 would call it 0 dBFS).
@@ -24,12 +30,12 @@ from __future__ import annotations
 import math
 import os
 from collections import Counter
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 
 import numpy as np
 
-from .endpoints import detect_endpoints, frame_rms
+from .endpoints import endpoints_from_rms, frame_rms
 from .loudness import to_mono
 
 _EPS = 1e-12
@@ -42,7 +48,9 @@ SPEC_WINDOW_MS = 25.0
 SPEC_HOP_MS = 10.0
 SPEC_MAX_HZ = 8000.0
 SPEC_RANGE_DB = 70.0
-# The waveform is kept as a min/max envelope in this many bins (enough for any card).
+# The waveform is kept as a min/max envelope: coarse for the quick check's thumbnails,
+# fine enough for the large view in the full analysis.
+QUICK_WAVE_BINS = 300
 WAVE_BINS = 2000
 # The noise floor: the level of the quietest 5 % of RMS frames (pauses, room, hiss).
 NOISE_PERCENTILE = 5.0
@@ -62,8 +70,8 @@ def db(value: float) -> float:
 
 
 @dataclass(frozen=True, slots=True)
-class ClipAnalysis:
-    """One recording, measured (times in seconds, levels in dBFS)."""
+class ClipStats:
+    """One recording's quick check (times in seconds, levels in dBFS): no spectrogram."""
 
     path: str
     filename: str
@@ -78,11 +86,8 @@ class ClipAnalysis:
     offset: float                  # detected end of speech
     times: np.ndarray              # centre of each RMS frame
     rms_curve_db: np.ndarray       # the detector's frame RMS, dBFS
-    spec_times: np.ndarray
-    spec_freqs: np.ndarray         # Hz, up to SPEC_MAX_HZ
-    spectrogram_db: np.ndarray     # (freqs, times), dB relative to the clip's maximum
-    wave_min: np.ndarray           # the waveform's min and max per bin (mono, -1..1),
-    wave_max: np.ndarray           # WAVE_BINS bins over the clip
+    wave_min: np.ndarray           # the waveform's min and max per bin (mono, -1..1):
+    wave_max: np.ndarray           # QUICK_WAVE_BINS bins, or WAVE_BINS in the full analysis
 
     @property
     def lead_silence(self) -> float:
@@ -112,6 +117,15 @@ class ClipAnalysis:
 
 
 @dataclass(frozen=True, slots=True)
+class ClipAnalysis(ClipStats):
+    """One recording's full analysis: the quick check, plus a spectrogram."""
+
+    spec_times: np.ndarray
+    spec_freqs: np.ndarray         # Hz, up to SPEC_MAX_HZ
+    spectrogram_db: np.ndarray     # (freqs, times), dB relative to the clip's maximum
+
+
+@dataclass(frozen=True, slots=True)
 class Flag:
     """Something about one clip worth a listen: a short label and what it means."""
 
@@ -120,7 +134,7 @@ class Flag:
     detail: str     # what was found, and what to do about it
 
 
-def clip_flags(clip: ClipAnalysis, *, rate: int | None = None,
+def clip_flags(clip: ClipStats, *, rate: int | None = None,
                channels: int | None = None) -> list[Flag]:
     """The sanity checks for one clip; *rate*/*channels* are the folder's usual ones."""
     flags: list[Flag] = []
@@ -169,7 +183,7 @@ def usual(values: Sequence) -> object:
     return Counter(values).most_common(1)[0][0] if values else None
 
 
-def check_folder(clips: Sequence[ClipAnalysis]) -> list[list[Flag]]:
+def check_folder(clips: Sequence[ClipStats]) -> list[list[Flag]]:
     """The flags of every clip, in order, judging rate and channels against the folder."""
     rate = usual([c.rate for c in clips])
     channels = usual([c.channels for c in clips])
@@ -205,41 +219,99 @@ def waveform_envelope(mono: np.ndarray, bins: int = WAVE_BINS) -> tuple[np.ndarr
     return lo.astype(np.float32), hi.astype(np.float32)
 
 
-def analyse_samples(samples: np.ndarray, rate: int, *, path: str = "") -> ClipAnalysis:
-    """Measure *samples* (mono ``(n,)`` or multichannel ``(n, channels)``)."""
+def _measure(samples: np.ndarray, rate: int, path: str, wave_bins: int) -> tuple[dict, np.ndarray]:
+    """The quick check's numbers (as ClipStats fields) and the mono signal they came from."""
     data = samples if samples.ndim == 2 else samples[:, None]
     mono = to_mono(data)
-    onset, offset = detect_endpoints(data, rate)
     energies, frame, hop = frame_rms(mono, rate)
-    times = (np.arange(energies.size) * hop + frame / 2.0) / rate
-    spec_t, spec_f, spec = spectrogram(mono, rate)
-    wave_min, wave_max = waveform_envelope(mono)
-    rms = float(np.sqrt(np.mean(data.astype(np.float64) ** 2))) if data.size else 0.0
-    return ClipAnalysis(
+    onset, offset = endpoints_from_rms(energies, frame, hop, mono.shape[0], rate,
+                                       threshold_db=THRESHOLD_DB)
+    wave_min, wave_max = waveform_envelope(mono, wave_bins)
+    if data.size:
+        peak = max(float(data.max()), -float(data.min()))
+        rms = math.sqrt(float(np.mean(np.square(data, dtype=np.float64))))
+        clipped = int(np.count_nonzero(data >= CLIP_LEVEL) + np.count_nonzero(data <= -CLIP_LEVEL))
+        dc = float(np.mean(data))
+    else:
+        peak = rms = dc = 0.0
+        clipped = 0
+    fields = dict(
         path=path,
         filename=os.path.basename(path),
         rate=rate,
         channels=data.shape[1],
         duration=data.shape[0] / rate,
-        peak_db=db(float(np.max(np.abs(data))) if data.size else 0.0),
+        peak_db=db(peak),
         rms_db=db(rms),
-        clipped=int(np.count_nonzero(np.abs(data) >= CLIP_LEVEL)),
-        dc_offset=float(np.mean(data)) if data.size else 0.0,
+        clipped=clipped,
+        dc_offset=dc,
         onset=onset,
         offset=offset,
-        times=times,
+        times=(np.arange(energies.size) * hop + frame / 2.0) / rate,
         rms_curve_db=20.0 * np.log10(np.maximum(energies, _EPS)),
-        spec_times=spec_t,
-        spec_freqs=spec_f,
-        spectrogram_db=spec,
         wave_min=wave_min,
         wave_max=wave_max,
     )
+    return fields, mono
+
+
+def check_samples(samples: np.ndarray, rate: int, *, path: str = "") -> ClipStats:
+    """Quick-check *samples* (mono ``(n,)`` or multichannel ``(n, channels)``)."""
+    fields, _mono = _measure(samples, rate, path, QUICK_WAVE_BINS)
+    return ClipStats(**fields)
+
+
+def analyse_samples(samples: np.ndarray, rate: int, *, path: str = "") -> ClipAnalysis:
+    """Fully analyse *samples*: the quick check plus a spectrogram and a finer waveform."""
+    fields, mono = _measure(samples, rate, path, WAVE_BINS)
+    spec_t, spec_f, spec = spectrogram(mono, rate)
+    return ClipAnalysis(**fields, spec_times=spec_t, spec_freqs=spec_f, spectrogram_db=spec)
+
+
+def wav_files(folder: str) -> list[str]:
+    """The .wav files in *folder*, sorted (raises OSError if it can't be listed)."""
+    return sorted(os.path.join(folder, f) for f in os.listdir(folder) if f.lower().endswith(".wav"))
+
+
+def _read(path: str) -> tuple[np.ndarray, int]:
+    import soundfile as sf
+
+    return sf.read(path, dtype="float32", always_2d=True)
+
+
+def quick_check(path: str) -> ClipStats:
+    """Read and quick-check one audio file."""
+    samples, rate = _read(path)
+    return check_samples(samples, rate, path=path)
 
 
 def analyse_clip(path: str) -> ClipAnalysis:
-    """Read and measure one audio file."""
-    import soundfile as sf
-
-    samples, rate = sf.read(path, dtype="float32", always_2d=True)
+    """Read and fully analyse one audio file."""
+    samples, rate = _read(path)
     return analyse_samples(samples, rate, path=path)
+
+
+def check_files(
+    paths: Sequence[str],
+    *,
+    progress: Callable[[int, int], None] | None = None,
+    should_stop: Callable[[], bool] | None = None,
+) -> tuple[list[ClipStats], list[str]]:
+    """Quick-check every file: (the clips, the names of files that couldn't be read).
+
+    *progress* is told ``(done, total)`` after each file, and *should_stop* is
+    asked before each one -- so a long folder shows its progress and can be
+    cancelled. A file that can't be read is listed, not fatal.
+    """
+    clips: list[ClipStats] = []
+    unreadable: list[str] = []
+    for i, path in enumerate(paths):
+        if should_stop is not None and should_stop():
+            break
+        try:
+            clips.append(quick_check(path))
+        except Exception:  # noqa: BLE001 -- any unreadable file is reported by name
+            unreadable.append(os.path.basename(path))
+        if progress is not None:
+            progress(i + 1, len(paths))
+    return clips, unreadable

@@ -55,6 +55,7 @@ def calib(app, tmp_path, monkeypatch):
     monkeypatch.setenv("HOME", str(tmp_path))
     w = calibration_window.CalibrationWindow(volume=0.6)
     yield w
+    w.clip_check.shutdown()
     w._wait_for_task()
     w.deleteLater()
 
@@ -117,31 +118,109 @@ def test_strip_chart_hover_names_the_clip(app, calib, two_clips):
     assert strip.metrics[panel].names[clip] in strip._tip(panel, clip, row)
 
 
-# -- Clip check ----------------------------------------------------------------------
+# -- Clip check -------------------------------------------------------------------------
 
-def test_clip_check_cards_flags_and_the_large_view(app, calib, two_clips):
+def _clipped_clip(folder):
     import soundfile as sf
 
     t = np.arange(11025) / 22050.0                                # 0.5 s of a too-loud tone
     loud = np.clip(1.5 * np.sin(2 * math.pi * 440 * t), -1.0, 1.0)
-    sf.write(two_clips / "zz_clipped.wav", np.concatenate([np.zeros(4410), loud, np.zeros(4410)]), 22050)
-    calib.folder.setText(str(two_clips))
-    calib._analyse_clips()
-    assert _wait(app, lambda: calib._busy is None and len(calib.gallery.cards) == 3)
-    cards = calib.gallery.cards
-    assert [c.clip.filename for c in cards if c.flags] == ["zz_clipped.wav"]
-    assert {f.key for f in cards[2].flags} >= {"clipped", "rate"}       # 22.05 kHz among 44.1
-    assert calib.clip_detail.clip.filename == "zz_clipped.wav"          # the flagged one, large
-    assert "3 clips" in calib.clips_status.text() and "1 flagged" in calib.clips_status.text()
-    calib.clip_flagged_only.setChecked(True)
-    assert calib.gallery.order == [2]
-    calib.clip_flagged_only.setChecked(False)
-    calib.clip_sort.setCurrentText("Flagged first")
-    assert calib.gallery.order[0] == 2
-    calib.gallery.select(0)
-    assert calib.clip_detail.clip is cards[0].clip
-    calib.clip_detail.resize(900, 360)
-    assert not calib.clip_detail.grab().isNull()
+    sf.write(folder / "zz_clipped.wav", np.concatenate([np.zeros(4410), loud, np.zeros(4410)]), 22050)
+
+
+def test_clip_check_lists_every_clip_flagged_first_and_shows_one_in_full(app, calib, two_clips):
+    from emognition.audio.analysis import ClipAnalysis
+
+    _clipped_clip(two_clips)
+    cc = calib.clip_check
+    cc.refresh(str(two_clips))
+    assert _wait(app, lambda: not cc.busy and cc.table_model.rowCount() == 3)
+    first = cc.proxy.mapToSource(cc.proxy.index(0, 0)).row()
+    assert cc.table_model.clips[first].filename == "zz_clipped.wav"           # flagged first
+    assert {f.key for f in cc.table_model.flags[first]} >= {"clipped", "rate"}  # 22.05 kHz among 44.1
+    assert _wait(app, lambda: cc.detail.clip is not None)
+    assert cc.detail.clip.filename == "zz_clipped.wav" and isinstance(cc.detail.clip, ClipAnalysis)
+    text = cc.status.text()
+    assert "3 clips" in text and "1 flagged" in text and "checked in" in text
+    cc.flagged_only.setChecked(True)
+    assert cc.proxy.rowCount() == 1
+    cc.flagged_only.setChecked(False)
+    cc.table.setCurrentIndex(cc.proxy.index(1, 0))                              # another clip
+    assert _wait(app, lambda: cc.detail.clip is not None and cc.detail.clip.filename != "zz_clipped.wav")
+    assert "about" in cc.deep_btn.text()                                         # with an estimate
+    cc.table.resize(900, 300)
+    assert not cc.table.grab().isNull()                                          # waveforms paint
+
+
+def test_deep_analysis_makes_a_card_per_clip(app, calib, two_clips):
+    cc = calib.clip_check
+    cc.refresh(str(two_clips))
+    assert _wait(app, lambda: not cc.busy and cc.table_model.rowCount() == 2)
+    cc.start_deep_analysis()
+    assert cc.stack.currentIndex() == 1                                          # the Cards view
+    assert _wait(app, lambda: not cc.busy)
+    assert cc.cards_model.rowCount() == 2 and cc.deep_btn.text() == "Deep analysis (done)"
+    cc.cards.resize(800, 400)
+    assert not cc.cards.grab().isNull()
+    cc.cards.setCurrentIndex(cc.cards_model.index(1, 0))                        # a card shows its clip
+    path = cc.table_model.clips[cc.cards_model.rows[1]].path
+    assert _wait(app, lambda: cc.detail.clip is not None and cc.detail.clip.path == path)
+
+
+def test_deep_analysis_can_be_cancelled(app, calib, two_clips, monkeypatch):
+    import time as _time
+
+    from emognition.ui import clip_check
+
+    slow = clip_check.analyse_clip
+    monkeypatch.setattr(clip_check, "analyse_clip", lambda path: (_time.sleep(0.2), slow(path))[1])
+    cc = calib.clip_check
+    cc.refresh(str(two_clips))
+    assert _wait(app, lambda: cc._check_job is None and cc.table_model.rowCount() == 2)
+    cc.start_deep_analysis()
+    cc.cancel_deep_analysis()
+    assert _wait(app, lambda: cc._deep_job is None)
+    assert "cancelled" in cc.status.text() and cc.cards_model.rowCount() <= 2
+
+
+def test_play_runs_the_helper_and_moves_the_playhead(app, calib, two_clips, monkeypatch, tmp_path):
+    import sys
+    import textwrap
+
+    from emognition.ui import audition
+
+    script = tmp_path / "fake_player.py"                          # speaks --audition's protocol
+    script.write_text(textwrap.dedent("""
+        import json, sys
+        print(json.dumps({"status": "ready"}), flush=True)
+        for raw in sys.stdin.buffer:
+            command, _, arg = raw.decode().strip().partition(" ")
+            if command == "play":
+                print(json.dumps({"status": "playing", "path": arg, "duration": 0.6}), flush=True)
+            elif command == "stop":
+                print(json.dumps({"status": "stopped", "path": arg}), flush=True)
+            elif command == "quit":
+                break
+    """), encoding="utf-8")
+    monkeypatch.setattr(audition, "self_command", lambda argv: [sys.executable, str(script), *argv])
+    cc = calib.clip_check
+    cc.refresh(str(two_clips))
+    assert _wait(app, lambda: cc.detail.clip is not None)
+    cc.toggle_play()
+    assert _wait(app, lambda: cc.detail._playhead is not None)                # the playhead moves
+    assert cc.play_btn.text().startswith("\u25a0") and "Volume 0.60" in cc.play_status.text()
+    cc.toggle_play()                                                              # Stop
+    assert _wait(app, lambda: cc.play_btn.text().startswith("\u25b6") and cc.detail._playhead is None)
+    cc.toggle_play()                                                              # again, then
+    assert _wait(app, lambda: cc.detail._playhead is not None)
+
+    class _NoStart(QtCore.QProcess):                              # the tone, not really played
+        def start(self, *args):
+            pass
+
+    monkeypatch.setattr(calibration_window, "QProcess", _NoStart)
+    calib._start_tone(0.05)
+    assert not cc.player.running                                  # the tone gets the audio device
 
 
 # -- Stimuli / naming ----------------------------------------------------------------

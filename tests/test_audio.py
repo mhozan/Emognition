@@ -310,3 +310,41 @@ def test_peak_normalisation_has_no_separate_peak_panel(tmp_path):
     metrics = before_after(plan)
     assert [m.key for m in metrics] == ["duration", "lead", "tail", "loudness"]
     assert metrics[-1].title == "Peak level" and metrics[-1].after == pytest.approx((-1.0,), abs=0.01)
+
+
+def test_frame_rms_matches_a_frame_by_frame_loop():
+    from emognition.audio.endpoints import frame_rms
+
+    rng = np.random.default_rng(3)
+    for rate in (16000, 22050, 44100):          # at 22.05 kHz a frame isn't two hops
+        x = (rng.standard_normal(rate) * 0.1).astype(np.float32)
+        x[: rate // 4] = 0.0                     # digital silence must stay exactly 0
+        energies, frame, hop = frame_rms(x, rate)
+        reference = np.array([np.sqrt(np.mean(x[s:s + frame].astype(np.float64) ** 2))
+                              for s in range(0, x.size - frame + 1, hop)])
+        assert energies == pytest.approx(reference, rel=1e-9, abs=1e-12)
+        assert energies[0] == 0.0
+
+
+def test_the_quick_check_and_the_full_analysis_agree(tmp_path):
+    import soundfile as sf
+
+    from emognition.audio.analysis import (
+        QUICK_WAVE_BINS, WAVE_BINS, ClipStats, analyse_clip, check_files, quick_check,
+    )
+
+    speech = np.zeros(RATE)
+    speech[3200:12800] = 0.5 * np.sin(np.arange(9600) * 2 * np.pi * 220 / RATE)
+    for name in ("a_hap_f.wav", "b_sad_m.wav"):
+        sf.write(str(tmp_path / name), speech, RATE)
+    (tmp_path / "c_ang_f.wav").write_bytes(b"not audio")
+    paths = sorted(str(p) for p in tmp_path.glob("*.wav"))
+    seen = []
+    clips, unreadable = check_files(paths, progress=lambda done, total: seen.append((done, total)))
+    assert len(clips) == 2 and unreadable == ["c_ang_f.wav"] and seen[-1] == (3, 3)
+    assert check_files(paths, should_stop=lambda: True) == ([], [])      # cancelled at once
+    quick, full = quick_check(paths[0]), analyse_clip(paths[0])
+    assert isinstance(full, ClipStats) and not hasattr(quick, "spectrogram_db")
+    assert (quick.onset, quick.offset, quick.peak_db, quick.rms_db) == (full.onset, full.offset,
+                                                                        full.peak_db, full.rms_db)
+    assert quick.wave_max.size == QUICK_WAVE_BINS and full.wave_max.size == WAVE_BINS
