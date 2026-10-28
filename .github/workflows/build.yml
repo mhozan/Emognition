@@ -191,6 +191,9 @@ jobs:
           path: emognition-windows-x86_64.zip
 
   # ── GitHub Release (tags only) ─────────────────────────────────────────────
+  # The release page is .github/release-notes.md (how to download and open the
+  # app on each OS) followed by this version's section of CHANGELOG.md; a tag
+  # without one fails here, before anything is published.
   release:
     name: Create GitHub Release
     needs: [build-linux, build-windows, build-macos]
@@ -200,6 +203,27 @@ jobs:
       contents: write
 
     steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
+        with:
+          persist-credentials: false
+
+      - name: Release notes
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          changes=$(awk -v head="## ${version} " \
+            'index($0, head) == 1 { on = 1; next } on && /^## / { exit } on' CHANGELOG.md)
+          if [ -z "$(echo "$changes" | tr -d '[:space:]')" ]; then
+            echo "::error::CHANGELOG.md has no '## ${version} ...' section"
+            exit 1
+          fi
+          {
+            sed "s/{{TAG}}/${GITHUB_REF_NAME}/g" .github/release-notes.md
+            echo
+            echo "## What's new in ${GITHUB_REF_NAME}"
+            echo "$changes"
+          } > release-notes.md
+          cat release-notes.md
+
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093  # v4.3.0
         with:
           path: artifacts/
@@ -214,52 +238,11 @@ jobs:
         uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65  # v2.6.2
         with:
           name: "Emognition ${{ github.ref_name }}"
-          body: |
-            ## Emognition ${{ github.ref_name }}
-
-            Pre-built standalone executables — **no Python or installation required**.
-
-            | Platform | Download |
-            |---|---|
-            | **Windows** (10/11, 64-bit) | `emognition-windows-x86_64.zip` |
-            | **macOS**, Apple Silicon (M1 or later, macOS 14+) | `emognition-macos-arm64.zip` |
-            | Linux x86_64 | `emognition-linux-x86_64.zip` |
-
-            `SHA256SUMS.txt` lists the checksum of each download
-            (`sha256sum -c SHA256SUMS.txt` on Linux, `shasum -a 256 -c SHA256SUMS.txt` on macOS,
-            `Get-FileHash` on Windows).
-
-            ### Windows — step-by-step
-
-            1. Click **`emognition-windows-x86_64.zip`** above to download it.
-            2. Right-click the downloaded file → **Extract All…** → choose a location (e.g. your Desktop) → click **Extract**.
-            3. Open the extracted **`emognition`** folder.
-            4. Double-click **`emognition.exe`** to launch.
-
-            > **First launch:** Windows may show a SmartScreen warning ("Windows protected your PC").
-            > Click **More info** → **Run anyway** — this is expected for software not yet submitted to Microsoft's signing program.
-            > A small black terminal window may appear alongside the main window; this is normal and can be minimised.
-
-            ### macOS (Apple Silicon) — step-by-step
-
-            1. Click **`emognition-macos-arm64.zip`** above to download it, then double-click it in **Downloads** to unpack an **`emognition`** folder.
-            2. The app isn't signed with an Apple developer certificate yet, so macOS won't open a downloaded copy. Open **Terminal** and clear the download flag once:
-               `xattr -dr com.apple.quarantine ~/Downloads/emognition`
-            3. Start it: `~/Downloads/emognition/emognition` (or double-click `emognition` in the folder; a Terminal window opens beside the app).
-
-            ### Linux
-
-            ```bash
-            unzip emognition-linux-x86_64.zip
-            ./emognition/emognition
-            ```
-            (`chmod +x emognition/emognition` if needed.)
-
-            See the [README](https://github.com/mhozan/Emognition/blob/master/README.md) for full usage, stimulus folder setup, and report descriptions.
+          body_path: release-notes.md
           draft: false
           prerelease: ${{ contains(github.ref_name, 'alpha') || contains(github.ref_name, 'beta') || contains(github.ref_name, 'dev') }}
           files: |
-            artifacts/emognition-linux-x86_64/emognition-linux-x86_64.zip
             artifacts/emognition-windows-x86_64/emognition-windows-x86_64.zip
             artifacts/emognition-macos-arm64/emognition-macos-arm64.zip
+            artifacts/emognition-linux-x86_64/emognition-linux-x86_64.zip
             artifacts/SHA256SUMS.txt

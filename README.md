@@ -64,7 +64,11 @@ and homage.
 
 ## Installation
 
-**Linux — quick start (pre-built)**
+Ready-to-run downloads for Windows, Mac (Apple silicon) and Linux are on the
+[**Releases page**](https://github.com/mhozan/Emognition/releases); what changed
+in each version is in [CHANGELOG.md](CHANGELOG.md).
+
+**Linux — quick start (pre-built; x86_64, Ubuntu 22.04 or newer)**
 
 ```bash
 # Download emognition-linux-x86_64.zip from the Releases page, then:
@@ -121,23 +125,29 @@ an Intel Mac, run from source (below).
    **`emognition-macos-arm64.zip`**.
 
 2. **Double-click the zip** in your `Downloads` folder. This creates an
-   **`emognition`** folder next to it.
+   **`emognition`** folder next to it (Safari may already have unpacked it).
 
 3. **Clear the download flag (once).** The app isn't signed with an Apple
    developer certificate yet, so macOS won't open a downloaded copy. Open
-   **Terminal** (press `Cmd + Space`, type `Terminal`, press Return) and run:
+   **Terminal** (press `Cmd + Space`, type `Terminal`, press Return) and paste:
    ```bash
-   xattr -dr com.apple.quarantine ~/Downloads/emognition
+   for d in ~/Downloads/emognition*; do xattr -dr com.apple.quarantine "$d"; done
    ```
-   (If you moved the folder, drag it onto the Terminal window instead of typing
-   the path.)
+   It clears every `emognition…` folder and zip in Downloads.
 
-4. **Start it** — in Terminal:
-   ```bash
-   ~/Downloads/emognition/emognition
-   ```
-   or double-click **`emognition`** inside the folder. A Terminal window opens
+4. **Double-click `emognition`** inside the folder. A Terminal window opens
    beside the app; leave it open while you work.
+
+> **"Apple could not verify 'emognition' is free of malware"?** Click **Done**,
+> not *Move to Trash*, and do step 3: the flag is still on. *Open Anyway* in
+> System Settings doesn't help here, because macOS would ask again for each of
+> the app's several hundred libraries.
+
+> **"Operation not permitted" in Terminal?** Let Terminal into your Downloads
+> folder: **System Settings → Privacy & Security → Files and Folders →
+> Terminal → Downloads Folder**, then paste the line again. (If you moved the
+> `emognition` folder elsewhere, type `xattr -dr com.apple.quarantine ` and drag
+> the folder onto the Terminal window to fill in its path.)
 
 > **Slow first launch** — the first start can take a little while as macOS
 > checks the bundle. Later launches are faster.
