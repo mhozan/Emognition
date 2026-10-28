@@ -17,6 +17,14 @@
 # and write the report's "install" list to requirements.txt. The constraint
 # keeps every pin that still fits, so only what has to change does.
 #
+# Then put back the hand-written macOS lines (sys_platform == "darwin"); a
+# report made on Linux can't know them. macOS takes psychtoolbox 3.0.22.2:
+# 3.0.19.14 has no arm64 wheel, and building it from source on Apple Silicon
+# fails. It also takes PyObjC (pyobjc-core, pyobjc-framework-Cocoa and
+# -Quartz): PsychoPy's window backend imports AppKit there, and psychopy.iohub
+# imports objc. Linux and Windows keep 3.0.19.14, the version their timing was
+# verified with. tests/test_packaging.py checks all of this.
+#
 # Why --no-deps: requirements.txt is the complete list, generated on Linux and
 # used on every OS. PsychoPy's metadata adds platform extras we leave out on
 # purpose -- pyglet 1.4.11 on Windows (we use 1.5.27 everywhere), pywinhook,

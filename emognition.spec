@@ -13,18 +13,19 @@
 #     pyinstaller emognition.spec
 # Result: dist/emognition/emognition   (run with --selfcheck to verify the bundle)
 
+import sys
+
 from PyInstaller.utils.hooks import collect_all, collect_submodules
 
 datas = []
 binaries = []
 hiddenimports = []
 
-# Note: the macOS Intel psychtoolbox wheel is "delocated" — it ships libusb in
-# psychtoolbox/.dylibs/ and statically links PortAudio — so collect_all() below
-# pulls everything PsychHID/PsychPortAudio need and PyInstaller rewrites their
-# @loader_path references automatically.  No manual dylib bundling is required.
-# (The pinned psychtoolbox 3.0.19.14 has no arm64 wheel, so Apple Silicon runs
-#  the Intel build under Rosetta 2; 3.0.22+ ships universal2 wheels.)
+# Note: the macOS psychtoolbox wheel (3.0.22.2, universal2: Apple Silicon and
+# Intel) is "delocated" — it ships libusb in psychtoolbox/.dylibs/ and links
+# PortAudio statically — so collect_all() below pulls everything PsychHID and
+# PsychPortAudio need, and PyInstaller rewrites their @loader_path references.
+# No manual dylib bundling is required.
 
 # Packages PyInstaller can't figure out on its own -> grab everything.
 for pkg in (
@@ -42,6 +43,17 @@ for pkg in (
     datas += pkg_datas
     binaries += pkg_binaries
     hiddenimports += pkg_hidden
+
+# macOS: PsychoPy's window backend imports AppKit as it loads, and
+# psychopy.iohub (reached from core.quit()) imports objc -- that's PyObjC. Its
+# framework wrappers load lazily, which static analysis only partly follows, so
+# take them whole.
+if sys.platform == "darwin":
+    for pkg in ("objc", "Foundation", "CoreFoundation", "AppKit", "Quartz"):
+        pkg_datas, pkg_binaries, pkg_hidden = collect_all(pkg)
+        datas += pkg_datas
+        binaries += pkg_binaries
+        hiddenimports += pkg_hidden
 
 # The audio backend we actually use is imported lazily by PsychoPy -- since
 # 2026.2 by name, from prefs.hardware["audioLib"], for both the Sound and the

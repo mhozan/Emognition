@@ -7,6 +7,10 @@
 #  on Windows, where we use the same pyglet 1.5.27 as everywhere else -- and
 #  without --no-deps pip would try to reconcile them. See requirements.in.)
 #
+# The lines marked sys_platform == "darwin" are written by hand (the generator
+# runs on Linux): macOS takes psychtoolbox 3.0.22.2, the first with an Apple
+# Silicon wheel, and the PyObjC packages PsychoPy imports there.
+#
 annotated-types==0.7.0
 arabic-reshaper==3.0.1
 astunparse==1.6.3
@@ -53,7 +57,8 @@ pillow==11.3.0
 proglog==0.1.12
 psutil==7.2.2
 psychopy==2026.2.5
-psychtoolbox==3.0.19.14
+psychtoolbox==3.0.19.14 ; sys_platform != "darwin"
+psychtoolbox==3.0.22.2 ; sys_platform == "darwin"
 py-cpuinfo==9.0.0
 pyarrow==24.0.0
 pycparser==3.0
@@ -61,6 +66,9 @@ pydantic==2.13.4
 pydantic_core==2.46.4
 pyglet==1.5.27
 pyloudnorm==0.2.0
+pyobjc-core==12.2.2 ; sys_platform == "darwin"
+pyobjc-framework-Cocoa==12.2.2 ; sys_platform == "darwin"
+pyobjc-framework-Quartz==12.2.2 ; sys_platform == "darwin"
 pyparallel==0.2.2
 pyparsing==3.3.2
 PyQt6==6.11.0

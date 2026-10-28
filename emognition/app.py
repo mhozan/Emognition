@@ -52,6 +52,10 @@ def _selfcheck() -> int:
     import psychtoolbox  # noqa: F401
     from psychopy import sound, visual  # noqa: F401  (visual: import check only)
     from psychopy.hardware import keyboard  # noqa: F401
+    if sys.platform == "darwin":
+        # The window backend imports AppKit (PyObjC) as it loads: a bundle
+        # without PyObjC would only fail once the participant's window opens.
+        import psychopy.visual.backends.pygletbackend  # noqa: F401
 
     from .core import scan_audio_dir  # noqa: F401
     from .core.backgrounds import CALM_GRADIENT, list_pictures
