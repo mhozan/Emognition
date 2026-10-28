@@ -22,14 +22,14 @@ def _parse(settings: ExperimentSettings):
 
 def test_default_argv_is_minimal():
     argv = ExperimentSettings().to_argv()
-    assert argv[:2] == ["--participant=Participant01", "--experimenter=APPstaff"]
+    assert argv[:2] == ["--participant=sub-001", "--experimenter=APPstaff"]
     # defaults: shuffle on, no replays/viz/fullscreen, full emotion set, default background
     for flag in ("--no-shuffle", "--allow-replays", "--amp-visualizer", "--fullscreen",
                  "--emotions", "--audio-dir", "--save-dir", "--background",
                  "--background-every", "--no-background-shuffle"):
         assert not any(a == flag or a.startswith(flag + "=") for a in argv)
     args = _parse(ExperimentSettings())
-    assert args.participant == "Participant01" and args.caption == "none"
+    assert args.participant == "sub-001" and args.caption == "none"
     assert args.background == "default" and args.background_every == 5 and args.background_shuffle
 
 
@@ -79,6 +79,28 @@ def test_old_settings_files_get_background_defaults(tmp_path):
     s = ExperimentSettings.load(str(p))
     assert (s.background, s.background_every, s.background_shuffle) == ("default", 5, True)
     assert s.retry_until_correct is False
+
+
+def test_replay_limit_reaches_the_command_line():
+    args = _parse(ExperimentSettings(allow_replays=True, max_replays=2))
+    assert args.allow_replays and args.max_replays == 2
+    args = _parse(ExperimentSettings(allow_replays=True))                 # 0 = no limit
+    assert args.allow_replays and args.max_replays == 0
+    assert _parse(ExperimentSettings(max_replays=3)).allow_replays is False  # off means off
+
+
+def test_participant_ids_are_bids_style_and_never_collide(tmp_path):
+    from emognition.config import amend_participant_id, has_reports, next_participant_id
+
+    assert next_participant_id(str(tmp_path)) == "sub-001"
+    for name in ("sub-001_20261027_101500.csv", "sub-003_20261027_101600.csv",
+                 "sub-004_20261027_101700.partial.jsonl", "jane_20261027_101800.csv",
+                 "sub-003_20261027_101600_confusion.csv"):
+        (tmp_path / name).write_text("x")
+    assert next_participant_id(str(tmp_path)) == "sub-005"      # after the highest, logs too
+    assert amend_participant_id("sub-003", str(tmp_path)) == "sub-005"
+    assert amend_participant_id("jane", str(tmp_path)) == "jane2"
+    assert has_reports("sub-003", str(tmp_path)) and not has_reports("sub-004", str(tmp_path))
 
 
 def test_pacing_options_reach_the_command_line():

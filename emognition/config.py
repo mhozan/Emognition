@@ -32,6 +32,13 @@ ALL_EMOTION_TAGS: tuple[str, ...] = ("hap", "sca", "neu", "sad", "ang")
 # Default playback volume (the experimenter sets this; not a participant control).
 DEFAULT_VOLUME = 0.8
 
+# Participant IDs are pre-filled BIDS style: sub-001, sub-002, ...
+ID_PREFIX = "sub-"
+ID_DIGITS = 3
+DEFAULT_PARTICIPANT = f"{ID_PREFIX}{1:0{ID_DIGITS}d}"
+# The parts of a session file name: "<participant>_<YYYYmmdd>_<HHMMSS>".
+_STAMP = r"_\d{8}_\d{6}"
+
 
 def participant_file_stem(participant: str) -> str:
     """The participant label as used in report file names: letters, digits, - and _.
@@ -53,6 +60,57 @@ def session_file_pattern(participant: str, suffix: str) -> re.Pattern[str]:
                       + re.escape(suffix))
 
 
+def _session_files(folder: str) -> list[str]:
+    """Report CSVs and autosave logs in *folder* (none if it can't be listed)."""
+    try:
+        return [n for n in os.listdir(folder) if n.endswith((".csv", ".partial.jsonl"))]
+    except OSError:
+        return []
+
+
+def participants_in(folder: str) -> set[str]:
+    """File stems of every participant with a session (finished or not) in *folder*."""
+    found = set()
+    for name in _session_files(folder):
+        m = re.match(r"(.+?)" + _STAMP + r"(?:\.csv|\.partial\.jsonl)$", name)
+        if m:
+            found.add(m.group(1))
+    return found
+
+
+def has_reports(participant: str, folder: str) -> bool:
+    """True if *participant* already has a finished session's report in *folder*."""
+    mine = session_file_pattern(participant, ".csv")
+    return any(mine.fullmatch(n) for n in _session_files(folder))
+
+
+def next_participant_id(folder: str) -> str:
+    """The next free BIDS-style ID (``sub-001``, ``sub-002``, ...) for *folder*.
+
+    One more than the highest ``sub-NNN`` with a report or an autosave log there,
+    so a gap left by a deleted file isn't refilled with someone else.
+    """
+    numbers = [int(m.group(1)) for stem in participants_in(folder)
+               if (m := re.fullmatch(re.escape(ID_PREFIX) + r"(\d+)", stem))]
+    return f"{ID_PREFIX}{max(numbers, default=0) + 1:0{ID_DIGITS}d}"
+
+
+def amend_participant_id(participant: str, folder: str) -> str:
+    """*participant*, changed just enough to be unused in *folder*.
+
+    A trailing number moves to the next free one (``sub-003`` -> ``sub-005`` if
+    004 is taken too); any other ID gets a number appended (``jane`` -> ``jane2``).
+    Both keep a BIDS label's letters and digits, with no extra separators.
+    """
+    taken = participants_in(folder)
+    m = re.fullmatch(r"(.*?)(\d+)", participant)
+    base, start, width = (m.group(1), int(m.group(2)) + 1, len(m.group(2))) if m else (participant, 2, 0)
+    n = start
+    while participant_file_stem(candidate := f"{base}{n:0{width}d}") in taken:
+        n += 1
+    return candidate
+
+
 def resume_argv(log_path: str, screen: int = 0, fullscreen: bool = False) -> list[str]:
     """CLI arguments to resume an interrupted session.
 
@@ -71,7 +129,7 @@ def resume_argv(log_path: str, screen: int = 0, fullscreen: bool = False) -> lis
 class ExperimentSettings:
     """Everything the experimenter sets before a Test session."""
 
-    participant: str = "Participant01"
+    participant: str = DEFAULT_PARTICIPANT
     experimenter: str = "APPstaff"
     audio_dir: str = ""          # "" -> use the bundled stimuli
     save_dir: str = ""           # "" -> default (./save_location)
@@ -80,6 +138,9 @@ class ExperimentSettings:
     screen: int = 0              # display index for the experiment window
     shuffle: bool = True
     allow_replays: bool = False
+    # Replays allowed per trial when allow_replays is on (0 = no limit). The setup
+    # window starts it at the number of selected emotions.
+    max_replays: int = 0
     amp_visualizer: bool = False
     volume: float = DEFAULT_VOLUME
     emotions: list[str] = field(default_factory=lambda: list(ALL_EMOTION_TAGS))
@@ -125,6 +186,8 @@ class ExperimentSettings:
             argv.append("--no-shuffle")
         if self.allow_replays:
             argv.append("--allow-replays")
+            if self.max_replays > 0:
+                argv += ["--max-replays", str(self.max_replays)]
         if self.amp_visualizer:
             argv.append("--amp-visualizer")
         if self.volume != DEFAULT_VOLUME:

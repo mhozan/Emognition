@@ -21,12 +21,13 @@ from __future__ import annotations
 
 import io
 import json
+import math
 import os
 import sys
 from dataclasses import replace
 
-from PyQt6.QtCore import QProcess, Qt
-from PyQt6.QtGui import QColor, QPainter, QPixmap
+from PyQt6.QtCore import QProcess, QSize, Qt, QTimer
+from PyQt6.QtGui import QColor, QIcon, QPainter, QPixmap
 from PyQt6.QtWidgets import (
     QApplication,
     QCheckBox,
@@ -36,7 +37,9 @@ from PyQt6.QtWidgets import (
     QFrame,
     QGraphicsDropShadowEffect,
     QGridLayout,
+    QGroupBox,
     QHBoxLayout,
+    QInputDialog,
     QLabel,
     QLineEdit,
     QMessageBox,
@@ -46,7 +49,14 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from ..config import ALL_EMOTION_TAGS, ExperimentSettings, resume_argv, session_file_pattern
+from ..config import (
+    ALL_EMOTION_TAGS,
+    ExperimentSettings,
+    amend_participant_id,
+    has_reports,
+    next_participant_id,
+    resume_argv,
+)
 from ..core.backgrounds import (
     CALM_GRADIENT,
     DEFAULT_EVERY_N,
@@ -81,6 +91,7 @@ _EMOTION_LABELS = {"hap": "Happy", "sca": "Scared", "neu": "Neutral",
 # Background preview size (16:9) and the participant window's plain colour
 # (PsychoPy rgb -0.3 -> 89/255), shown for "None (plain)".
 _THUMB_SIZE = (160, 90)
+_ICON_SIZE = (48, 27)        # the small previews in the Background list
 _PLAIN_RGB = (89, 89, 89)
 # What "Add picture..." offers (patterns repeated in upper case for case-sensitive
 # file dialogs on Linux).
@@ -98,6 +109,10 @@ QLabel#subtitle { color: #5a5a7a; }
 QFrame#card { background: #ffffff; border-radius: 14px; }
 QLabel#preview { border: 1px solid #c4c4d6; border-radius: 6px; }
 QCheckBox { background: transparent; }
+QGroupBox { background: #fbfbfe; border: 1px solid #e3e3ef; border-radius: 10px;
+            margin-top: 12px; padding-top: 6px; }
+QGroupBox::title { subcontrol-origin: margin; left: 12px; padding: 0 5px;
+                   color: #5a4bd0; font-weight: 700; }
 QPushButton {
     background: #6c5ce7; color: #ffffff; border: none;
     border-radius: 9px; padding: 9px 18px; font-weight: 700;
@@ -109,6 +124,7 @@ QPushButton#browse {
     background: #ececf5; color: #3a3a5a; font-weight: 600; padding: 7px 12px;
 }
 QPushButton#browse:hover { background: #dedeee; }
+QPushButton#browse:disabled { background: #f2f2f7; color: #a3a3b8; }
 """
 
 
@@ -119,27 +135,27 @@ def default_settings_path() -> str:
     return os.path.join(base, "settings.json")
 
 
-def _thumbnail_image(value: str):
+def _thumbnail_image(value: str, size: tuple[int, int] = _THUMB_SIZE):
     """A small PIL preview of a background setting (Pillow only; no PsychoPy)."""
     from PIL import Image
 
     from ..imaging import render_background
 
     if value == SPEC_NONE:
-        return Image.new("RGB", _THUMB_SIZE, _PLAIN_RGB)
+        return Image.new("RGB", size, _PLAIN_RGB)
     if value == SPEC_SLIDESHOW:
         # Side-by-side strips of the first few pictures say "these take turns".
         sources = list_pictures(*background_folders())[:3] or [CALM_GRADIENT]
-        canvas = Image.new("RGB", _THUMB_SIZE)
-        strip = _THUMB_SIZE[0] // len(sources)
+        canvas = Image.new("RGB", size)
+        strip = size[0] // len(sources)
         for i, source in enumerate(sources):
-            image, _problem = render_background(source, _THUMB_SIZE)
+            image, _problem = render_background(source, size)
             left = i * strip
-            right = _THUMB_SIZE[0] if i == len(sources) - 1 else left + strip
-            canvas.paste(image.crop((left, 0, right, _THUMB_SIZE[1])), (left, 0))
+            right = size[0] if i == len(sources) - 1 else left + strip
+            canvas.paste(image.crop((left, 0, right, size[1])), (left, 0))
         return canvas
     source = CALM_GRADIENT if value == SPEC_DEFAULT else value
-    image, _problem = render_background(source, _THUMB_SIZE)
+    image, _problem = render_background(source, size)
     return image
 
 
@@ -159,6 +175,118 @@ def _unless_default(path: str, default: str) -> str:
     return path
 
 
+# Tooltips, written for the experimenter -- a technician, an SLP or an audiologist:
+# what each setting does, what it changes in the data, and its default.
+_TIPS = {
+    "participant": (
+        "Pseudonymous participant label, BIDS style (sub-001, sub-002, ...). Pre-filled with the "
+        "next free number in the save folder; type your own if your study uses another scheme. "
+        "It names every report file (letters, digits, '-' and '_' are kept)."),
+    "new_id": "Fill in the next free BIDS-style ID (sub-NNN) for the save folder.",
+    "experimenter": "Who runs the session. Recorded in every report and in the session's .json.",
+    "mode": (
+        "Test: no feedback; scored (confusion matrix, % correct, Wagner's Hu, Cohen's kappa).\n"
+        "Passive training: each clip plays, then the correct face is shown; nothing is answered.\n"
+        "Active training: the participant answers, then sees the correct face (green) and, if "
+        "wrong, their choice (orange)."),
+    "practice": (
+        "Training modes: N warm-up trials, answered with feedback, before the session. Picked "
+        "from the clips (one per emotion before any repeats) with the session's seed. Never "
+        "scored; kept in the session's .json. 'off' = none."),
+    "retry": (
+        "Active training: a wrong answer greys out that face and asks again until the right one "
+        "is chosen (the original's behaviour). Only the first answer is scored and timed; every "
+        "answer is kept in the per-trial CSV ('attempts', 'choices')."),
+    "emotions": (
+        "The emotions tested: only their clips are presented and their faces shown, renumbered "
+        "1..N. The confusion matrix, chance level (1/N) and kappa depend on this set."),
+    "shuffle": (
+        "Random presentation order, reproducible from the seed recorded in every report. "
+        "Unticked: folder order."),
+    "max_run": (
+        "Constrained shuffle: never more than N clips of the same emotion in a row (long runs "
+        "invite response strategies). 'off' = a plain shuffle."),
+    "allow_replays": (
+        "Show a replay button (and the R key) once each clip has ended. A replay restarts the RT "
+        "clock, so the RT counts from the last playback; the number of replays is saved per trial "
+        "('replays')."),
+    "max_replays": (
+        "Replays allowed per trial. Starts at the number of selected emotions (2 for happy vs "
+        "sad) and follows it until you change it; 'no limit' allows any number. The button "
+        "disappears once a trial's replays are used up."),
+    "caption": "The word under each face: none (the original default), English, Spanish or Traditional Chinese.",
+    "background": (
+        "What the participant sees behind the faces. Pictures change only between trials and are "
+        "decoded in advance, so they never affect audio timing or RTs. Bright pictures are dimmed "
+        "so the white text stays readable."),
+    "add_picture": (
+        "Copy your own pictures into {folder}: turned upright, resized, converted to sRGB, and "
+        "stripped of metadata such as phone GPS."),
+    "bg_every": "Slideshow: each picture stays for this many trials (1-20).",
+    "bg_shuffle": "Slideshow: random picture order (from the session's seed, so it is reproducible).",
+    "fullscreen": (
+        "Run the participant window full screen. With a second display connected, the session "
+        "opens full screen there automatically, and this window stays on yours."),
+    "amp_visualizer": "A small light that follows each clip's RMS envelope while it plays: a visual cue that sound is on.",
+    "next_button": (
+        "After each answer the participant clicks 'Ready for the next one?' (or you press Space) "
+        "to hear the next clip: the original's Extra button. Untimed."),
+    "stars_every": "A star every N trials, filling a row under the progress bar. Never tied to correctness. 'off' = no stars.",
+    "break_every": "A 'Time for a short break!' screen every N trials; it waits for Continue. 'off' = no breaks.",
+    "audio_dir": (
+        "Folder of .wav stimuli, named 01_ang_f.wav (legacy) or speaker-01_emotion-angry_sex-f.wav "
+        "(BIDS). Use Calibration... first to inspect the names, equalise loudness and trim silence."),
+    "volume": (
+        "Digital gain applied to every clip, 0-1 (0.80 = -1.9 dB). Set the presentation level "
+        "with the SPL tone (Calibration...) at this same value, then leave it -- and the system "
+        "volume -- unchanged."),
+    "save_dir": "Where the reports (CSV, Excel, HTML, PDF, JSON) and the autosave of unfinished sessions go.",
+    "calibration": "Inspect and rename the stimuli, equalise loudness, trim silence, and play the SPL calibration tone.",
+    "resume": (
+        "Finish a session that stopped early (a crash, a power cut, the window closed, or Esc then "
+        "Y): it continues at the next trial with the same settings and order, and its reports "
+        "cover the whole session."),
+    "proceed": "Save these settings and start the session in its own window.",
+}
+
+
+class _ReplayLimitBox(QSpinBox):
+    """Replays per trial: 1 to 10, then "no limit" (stored as 0)."""
+
+    NO_LIMIT = 11
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.setRange(1, self.NO_LIMIT)
+        self.lineEdit().setReadOnly(True)       # arrows and the wheel only: no stray typing
+
+    def textFromValue(self, value: int) -> str:  # noqa: N802 (Qt signature)
+        return "no limit" if value == self.NO_LIMIT else str(value)
+
+    @property
+    def limit(self) -> int:
+        return 0 if self.value() == self.NO_LIMIT else self.value()
+
+    def set_limit(self, limit: int) -> None:
+        self.setValue(self.NO_LIMIT if limit <= 0 else min(limit, self.NO_LIMIT - 1))
+
+
+def _row(*items, stretch: bool = True) -> QWidget:
+    """Widgets (and str labels) side by side, as one widget a layout can hide."""
+    box = QHBoxLayout()
+    box.setContentsMargins(0, 0, 0, 0)
+    for item in items:
+        if isinstance(item, int):
+            box.addSpacing(item)
+        else:
+            box.addWidget(QLabel(item) if isinstance(item, str) else item)
+    if stretch:
+        box.addStretch(1)
+    widget = QWidget()
+    widget.setLayout(box)
+    return widget
+
+
 class ConfigWindow(QWidget):
     """Setup form over the BTNRH background; launches sessions as subprocesses."""
 
@@ -171,9 +299,13 @@ class ConfigWindow(QWidget):
         self._calib: "CalibrationWindow | None" = None
         self._log_fh = None   # open file handle for the session log
         self._thumbs: dict[str, QPixmap] = {}   # background previews, by setting value
+        self._icon_queue: list[int] = []        # background items still waiting for an icon
+        self._auto_id = ""                      # the ID this window filled in itself
+        self._replays_auto = True               # the replay limit follows the emotion count
+        self._notice_unfinished = False         # the status line is the "unfinished" notice
         self.setWindowTitle("Emognition - Setup")
         self.setStyleSheet(_STYLE)
-        self.resize(780, 700)
+        self.resize(1080, 780)
         self._build()
         notice = ""
         if os.path.exists(self.settings_path):
@@ -190,9 +322,12 @@ class ConfigWindow(QWidget):
             self.audio_dir.setText(_bundled_audio_dir())
         if not self.save_dir.text():
             self.save_dir.setText(_default_save_dir())
+        # A new session is usually a new participant: start from the next free ID.
+        self._fill_next_id()
         if notice:
-            self.status.setStyleSheet("color:#c62828;")
-            self.status.setText(notice)
+            self._say(notice, "#c62828")
+        self._refresh_resume(announce=not notice)
+        QTimer.singleShot(0, self._start_background_icons)    # after the window is up
 
     # -- layout ----------------------------------------------------------
 
@@ -210,151 +345,216 @@ class ConfigWindow(QWidget):
         frame.setGraphicsEffect(shadow)
         return frame
 
+    @staticmethod
+    def _group(title: str) -> tuple[QGroupBox, QGridLayout]:
+        box = QGroupBox(title)
+        grid = QGridLayout(box)
+        grid.setHorizontalSpacing(10)
+        grid.setVerticalSpacing(8)
+        grid.setContentsMargins(12, 18, 12, 12)
+        return box, grid
+
+    @staticmethod
+    def _tip(tip: str, *widgets: QWidget) -> None:
+        for widget in widgets:
+            widget.setToolTip(tip)
+
+    def _labelled(self, grid: QGridLayout, row: int, text: str, widget: QWidget, tip: str,
+                  extra: QWidget | None = None) -> None:
+        """'Label  [widget] [extra]' on one grid row, the tooltip on both."""
+        label = QLabel(text)
+        self._tip(tip, label, widget)
+        grid.addWidget(label, row, 0)
+        grid.addWidget(widget, row, 1, 1, 1 if extra is not None else 2)
+        if extra is not None:
+            grid.addWidget(extra, row, 2)
+
     def _build(self) -> None:
+        self._make_widgets()
+        left, right = QVBoxLayout(), QVBoxLayout()
+        left.setSpacing(12)
+        right.setSpacing(12)
+
+        box, g = self._group("Participant")
+        self._labelled(g, 0, "Participant ID", self.participant, _TIPS["participant"], self.new_id_btn)
+        self._labelled(g, 1, "Experimenter", self.experimenter, _TIPS["experimenter"])
+        left.addWidget(box)
+
+        box, g = self._group("Session")
+        self._labelled(g, 0, "Mode", self.mode, _TIPS["mode"])
+        g.addWidget(self.practice_row, 1, 0, 1, 3)
+        g.addWidget(self.retry, 2, 0, 1, 3)
+        emotions = QLabel("Emotions")
+        self._tip(_TIPS["emotions"], emotions, *self.emotion_boxes.values())
+        g.addWidget(emotions, 3, 0, Qt.AlignmentFlag.AlignTop)
+        faces = QGridLayout()
+        faces.setContentsMargins(0, 0, 0, 0)
+        for i, box_ in enumerate(self.emotion_boxes.values()):
+            faces.addWidget(box_, i // 3, i % 3)
+        holder = QWidget(); holder.setLayout(faces)
+        g.addWidget(holder, 3, 1, 1, 2)
+        left.addWidget(box)
+
+        box, g = self._group("Order and replays")
+        g.addWidget(_row(self.shuffle, 16, self.max_run_label, self.max_run,
+                         "of one emotion in a row"), 0, 0, 1, 3)
+        g.addWidget(_row(self.allow_replays, 16, self.replay_limit_row), 1, 0, 1, 3)
+        left.addWidget(box)
+        left.addStretch(1)
+
+        box, g = self._group("Participant screen")
+        self._labelled(g, 0, "Caption", self.caption, _TIPS["caption"])
+        self._labelled(g, 1, "Background", self.background, _TIPS["background"])
+        g.addWidget(_row(self.bg_preview, 12, self.add_picture), 2, 1, 1, 2)
+        g.addWidget(self.slideshow_row, 3, 0, 1, 3)
+        g.addWidget(_row(self.fullscreen, 16, self.amp_visualizer), 4, 0, 1, 3)
+        right.addWidget(box)
+
+        box, g = self._group("Engagement and pacing")
+        g.addWidget(self.next_button, 0, 0, 1, 3)
+        g.addWidget(_row(self.stars_label, self.stars_every, "trials", 16,
+                         self.break_label, self.break_every, "trials"), 1, 0, 1, 3)
+        right.addWidget(box)
+
+        box, g = self._group("Audio and files")
+        self._labelled(g, 0, "Audio folder", self.audio_dir, _TIPS["audio_dir"],
+                       self._browse_button(self.audio_dir))
+        self._labelled(g, 1, "Volume", _row(self.volume, 8, self.volume_db), _TIPS["volume"])
+        self._labelled(g, 2, "Save folder", self.save_dir, _TIPS["save_dir"],
+                       self._browse_button(self.save_dir, on_change=self._on_save_dir_changed))
+        right.addWidget(box)
+        right.addStretch(1)
+
+        title = QLabel("Speech Emotion Recognition")
+        title.setObjectName("title")
+        subtitle = QLabel("Experimenter setup -- hover over any setting for details")
+        subtitle.setObjectName("subtitle")
+        columns = QHBoxLayout()
+        columns.setSpacing(16)
+        columns.addLayout(left, 1)
+        columns.addLayout(right, 1)
+        footer = QHBoxLayout()
+        footer.addWidget(self.status, 1)
+        for button in (self.calib_btn, self.resume_btn, self.proceed_btn):
+            footer.addWidget(button)
+
+        card = QVBoxLayout()
+        card.setContentsMargins(22, 20, 22, 18)
+        card.setSpacing(10)
+        card.addWidget(title)
+        card.addWidget(subtitle)
+        card.addLayout(columns)
+        card.addLayout(footer)
+        panel = self._panel(); panel.setLayout(card)
+        outer = QVBoxLayout(self)
+        outer.addStretch(1)
+        row = QHBoxLayout(); row.addStretch(1); row.addWidget(panel); row.addStretch(1)
+        outer.addLayout(row)
+        outer.addStretch(1)
+
+        self.mode.currentTextChanged.connect(self._on_mode_changed)
+        self._on_mode_changed(self.mode.currentText())
+        self.allow_replays.toggled.connect(self._on_replays_toggled)
+        self.max_replays.valueChanged.connect(self._on_replay_limit_edited)
+        for box_ in self.emotion_boxes.values():
+            box_.toggled.connect(self._on_emotions_changed)
+        self._on_replays_toggled(self.allow_replays.isChecked())
+        self.save_dir.editingFinished.connect(self._on_save_dir_changed)
+
+    def _make_widgets(self) -> None:
+        """Every control, with its tooltip; :meth:`_build` lays them out."""
+        tips = _TIPS
         self.participant = QLineEdit()
+        self.new_id_btn = QPushButton("New ID")
+        self.new_id_btn.setObjectName("browse")
+        self.new_id_btn.clicked.connect(self._fill_next_id)
+        self._tip(tips["new_id"], self.new_id_btn)
         self.experimenter = QLineEdit()
         self.audio_dir = QLineEdit()
         self.save_dir = QLineEdit()
         self.caption = QComboBox(); self.caption.addItems(_CAPTIONS)
         self.mode = QComboBox()
         self.mode.addItems([_MODE_LABELS[m] for m in _MODES])
-        # Optional pacing between trials (all off by default).
-        self.next_button = QCheckBox("Next button")
-        self.next_button.setToolTip(
-            "Between trials, the participant clicks 'Ready for the next one?' to hear the next "
-            "clip (the original's Extra button).")
-        self.stars_every = self._every_spinbox("A star every N trials, filling a row under "
-                                               "the progress bar. Never tied to correctness.")
-        self.break_every = self._every_spinbox("A 'Time for a short break!' screen every N "
-                                               "trials; the participant clicks Continue.")
-        self.practice = self._every_spinbox("Practice trials with feedback before the test, "
-                                            "picked from the clips (one per emotion first). "
-                                            "They are never scored.", maximum=20)
-        self.max_run = self._every_spinbox("Shuffle so that no more than this many clips of "
-                                           "one emotion come in a row.", maximum=10)
+
+        self.practice = self._every_spinbox(tips["practice"], maximum=20)
+        practice_label = QLabel("Practice trials")
+        self._tip(tips["practice"], practice_label)
+        self.practice_row = _row(practice_label, self.practice, "before the session (not scored)")
         self.retry = QCheckBox("Retry until correct")
-        self.retry.setToolTip(
-            "Active training: a wrong answer greys out that face and asks again until "
-            "the right one is chosen, as in the original. Only the first answer is scored.")
-        self.fullscreen = QCheckBox("Full screen")
-        self.shuffle = QCheckBox("Shuffle order"); self.shuffle.setChecked(True)
-        self.allow_replays = QCheckBox("Allow replays")
-        self.amp_visualizer = QCheckBox("Amplitude visualizer")
-        self.emotion_boxes = {
-            tag: QCheckBox(_EMOTION_LABELS[tag]) for tag in ALL_EMOTION_TAGS
-        }
+        self._tip(tips["retry"], self.retry)
+
+        self.emotion_boxes = {tag: QCheckBox(_EMOTION_LABELS[tag]) for tag in ALL_EMOTION_TAGS}
         for box in self.emotion_boxes.values():
             box.setChecked(True)
+        self.shuffle = QCheckBox("Shuffle order"); self.shuffle.setChecked(True)
+        self._tip(tips["shuffle"], self.shuffle)
+        self.max_run = self._every_spinbox(tips["max_run"], maximum=10)
+        self.max_run_label = QLabel("At most")
+        self._tip(tips["max_run"], self.max_run_label)
+        self.allow_replays = QCheckBox("Allow replays")
+        self._tip(tips["allow_replays"], self.allow_replays)
+        self.max_replays = _ReplayLimitBox()
+        self._tip(tips["max_replays"], self.max_replays)
+        self.replay_limit_row = _row(self.max_replays, "per trial", stretch=False)
+        self._tip(tips["max_replays"], self.replay_limit_row)
+
+        self._tip(tips["caption"], self.caption)
         # Participant-window background (MATLAB: "Pictures Directory", "Pics
         # Interval [1-20]", "Shuffle images randomly").
         self.background = QComboBox()
+        self.background.setIconSize(QSize(*_ICON_SIZE))
+        self.add_picture = QPushButton("Add picture...")
+        self.add_picture.setObjectName("browse")
+        self._tip(tips["add_picture"].format(folder=user_backgrounds_dir()), self.add_picture)
+        self.add_picture.clicked.connect(self._add_pictures)
         self.bg_preview = QLabel()
         self.bg_preview.setObjectName("preview")
         self.bg_preview.setFixedSize(*_THUMB_SIZE)
         self.bg_every = QSpinBox()
         self.bg_every.setRange(MIN_EVERY_N, MAX_EVERY_N)
         self.bg_every.setValue(DEFAULT_EVERY_N)
-        self.bg_every.setToolTip("Slideshow: show each picture for this many trials.")
         self.bg_shuffle = QCheckBox("Shuffle pictures")
         self.bg_shuffle.setChecked(True)
-        self.bg_shuffle.setToolTip("Slideshow: randomise the order the pictures appear in.")
+        every_label = QLabel("Change picture every")
+        self._tip(tips["bg_every"], every_label, self.bg_every)
+        self._tip(tips["bg_shuffle"], self.bg_shuffle)
+        self.slideshow_row = _row(every_label, self.bg_every, "trials", 16, self.bg_shuffle)
         self._populate_backgrounds(SPEC_DEFAULT)
         self.background.currentIndexChanged.connect(self._on_background_changed)
+        self.fullscreen = QCheckBox("Full screen")
+        self._tip(tips["fullscreen"], self.fullscreen)
+        self.amp_visualizer = QCheckBox("Amplitude visualizer")
+        self._tip(tips["amp_visualizer"], self.amp_visualizer)
 
-        grid = QGridLayout()
-        grid.setVerticalSpacing(8)
-        grid.setContentsMargins(20, 20, 20, 20)
-        r = 0
-        title = QLabel("Speech Emotion Recognition")
-        title.setObjectName("title")
-        grid.addWidget(title, r, 0, 1, 3); r += 1
-        subtitle = QLabel("Experimenter setup")
-        subtitle.setObjectName("subtitle")
-        grid.addWidget(subtitle, r, 0, 1, 3); r += 1
-
-        grid.addWidget(QLabel("Participant"), r, 0); grid.addWidget(self.participant, r, 1, 1, 2); r += 1
-        grid.addWidget(QLabel("Experimenter"), r, 0); grid.addWidget(self.experimenter, r, 1, 1, 2); r += 1
-        grid.addWidget(QLabel("Audio folder"), r, 0); grid.addWidget(self.audio_dir, r, 1)
-        grid.addWidget(self._browse_button(self.audio_dir), r, 2); r += 1
-        grid.addWidget(QLabel("Save folder"), r, 0); grid.addWidget(self.save_dir, r, 1)
-        grid.addWidget(self._browse_button(self.save_dir), r, 2); r += 1
-        grid.addWidget(QLabel("Caption"), r, 0); grid.addWidget(self.caption, r, 1); r += 1
-        grid.addWidget(QLabel("Mode"), r, 0); grid.addWidget(self.mode, r, 1)
-        grid.addWidget(self.retry, r, 2); r += 1
-
-        grid.addWidget(QLabel("Background"), r, 0); grid.addWidget(self.background, r, 1)
-        add_picture = QPushButton("Add picture...")
-        add_picture.setObjectName("browse")
-        add_picture.setToolTip("Copy your own pictures into "
-                               f"{user_backgrounds_dir()} (metadata such as GPS is removed).")
-        add_picture.clicked.connect(self._add_pictures)
-        grid.addWidget(add_picture, r, 2); r += 1
-        bg_row = QHBoxLayout()
-        bg_row.setContentsMargins(0, 0, 0, 0)
-        bg_row.addWidget(self.bg_preview)
-        bg_row.addStretch(1)
-        bg_row.addWidget(QLabel("Change every"))
-        bg_row.addWidget(self.bg_every)
-        bg_row.addWidget(QLabel("trials"))
-        bg_row.addSpacing(12)
-        bg_row.addWidget(self.bg_shuffle)
-        bg_w = QWidget(); bg_w.setLayout(bg_row)
-        grid.addWidget(bg_w, r, 1, 1, 2); r += 1
+        self.next_button = QCheckBox("Next button between trials")
+        self._tip(tips["next_button"], self.next_button)
+        self.stars_every = self._every_spinbox(tips["stars_every"])
+        self.stars_label = QLabel("Star every")
+        self._tip(tips["stars_every"], self.stars_label)
+        self.break_every = self._every_spinbox(tips["break_every"])
+        self.break_label = QLabel("Break every")
+        self._tip(tips["break_every"], self.break_label)
 
         self.volume = QDoubleSpinBox()
         self.volume.setRange(0.0, 1.0); self.volume.setSingleStep(0.05); self.volume.setValue(0.8)
-        opts = QHBoxLayout()
-        for w in (self.fullscreen, self.shuffle, self.allow_replays, self.amp_visualizer):
-            opts.addWidget(w)
-        opts.addWidget(QLabel("Volume")); opts.addWidget(self.volume)
-        opts_w = QWidget(); opts_w.setLayout(opts)
-        grid.addWidget(opts_w, r, 0, 1, 3); r += 1
-
-        pacing = QHBoxLayout()
-        pacing.addWidget(self.next_button)
-        pacing.addSpacing(12)
-        pacing.addWidget(QLabel("Star every")); pacing.addWidget(self.stars_every)
-        pacing.addSpacing(12)
-        pacing.addWidget(QLabel("Break every")); pacing.addWidget(self.break_every)
-        pacing.addWidget(QLabel("trials")); pacing.addStretch(1)
-        pacing_w = QWidget(); pacing_w.setLayout(pacing)
-        grid.addWidget(pacing_w, r, 0, 1, 3); r += 1
-
-        order = QHBoxLayout()
-        order.addWidget(QLabel("Practice trials")); order.addWidget(self.practice)
-        order.addSpacing(12)
-        order.addWidget(QLabel("At most")); order.addWidget(self.max_run)
-        order.addWidget(QLabel("of one emotion in a row")); order.addStretch(1)
-        order_w = QWidget(); order_w.setLayout(order)
-        grid.addWidget(order_w, r, 0, 1, 3); r += 1
-
-        emo = QHBoxLayout()
-        emo.addWidget(QLabel("Emotions:"))
-        for box in self.emotion_boxes.values():
-            emo.addWidget(box)
-        emo_w = QWidget(); emo_w.setLayout(emo)
-        grid.addWidget(emo_w, r, 0, 1, 3); r += 1
+        self.volume.setMinimumWidth(110)
+        self.volume_db = QLabel()                 # the same gain in dB, for the calibration notes
+        self.volume.valueChanged.connect(self._show_volume_db)
+        self._show_volume_db(self.volume.value())
 
         self.status = QLabel("")
-        self.status.setStyleSheet("color:#2e7d32;")
-        grid.addWidget(self.status, r, 0, 1, 1)
-        calib = QPushButton("Calibration...")
-        calib.setObjectName("browse")
-        calib.clicked.connect(self._open_calibration)
-        grid.addWidget(calib, r, 1)
+        self.status.setWordWrap(True)
+        self.calib_btn = QPushButton("Calibration...")
+        self.calib_btn.setObjectName("browse")
+        self.calib_btn.clicked.connect(self._open_calibration)
+        self._tip(tips["calibration"], self.calib_btn)
+        self.resume_btn = QPushButton("Resume...")
+        self.resume_btn.setObjectName("browse")
+        self.resume_btn.clicked.connect(self._resume_dialog)
+        self._tip(tips["resume"], self.resume_btn)
         self.proceed_btn = QPushButton("Proceed")
         self.proceed_btn.clicked.connect(self._on_proceed)
-        # Update the button label (and what applies) when the mode changes.
-        self.mode.currentTextChanged.connect(self._update_proceed_label)
-        self._update_proceed_label(self.mode.currentText())
-        grid.addWidget(self.proceed_btn, r, 2); r += 1
-
-        panel = self._panel(); panel.setLayout(grid)
-        outer = QVBoxLayout(self)
-        outer.addStretch(1)
-        row = QHBoxLayout(); row.addStretch(1); row.addWidget(panel); row.addStretch(1)
-        outer.addLayout(row)
-        outer.addStretch(1)
+        self._tip(tips["proceed"], self.proceed_btn)
 
     @staticmethod
     def _every_spinbox(tooltip: str, maximum: int = 50) -> QSpinBox:
@@ -365,25 +565,167 @@ class ConfigWindow(QWidget):
         box.setToolTip(tooltip)
         return box
 
-    def _update_proceed_label(self, mode_label: str) -> None:
+    def _say(self, text: str, color: str = "#2e7d32") -> None:
+        self.status.setStyleSheet(f"color:{color};")
+        self.status.setText(text)
+        self._notice_unfinished = False
+
+    def _show_volume_db(self, value: float) -> None:
+        db = 20.0 * math.log10(value) if value > 0 else float("-inf")
+        self.volume_db.setText("silent" if value <= 0 else f"{db:+.1f} dB")
+
+    # -- what applies when -----------------------------------------------------
+
+    def _on_mode_changed(self, mode_label: str) -> None:
+        """Proceed's label, and the options of this mode only (the rest are hidden)."""
         labels = {
             "Test": "Proceed to Test",
             "Passive Training": "Start Passive Training",
             "Active Training": "Start Active Training",
         }
         self.proceed_btn.setText(labels.get(mode_label, "Proceed"))
-        self.retry.setEnabled(mode_label == _MODE_LABELS["active"])   # active training only
+        training = mode_label in (_MODE_LABELS["passive"], _MODE_LABELS["active"])
+        self.practice_row.setVisible(training)
+        self.retry.setVisible(mode_label == _MODE_LABELS["active"])
 
-    def _browse_button(self, target: QLineEdit) -> QPushButton:
+    def _n_emotions(self) -> int:
+        return max(1, sum(1 for b in self.emotion_boxes.values() if b.isChecked()))
+
+    def _set_replay_limit(self, limit: int) -> None:
+        """Set the limit without counting it as the experimenter's own choice."""
+        self.max_replays.blockSignals(True)
+        self.max_replays.set_limit(limit)
+        self.max_replays.blockSignals(False)
+
+    def _on_replays_toggled(self, on: bool) -> None:
+        """Ticking Allow replays starts the limit at the number of selected emotions."""
+        self.replay_limit_row.setVisible(on)
+        if on:
+            self._replays_auto = True
+            self._set_replay_limit(self._n_emotions())
+
+    def _on_replay_limit_edited(self, *_args) -> None:
+        self._replays_auto = False              # from now on the experimenter's number stands
+
+    def _on_emotions_changed(self, *_args) -> None:
+        if self.allow_replays.isChecked() and self._replays_auto:
+            self._set_replay_limit(self._n_emotions())
+
+    # -- participant IDs and unfinished sessions -------------------------------
+
+    def _save_folder(self) -> str:
+        return self.save_dir.text().strip() or _default_save_dir()
+
+    def _fill_next_id(self) -> None:
+        """Put the save folder's next free BIDS-style ID in the field."""
+        self._auto_id = next_participant_id(self._save_folder())
+        self.participant.setText(self._auto_id)
+
+    def _on_save_dir_changed(self) -> None:
+        """A new save folder has its own IDs and unfinished sessions."""
+        if self.participant.text().strip() in ("", self._auto_id):
+            self._fill_next_id()                # only replace an ID the window chose
+        self._refresh_resume()
+
+    def _interrupted_sessions(self) -> list[tuple[str, str, dict]]:
+        """(label, log path, header) for each unfinished session in the save folder."""
+        sessions = []
+        for path in find_interrupted(self._save_folder()):
+            try:
+                header, done = read_session_log(path)
+            except (OSError, ValueError):
+                continue
+            total = len(header.get("trial_order") or [])
+            started = str(header.get("started_at", ""))[:16].replace("T", " ")
+            mode = _MODE_LABELS.get((header.get("settings") or {}).get("mode", "test"), "Test")
+            label = f"{header.get('participant', '?')}  -  {mode}, started {started}  -  {len(done)} of {total} trials done"
+            sessions.append((label, path, header))
+        return sessions
+
+    def _refresh_resume(self, announce: bool = False) -> int:
+        """Show how many unfinished sessions the save folder has (button, and status line).
+
+        The status line says so when *announce* is set, or when it already showed
+        this notice (it then follows a change of save folder).
+        """
+        n = len(find_interrupted(self._save_folder()))
+        self.resume_btn.setEnabled(n > 0)
+        self.resume_btn.setText(f"Resume... ({n})" if n else "Resume...")
+        if announce or self._notice_unfinished:
+            if n:
+                self._say(f"{n} unfinished session{'s' if n > 1 else ''} in the save folder: "
+                          "click Resume... to finish it.", "#8a5300")
+                self._notice_unfinished = True
+            else:
+                self._say("")
+        return n
+
+    def _resume_dialog(self) -> None:
+        """Pick an unfinished session and carry it on where it stopped."""
+        sessions = self._interrupted_sessions()
+        if not sessions:
+            self._say("No unfinished sessions in the save folder.")
+            self._refresh_resume()
+            return
+        labels = [label for label, _path, _header in sessions]
+        label, ok = QInputDialog.getItem(
+            self, "Resume a session",
+            "Unfinished sessions in the save folder (newest first). The session carries on at\n"
+            "the next trial, with the settings and trial order it started with:",
+            labels, 0, False)
+        if not ok:
+            return
+        _label, path, header = sessions[labels.index(label)]
+        settings = self.settings_from_form()          # only its display choice is used
+        mode = (header.get("settings") or {}).get("mode", "test")
+        self._launch(replace(settings, participant=str(header.get("participant", "")), mode=mode),
+                     resume=path)
+
+    def _resolve_existing_id(self, settings: ExperimentSettings) -> ExperimentSettings | None:
+        """When the ID already has reports: use the next free one, reuse it, or edit it.
+
+        Returns the settings to run with (possibly a new ID), or None to go back to
+        the form. Reusing never touches the earlier reports: every file name has
+        its own date and time.
+        """
+        folder = settings.save_dir or _default_save_dir()
+        pid = settings.participant
+        if not has_reports(pid, folder):
+            return settings
+        amended = amend_participant_id(pid, folder)
+        use, reuse = f"Use {amended}", f"Reuse {pid}"
+        choice = self._choose(
+            "Participant ID already used",
+            f"'{pid}' already has reports in {folder}.",
+            f"{use}: a new participant gets the next free ID.\n"
+            f"{reuse}: another session for the same participant; the earlier reports "
+            "stay (every file name has its own date and time).\n"
+            "Edit ID: go back and type a different one.",
+            [use, reuse, "Edit ID"],
+        )
+        if choice == use:
+            self.participant.setText(amended)
+            self._auto_id = amended
+            return replace(settings, participant=amended)
+        if choice == reuse:
+            return settings
+        self.participant.setFocus()
+        self.participant.selectAll()
+        return None
+
+    def _browse_button(self, target: QLineEdit, on_change=None) -> QPushButton:
         button = QPushButton("Browse...")
         button.setObjectName("browse")
-        button.clicked.connect(lambda: self._browse_into(target))
+        button.setToolTip("Choose a folder.")
+        button.clicked.connect(lambda: self._browse_into(target, on_change))
         return button
 
-    def _browse_into(self, target: QLineEdit) -> None:
+    def _browse_into(self, target: QLineEdit, on_change=None) -> None:
         path = QFileDialog.getExistingDirectory(self, "Choose folder", target.text() or os.getcwd())
         if path:
             target.setText(path)
+            if on_change is not None:
+                on_change()
 
     # -- background picker -------------------------------------------------
 
@@ -401,6 +743,26 @@ class ConfigWindow(QWidget):
         self.background.addItem("None (plain)", SPEC_NONE)
         self.background.blockSignals(False)
         self._select_background(select)
+        self._start_background_icons()
+
+    def _start_background_icons(self) -> None:
+        """Give each Background item a small preview, one per event-loop turn."""
+        self._icon_queue = list(range(self.background.count()))
+        QTimer.singleShot(0, self._next_background_icon)
+
+    def _next_background_icon(self) -> None:
+        while self._icon_queue:
+            index = self._icon_queue.pop(0)
+            value = self.background.itemData(index)
+            if not isinstance(value, str):
+                continue
+            try:
+                icon = QIcon(_pixmap(_thumbnail_image(value, _ICON_SIZE)))
+            except Exception:  # noqa: BLE001 -- a preview is a nicety
+                continue
+            self.background.setItemIcon(index, icon)
+            QTimer.singleShot(0, self._next_background_icon)
+            return
 
     def _background_value(self) -> str:
         value = self.background.currentData()
@@ -418,9 +780,7 @@ class ConfigWindow(QWidget):
 
     def _on_background_changed(self, *_args) -> None:
         value = self._background_value()
-        slideshow = value == SPEC_SLIDESHOW
-        self.bg_every.setEnabled(slideshow)
-        self.bg_shuffle.setEnabled(slideshow)
+        self.slideshow_row.setVisible(value == SPEC_SLIDESHOW)     # slideshow settings only then
         if value not in self._thumbs:
             self._thumbs[value] = _pixmap(_thumbnail_image(value))
         self.bg_preview.setPixmap(self._thumbs[value])
@@ -443,8 +803,7 @@ class ConfigWindow(QWidget):
                 problems.append(f"{os.path.basename(path)}: {exc}")
         if added:
             self._populate_backgrounds(added[-1])
-            self.status.setStyleSheet("color:#2e7d32;")
-            self.status.setText(f"Added {len(added)} picture(s).")
+            self._say(f"Added {len(added)} picture(s).")
         if problems:
             QMessageBox.warning(self, "Some pictures were not added", "\n".join(problems))
 
@@ -454,7 +813,7 @@ class ConfigWindow(QWidget):
         mode_label = self.mode.currentText()
         mode_key = next((k for k, v in _MODE_LABELS.items() if v == mode_label), "test")
         return ExperimentSettings(
-            participant=self.participant.text().strip() or "Participant01",
+            participant=self.participant.text().strip() or next_participant_id(self._save_folder()),
             experimenter=self.experimenter.text().strip() or "APPstaff",
             # The bundled clips / default save folder are stored as "" ("use the
             # default"), never as this install's absolute path: after an upgrade
@@ -465,6 +824,7 @@ class ConfigWindow(QWidget):
             fullscreen=self.fullscreen.isChecked(),
             shuffle=self.shuffle.isChecked(),
             allow_replays=self.allow_replays.isChecked(),
+            max_replays=self.max_replays.limit,
             amp_visualizer=self.amp_visualizer.isChecked(),
             volume=self.volume.value(),
             emotions=[t for t, b in self.emotion_boxes.items() if b.isChecked()],
@@ -489,11 +849,14 @@ class ConfigWindow(QWidget):
             self.caption.setCurrentText(s.caption)
         self.fullscreen.setChecked(s.fullscreen)
         self.shuffle.setChecked(s.shuffle)
-        self.allow_replays.setChecked(s.allow_replays)
         self.amp_visualizer.setChecked(s.amp_visualizer)
         self.volume.setValue(s.volume)
         for tag, box in self.emotion_boxes.items():
             box.setChecked(tag in s.emotions)
+        self.allow_replays.setChecked(s.allow_replays)
+        if s.allow_replays:
+            self._set_replay_limit(s.max_replays)   # the saved number is the experimenter's
+            self._replays_auto = False
         if s.mode in _MODE_LABELS:
             self.mode.setCurrentText(_MODE_LABELS[s.mode])
         self.bg_every.setValue(s.background_every)
@@ -513,25 +876,30 @@ class ConfigWindow(QWidget):
             return  # a session is already running; ignore (also: window is hidden)
         settings = self.settings_from_form()
         if not settings.emotions:
-            self.status.setStyleSheet("color:#c62828;")
-            self.status.setText("Select at least one emotion.")
+            self._say("Select at least one emotion.", "#c62828")
             return
         try:   # same check the session makes, but before anything launches
             resolve_background(settings.background, picture_folders=background_folders())
         except ValueError as exc:
-            self.status.setStyleSheet("color:#c62828;")
-            self.status.setText(str(exc))
+            self._say(str(exc), "#c62828")
             return
         resume = self._ask_resume(settings)
         if resume is None:
             return
-        if not resume and not self._confirm_new_participant(settings):
-            return
+        if not resume:
+            settings = self._resolve_existing_id(settings)
+            if settings is None:
+                return
+        self._launch(settings, resume=resume)
+
+    def _launch(self, settings: ExperimentSettings, resume: str = "") -> None:
+        """Start a session (or, with *resume*, carry an unfinished one on) in its own process."""
         self._settings_warning = ""
-        try:
-            settings.save(self.settings_path)   # persist what the experimenter set
-        except OSError as exc:
-            self._settings_warning = f" (Settings could not be saved: {exc})"
+        if not resume:
+            try:
+                settings.save(self.settings_path)   # persist what the experimenter set
+            except OSError as exc:
+                self._settings_warning = f" (Settings could not be saved: {exc})"
 
         # Decide where the experiment runs: on an extended display (not the
         # experimenter's), fullscreen; otherwise honour the Full-screen checkbox.
@@ -605,29 +973,6 @@ class ConfigWindow(QWidget):
         box.exec()
         clicked = box.clickedButton()
         return next((label for label, b in zip(buttons, made) if b is clicked), None)
-
-    def _confirm_new_participant(self, settings: ExperimentSettings) -> bool:
-        """Ask before reusing a participant ID that already has reports here.
-
-        The previous ID is remembered between sessions, so it's easy to run the
-        next participant under the previous one's ID by mistake.
-        """
-        folder = settings.save_dir or _default_save_dir()
-        mine = session_file_pattern(settings.participant, ".csv")
-        try:
-            existing = [n for n in os.listdir(folder) if mine.fullmatch(n)]
-        except OSError:
-            return True                       # folder doesn't exist yet: nothing to clash with
-        if not existing:
-            return True
-        reply = QMessageBox.question(
-            self, "Participant ID already used",
-            f"Reports for '{settings.participant}' already exist in {folder}.\n\n"
-            "Run another session with this ID?",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.No,
-        )
-        return reply == QMessageBox.StandardButton.Yes
 
     def _choose_display(self, user_fullscreen: bool) -> tuple[int, bool]:
         """Pick (screen_index, fullscreen) for the experiment window.
@@ -769,6 +1114,7 @@ class ConfigWindow(QWidget):
         self.raise_()
         self.activateWindow()
         self._show_outcome()
+        self._refresh_resume()            # a session may have finished one, or left one
 
     def _show_outcome(self) -> None:
         """Tell the experimenter honestly how the session ended."""
@@ -789,13 +1135,11 @@ class ConfigWindow(QWidget):
         else:
             message, ok = f"Session for '{who}' finished.", True
         message += getattr(self, "_settings_warning", "")
-        self.status.setStyleSheet("color:#2e7d32;" if ok else "color:#c62828;")
-        self.status.setText(message)
+        self._say(message, "#2e7d32" if ok else "#c62828")
         if ok or code == 3:
-            # A session was recorded: clear the ID so the next participant isn't
-            # saved under this one by accident (the experimenter types the new ID).
-            self.participant.clear()
-            self.participant.setPlaceholderText("Next participant ID")
+            # A session was recorded: move on to the next free ID, so the next
+            # participant isn't saved under this one by accident.
+            self._fill_next_id()
 
 
 def configure_app(app: QApplication) -> QApplication:

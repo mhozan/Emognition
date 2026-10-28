@@ -76,10 +76,10 @@ def test_closing_calibration_brings_the_setup_window_back(app, window):
 def test_background_picker_round_trips_settings(window):
     labels = [window.background.itemText(i) for i in range(window.background.count())]
     assert labels[0] == "Calm gradient (default)" and labels[-2:] == ["Slideshow (all pictures)", "None (plain)"]
-    assert not window.bg_every.isEnabled()
+    assert window.slideshow_row.isHidden()                 # slideshow settings: only for a slideshow
     window.apply_settings(ExperimentSettings(background="slideshow", background_every=3,
                                              background_shuffle=False))
-    assert window.bg_every.isEnabled() and window.bg_every.value() == 3
+    assert not window.slideshow_row.isHidden() and window.bg_every.value() == 3
     s = window.settings_from_form()
     assert (s.background, s.background_every, s.background_shuffle) == ("slideshow", 3, False)
 
@@ -151,34 +151,46 @@ def test_a_vanished_audio_folder_falls_back_to_the_bundled_clips(app, tmp_path, 
     assert os.path.isdir(w.audio_dir.text())      # re-filled with the bundled folder
 
 
-def test_participant_is_cleared_after_a_recorded_session_only(window):
-    window.participant.setText("P07")
-    window._proc, window._launch_error, window._participant = _FakeProc(0), None, "P07"
+def test_the_next_free_id_is_filled_in_and_follows_recorded_sessions(window, tmp_path):
+    out = tmp_path / "out"
+    out.mkdir()
+    window.save_dir.setText(str(out))
+    window._on_save_dir_changed()
+    assert window.participant.text() == "sub-001"
+    (out / "sub-001_20261027_101500.csv").write_text("trial\n")
+    window._proc, window._launch_error, window._participant = _FakeProc(0), None, "sub-001"
     window._show_outcome()
-    assert window.participant.text() == ""
-    window.participant.setText("P08")
+    assert window.participant.text() == "sub-002"            # recorded: on to the next one
+    window.participant.setText("custom-7")
     window._proc = _FakeProc(1)
     window._show_outcome()
-    assert window.participant.text() == "P08"     # failed: keep it for a retry
+    assert window.participant.text() == "custom-7"           # failed: keep it for a retry
 
 
-def test_reusing_an_id_with_reports_asks_first(window, tmp_path, monkeypatch):
+@pytest.mark.parametrize("clicked, expect", [
+    ("Use sub-002", "sub-002"), ("Reuse sub-001", "sub-001"), ("Edit ID", None), (None, None),
+])
+def test_an_existing_id_offers_the_next_free_reuse_or_edit(window, tmp_path, clicked, expect):
     out = tmp_path / "reports"
     out.mkdir()
-    s = ExperimentSettings(participant="P09", save_dir=str(out))
-    assert window._confirm_new_participant(s)                    # nothing there yet
-    (out / "P09_20261027_101500.csv").write_text("trial\n")
+    s = ExperimentSettings(participant="sub-001", save_dir=str(out))
     asked = []
-    monkeypatch.setattr(config_window.QMessageBox, "question",
-                        lambda *a, **k: asked.append(a) or config_window.QMessageBox.StandardButton.No)
-    assert not window._confirm_new_participant(s) and asked
+    window._choose = lambda *a: asked.append(a) or clicked
+    assert window._resolve_existing_id(s) is s and not asked     # no reports yet: no question
+    (out / "sub-001_20261027_101500.csv").write_text("trial\n")
+    result = window._resolve_existing_id(s)
+    assert (result.participant if result else None) == expect
+    assert asked[0][3] == ["Use sub-002", "Reuse sub-001", "Edit ID"]
+    if expect == "sub-002":
+        assert window.participant.text() == "sub-002"
 
 
 def test_another_participants_reports_are_not_a_reused_id(window, tmp_path):
     out = tmp_path / "reports"
     out.mkdir()
     (out / "P09_retest_20261027_101500.csv").write_text("trial\n")   # "P09_..." but not P09
-    assert window._confirm_new_participant(ExperimentSettings(participant="P09", save_dir=str(out)))
+    s = ExperimentSettings(participant="P09", save_dir=str(out))
+    assert window._resolve_existing_id(s) is s
 
 
 def _unfinished_log(folder, participant="P10"):
@@ -321,16 +333,52 @@ def test_monitor_carries_counts_across_a_resume(app):
     assert m._lbl_trial.text() == "8 / 20" and "6 / 8" in m._lbl_accuracy.text()
 
 
-def test_retry_option_applies_to_active_training_only(window):
+def test_mode_options_show_only_in_their_modes(window):
     window.mode.setCurrentText("Test")
-    assert not window.retry.isEnabled()
+    assert window.retry.isHidden() and window.practice_row.isHidden()
+    window.mode.setCurrentText("Passive Training")
+    assert window.retry.isHidden() and not window.practice_row.isHidden()
     window.mode.setCurrentText("Active Training")
-    assert window.retry.isEnabled()
+    assert not window.retry.isHidden() and not window.practice_row.isHidden()
     window.retry.setChecked(True)
     s = window.settings_from_form()
     assert s.mode == "active" and s.retry_until_correct
     window.apply_settings(ExperimentSettings(mode="test", retry_until_correct=False))
-    assert not window.retry.isChecked() and not window.retry.isEnabled()
+    assert not window.retry.isChecked() and window.retry.isHidden()
+
+
+def test_replay_limit_starts_at_the_number_of_emotions(window):
+    assert window.replay_limit_row.isHidden()                # replays off by default
+    for tag in ("sca", "neu", "ang"):                        # happy vs sad
+        window.emotion_boxes[tag].setChecked(False)
+    window.allow_replays.setChecked(True)
+    assert not window.replay_limit_row.isHidden() and window.max_replays.limit == 2
+    window.emotion_boxes["ang"].setChecked(True)             # follows the emotions...
+    assert window.max_replays.limit == 3
+    window.max_replays.setValue(5)                           # ...until the experimenter sets it
+    window.emotion_boxes["neu"].setChecked(True)
+    assert window.max_replays.limit == 5 and window.settings_from_form().max_replays == 5
+    window.max_replays.setValue(window.max_replays.NO_LIMIT)
+    assert window.max_replays.text() == "no limit" and window.settings_from_form().max_replays == 0
+
+
+def test_resume_button_lists_unfinished_sessions(window, tmp_path, monkeypatch):
+    out = tmp_path / "reports"
+    out.mkdir()
+    window.save_dir.setText(str(out))
+    window._on_save_dir_changed()
+    assert not window.resume_btn.isEnabled()
+    log = _unfinished_log(out, participant="sub-007")
+    window._on_save_dir_changed()
+    assert window.resume_btn.isEnabled() and window.resume_btn.text() == "Resume... (1)"
+    offered, launched = [], []
+    monkeypatch.setattr(config_window.QInputDialog, "getItem",
+                        lambda *a: offered.append(a[3]) or (a[3][0], True))
+    monkeypatch.setattr(window, "_launch", lambda settings, resume="": launched.append((settings, resume)))
+    window._resume_dialog()
+    assert "sub-007" in offered[0][0] and "1 of 2 trials" in offered[0][0]
+    (settings, resume), = launched
+    assert resume == log and settings.participant == "sub-007"
 
 
 def test_pacing_controls_round_trip_and_read_off_at_zero(window):

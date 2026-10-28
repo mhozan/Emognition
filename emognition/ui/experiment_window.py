@@ -405,6 +405,7 @@ class TestExperiment:
         emotions: list[Emotion] | None = None,
         button_size: float = 0.16,
         allow_replays: bool = False,
+        max_replays: int = 0,
         amp_visualizer: bool = False,
         volume: float = 0.8,
         mode: SessionMode = SessionMode.TEST,
@@ -419,6 +420,7 @@ class TestExperiment:
         self.win = win
         self.mouse = event.Mouse(win=win, visible=True)
         self.allow_replays = allow_replays
+        self.max_replays = max(0, int(max_replays))   # per trial; 0 = no limit
         self.amp_visualizer = amp_visualizer
         self.volume = max(0.0, min(1.0, volume))
         self.mode = mode
@@ -1009,7 +1011,7 @@ class TestExperiment:
         while True:
             try:
                 self._play_and_wait_offset(duration)   # (re)zeros the clock at onset
-                outcome = self._await_response()
+                outcome = self._await_response(can_replay=self._can_replay(n_replays))
             except _Interrupted:
                 n_pauses += 1                    # the RT would span the pause: replay
                 continue
@@ -1029,7 +1031,7 @@ class TestExperiment:
         choices: tuple[Emotion, ...] = ()
         if self.mode == SessionMode.ACTIVE_TRAINING:
             if self.retry_until_correct and press.emotion != stim.emotion:
-                choices = self._retry_until_correct(stim.emotion, press.emotion, duration)
+                choices = self._retry_until_correct(stim.emotion, press.emotion, duration, n_replays)
                 self._show_feedback(stim.emotion, chosen=stim.emotion)   # "Correct!" at last
             else:
                 self._show_feedback(stim.emotion, chosen=press.emotion)
@@ -1047,13 +1049,17 @@ class TestExperiment:
             choices=choices,
         )
 
-    def _retry_until_correct(self, correct: Emotion, first: Emotion, duration: float) -> "tuple[Emotion, ...]":
+    def _retry_until_correct(
+        self, correct: Emotion, first: Emotion, duration: float, replays_used: int = 0,
+    ) -> "tuple[Emotion, ...]":
         """Active training the original's way: grey out a wrong face, ask again.
 
         Mirrors pb_5emotions_call.m, which disabled just the wrong button until
         the right one was clicked -- but, unlike the original, keeps every answer.
         Only the first (already recorded) answer is timed and scored. Replays and
-        pauses are allowed; neither undoes an answer. Returns all answers in order.
+        pauses are allowed (replays within the trial's limit: *replays_used* were
+        spent before the first answer); neither undoes an answer. Returns all
+        answers in order.
         """
         choices, wrong = [first], {first}
         while True:
@@ -1063,10 +1069,12 @@ class TestExperiment:
                 prompt_override=_WRONG_PROMPT))
             while True:
                 try:
-                    outcome = self._await_response(exclude=excluded, prompt=_RETRY_PROMPT)
+                    outcome = self._await_response(exclude=excluded, prompt=_RETRY_PROMPT,
+                                                   can_replay=self._can_replay(replays_used))
                 except _Interrupted:
                     continue                     # the scored answer is in: just ask again
                 if outcome is _REPLAY:
+                    replays_used += 1
                     try:
                         self._play_and_wait_offset(duration)
                     except _Interrupted:
@@ -1163,18 +1171,27 @@ class TestExperiment:
             self.win.flip()
         event.clearEvents()
 
+    def _can_replay(self, used: int) -> bool:
+        """May the participant replay the clip again, *used* replays into the trial?"""
+        return self.allow_replays and (self.max_replays == 0 or used < self.max_replays)
+
     def _await_response(
         self, exclude: "frozenset[Emotion]" = frozenset(), prompt: str | None = None,
+        can_replay: bool | None = None,
     ) -> "_Press | str":
         """Poll input until a response (or a replay request) arrives.
 
         Faces in *exclude* (wrong picks while retrying) are greyed out and can't
-        be chosen, by click or key. P or Escape interrupts (see
-        :meth:`_interrupt`) and raises :class:`_Interrupted`.
+        be chosen, by click or key. *can_replay* (default: replays allowed at
+        all) shows the replay button and accepts R; once a trial's replays are
+        used up, both are gone. P or Escape interrupts (see :meth:`_interrupt`)
+        and raises :class:`_Interrupted`.
         """
+        if can_replay is None:
+            can_replay = self.allow_replays
         keys = [k for k, emotion in self.key_map.items() if emotion not in exclude]
         keys += [_QUIT_KEY, _PAUSE_KEY]
-        if self.allow_replays:
+        if can_replay:
             keys.append("r")
         mouse_was_down = self.mouse.getPressed()[0] == 1  # ignore a held-over click
         while True:
@@ -1190,14 +1207,15 @@ class TestExperiment:
 
             mouse_down = self.mouse.getPressed()[0] == 1
             if mouse_down and not mouse_was_down:
-                if self.allow_replays and self.replay_button.contains(self.mouse.getPos()):
+                if can_replay and self.replay_button.contains(self.mouse.getPos()):
                     return _REPLAY
                 for button in self.buttons:
                     if button.emotion not in exclude and button.clicked_by(self.mouse):
                         return _Press(button.emotion, self.clock.getTime(), "mouse")
             mouse_was_down = mouse_down
 
-            self._draw_scene(enabled=True, excluded=exclude, prompt_override=prompt)
+            self._draw_scene(enabled=True, excluded=exclude, prompt_override=prompt,
+                             show_replay=can_replay)
             self.win.flip()
 
     def _record_frames(self, on: bool) -> None:
@@ -1229,6 +1247,7 @@ class TestExperiment:
         prompt_override: str | None = None,
         excluded: "frozenset[Emotion]" = frozenset(),
         show_prompt: bool = True,
+        show_replay: bool | None = None,
     ) -> None:
         """Draw one frame: background, prompt, buttons, progress, LED, replay button.
 
@@ -1246,6 +1265,8 @@ class TestExperiment:
                               (used during the feedback phase).
             excluded:         Faces drawn greyed out even when *enabled* (wrong
                               picks while retrying).
+            show_replay:      Draw the replay button (default: when replays are
+                              allowed); False once a trial's replays are used up.
             show_prompt:      False leaves the prompt's place empty (the Next
                               button sits there).
         """
@@ -1292,6 +1313,7 @@ class TestExperiment:
         if self.amp_visualizer and not enabled:
             self._set_led(amplitude)
             self.led.draw()
-        # Replay button: only after the clip has finished (response phase).
-        if self.allow_replays and enabled:
+        # Replay button: only after the clip has finished (response phase), and
+        # only while the trial has replays left.
+        if (self.allow_replays if show_replay is None else show_replay) and enabled:
             self.replay_button.draw()

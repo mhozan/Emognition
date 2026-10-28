@@ -377,10 +377,10 @@ def _run_session(args: argparse.Namespace) -> int:
         return 1
 
     mode = SessionMode(args.mode)
-    # Practice trials: not after a resume that already has answers, and not in
-    # passive training (nothing is answered there).
+    # Practice trials (answered, with feedback, never scored) lead into a
+    # training session -- not a Test -- and not after a resume that has answers.
     practice = []
-    if args.practice > 0 and not done and mode != SessionMode.PASSIVE_TRAINING:
+    if args.practice > 0 and not done and mode != SessionMode.TEST:
         source = scan_stimuli(args.practice_dir) if args.practice_dir else trials
         practice = pick_practice(source, args.practice, emotions=emotions,
                                  rng=random.Random(seed + 2))
@@ -440,6 +440,7 @@ def _run_session(args: argparse.Namespace) -> int:
             caption=Caption(_caption_value(args.caption)),
             emotions=emotions,
             allow_replays=args.allow_replays,
+            max_replays=args.max_replays,
             amp_visualizer=args.amp_visualizer,
             volume=args.volume,
             mode=mode,
@@ -683,6 +684,7 @@ def _non_negative_int(text: str) -> int:
 
 def build_parser() -> argparse.ArgumentParser:
     """The ``emognition`` command line (also used by tests to check ``to_argv()``)."""
+    from .config import DEFAULT_PARTICIPANT
     from .core.backgrounds import DEFAULT_EVERY_N, MAX_EVERY_N, MIN_EVERY_N
 
     parser = argparse.ArgumentParser(prog="emognition", description="Speech Emotion Recognition")
@@ -699,8 +701,9 @@ def build_parser() -> argparse.ArgumentParser:
                         help="RMS amplitude of the calibration tone")
     parser.add_argument("--tone-seconds", type=float, default=60.0,
                         help="duration of the calibration tone (s)")
-    parser.add_argument("--participant", default="Participant01",
-                        help="participant label (default: Participant01)")
+    parser.add_argument("--participant", default=DEFAULT_PARTICIPANT,
+                        help=f"participant label, BIDS style (default: {DEFAULT_PARTICIPANT}; "
+                             "the setup window fills in the next free one)")
     parser.add_argument("--experimenter", default="APPstaff",
                         help="experimenter name (default: APPstaff)")
     parser.add_argument("--audio-dir", default=None,
@@ -718,6 +721,9 @@ def build_parser() -> argparse.ArgumentParser:
                         help="present clips in folder order instead of shuffled")
     parser.add_argument("--allow-replays", action="store_true",
                         help="show a replay button (and 'r' key) to replay each clip")
+    parser.add_argument("--max-replays", type=_non_negative_int, default=0, metavar="N",
+                        help="with --allow-replays: at most N replays per trial "
+                             "(default 0 = no limit)")
     parser.add_argument("--amp-visualizer", action="store_true",
                         help="show a green amplitude LED during playback")
     parser.add_argument("--volume", type=float, default=0.8,
@@ -750,8 +756,8 @@ def build_parser() -> argparse.ArgumentParser:
                         help="shuffle so that at most N clips of one emotion come in a row "
                              "(default 0 = no limit)")
     parser.add_argument("--practice", type=_non_negative_int, default=0, metavar="N",
-                        help="N practice trials with feedback before the test, not scored "
-                             "(default 0 = none)")
+                        help="training modes: N practice trials with feedback before the "
+                             "session, not scored (default 0 = none)")
     parser.add_argument("--practice-dir", default=None, metavar="PATH",
                         help="clips for the practice trials (default: the session's own "
                              "clips, which are then heard twice)")
