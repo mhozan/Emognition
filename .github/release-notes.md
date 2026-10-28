@@ -30,8 +30,10 @@ On an Intel Mac, run Emognition from source: see the
    clear the download flag before you open it. Open **Terminal** (press
    `⌘ Space`, type `Terminal`, press Return) and paste:
    ```bash
-   for d in ~/Downloads/emognition*; do xattr -dr com.apple.quarantine "$d"; done
+   xattr -dr com.apple.quarantine ~/Downloads/emognition
    ```
+   (Moved the folder? Type `xattr -dr com.apple.quarantine ` and drag the folder
+   onto the Terminal window to fill in its path.)
 3. Double-click **`emognition`** inside the folder. A Terminal window opens
    beside the app; leave it open.
 
@@ -42,7 +44,7 @@ On an Intel Mac, run Emognition from source: see the
 >
 > **"Operation not permitted" in Terminal?** Let Terminal into your Downloads
 > folder: **System Settings → Privacy & Security → Files and Folders →
-> Terminal → Downloads Folder**, then paste the line again.
+> Terminal → Downloads Folder**, then run the command again.
 
 ### Linux
 

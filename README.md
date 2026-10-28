@@ -131,9 +131,10 @@ an Intel Mac, run from source (below).
    developer certificate yet, so macOS won't open a downloaded copy. Open
    **Terminal** (press `Cmd + Space`, type `Terminal`, press Return) and paste:
    ```bash
-   for d in ~/Downloads/emognition*; do xattr -dr com.apple.quarantine "$d"; done
+   xattr -dr com.apple.quarantine ~/Downloads/emognition
    ```
-   It clears every `emognition…` folder and zip in Downloads.
+   (Moved the folder? Type `xattr -dr com.apple.quarantine ` and drag the folder
+   onto the Terminal window to fill in its path.)
 
 4. **Double-click `emognition`** inside the folder. A Terminal window opens
    beside the app; leave it open while you work.
@@ -145,9 +146,7 @@ an Intel Mac, run from source (below).
 
 > **"Operation not permitted" in Terminal?** Let Terminal into your Downloads
 > folder: **System Settings → Privacy & Security → Files and Folders →
-> Terminal → Downloads Folder**, then paste the line again. (If you moved the
-> `emognition` folder elsewhere, type `xattr -dr com.apple.quarantine ` and drag
-> the folder onto the Terminal window to fill in its path.)
+> Terminal → Downloads Folder**, then run the command again.
 
 > **Slow first launch** — the first start can take a little while as macOS
 > checks the bundle. Later launches are faster.
