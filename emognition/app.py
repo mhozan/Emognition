@@ -59,6 +59,10 @@ def _selfcheck() -> int:
     from .reports import write_html_report  # noqa: F401
     from .ui.assets import audio_dir, backgrounds_dir
     from .ui.experiment_window import TestExperiment  # noqa: F401
+    # The experimenter's Qt windows are imported too -- never opened: a Qt window
+    # and the PsychoPy one must not share a process -- so a bundle missing a module
+    # of the setup or calibration window fails here, not when the experimenter clicks.
+    from .ui import calibration_window, config_window, monitor_window  # noqa: F401
 
     # The audio engine the RTs depend on must load from the bundle: PsychoPy would
     # otherwise fall back quietly, and PsychPortAudio failing to load is exactly
