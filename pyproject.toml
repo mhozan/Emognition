@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "emognition"
-version = "3.0.0-alpha.1"
+version = "3.0.0-alpha.2"
 description = "Speech Emotion Recognition experiment (PsychoPy port of the MATLAB Emognition app)"
 readme = "README.md"
 requires-python = ">=3.11,<3.12"   # PTB audio crashes on 3.12+ (runtime.ptb_audio_problem)

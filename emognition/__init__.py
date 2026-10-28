@@ -16,4 +16,4 @@ The original MATLAB sources are preserved under ``matlab/`` as both reference an
 homage. See README.md for the port roadmap.
 """
 
-__version__ = "3.0.0-alpha.1"
+__version__ = "3.0.0-alpha.2"
