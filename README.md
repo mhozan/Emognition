@@ -44,7 +44,7 @@ and homage.
 | **Active training** | Participant responds, then correct (green) / wrong (orange) feedback before advancing; optionally *retry until correct*, as in the original |
 | **Emoticon buttons** | Crisp at any screen size (drawn at 512 px from the original artwork); captions in English, Spanish or Traditional Chinese, or none, set in Noto Sans |
 | **Begin screen** | The participant starts the session with a big **Begin** button (or Space/Enter); the report's start time and duration count from that press |
-| **Background pictures** | Calm, text-free backgrounds to keep participants engaged: a soothing gradient by default, five bundled scenes, your own pictures via **Add picture…**, or a slideshow that changes every N trials |
+| **Background pictures** | Calm, text-free backgrounds to keep participants engaged: a soothing gradient by default, 30 bundled scenes, your own pictures via **Add picture…**, or a slideshow that changes every N trials |
 | **Practice and balanced order** | Opt-in practice trials with feedback before the test (never scored), and a shuffle with at most N of one emotion in a row |
 | **Engagement and pacing** | Opt-in: a *Next* button between trials (the original's Extra button), a star every N trials, a break screen every N trials. None of it depends on whether answers are right |
 | **Pause and safe quit** | **P** pauses and resumes; **Esc** asks before quitting. A trial interrupted either way is replayed, and the per-trial CSV counts it |
@@ -281,9 +281,12 @@ normalize loudness and inspect file naming.
 
 - **Calm gradient (default)**: a soothing indigo-to-teal blend, drawn at the
   screen's exact resolution.
-- **A bundled scene**: Starry night, Under the sea, Rolling hills, Soft bubbles,
-  or Classic purple (the original Emognition background). All are calm, contain
-  no text or faces, and are dark enough for the white prompt to stay readable.
+- **A bundled scene**: 30 of them, for example a starry night, the sea floor,
+  misty mountains, an aurora, a lantern-lit sky, a city at night, or Classic
+  purple (the original Emognition background). All are calm and static,
+  contain no text, faces or characters, keep their detail to the edges, and
+  are dark enough for the white prompt to stay readable. Each list entry shows
+  a small preview.
 - **Your own picture**: click **Add picture…**. The picture is copied into
   `~/.emognition/backgrounds/`, turned upright, resized, and stripped of all
   metadata, including phone GPS. Delete files from that folder to remove them.

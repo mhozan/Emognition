@@ -57,11 +57,14 @@ def test_audio_dir_has_ten_reference_clips():
 
 
 def test_bundled_backgrounds_are_present():
+    import re
+
     names = [os.path.basename(p) for p in list_pictures(backgrounds_dir())]
-    assert names == [
+    assert len(names) == 30 and names[:5] == [
         "01-starry-night.jpg", "02-under-the-sea.jpg", "03-rolling-hills.jpg",
         "04-soft-bubbles.jpg", "05-classic-purple.jpg",
     ]
+    assert all(re.fullmatch(rf"{i:02d}-[a-z-]+\.jpg", n) for i, n in enumerate(names, start=1))
 
 
 @pytest.mark.parametrize("path", list_pictures(backgrounds_dir()))
@@ -83,9 +86,22 @@ def test_background_folders_are_bundled_then_user():
 @pytest.mark.parametrize("caption", list(Caption))
 @pytest.mark.parametrize("emotion", list(Emotion))
 def test_every_emoticon_is_a_sharp_opaque_square(caption, emotion):
-    """512 px, drawn by scripts/generate_emoticons.py: crisp at any screen size."""
+    """512 px, drawn by scripts/generate_buttons.py: crisp at any screen size."""
     from PIL import Image
 
     with Image.open(emoticon_path(emotion, caption)) as im:
         assert im.size[0] == im.size[1] >= 256
         assert im.convert("RGBA").getpixel((0, 0)) == (255, 255, 255, 255)   # white tile
+
+
+
+def test_replay_button_is_a_sharp_tile_with_clear_corners():
+    from PIL import Image
+
+    from emognition.ui.assets import replay_button_path
+
+    with Image.open(replay_button_path()) as im:
+        rgba = im.convert("RGBA")
+        assert rgba.size[0] == rgba.size[1] >= 256
+        assert rgba.getpixel((0, 0))[3] == 0                     # rounded tile: clear corner
+        assert rgba.getpixel((rgba.size[0] // 2, rgba.size[1] // 20))[3] == 255
