@@ -24,11 +24,13 @@ and homage.
 | Configure participant, audio folder, mode, and emotions before each session. | Participant hears a clip, then clicks the perceived emotion. Buttons activate after the clip ends. | Accuracy and reaction time update trial-by-trial on the experimenter's screen. |
 
 <details>
-<summary><strong>Calibration window (3 tabs)</strong></summary>
+<summary><strong>Calibration window (4 tabs)</strong></summary>
 
-| Stimuli / naming | Loudness & trim | SPL tone |
-|:---:|:---:|:---:|
-| ![Stimuli tab](docs/screenshots/calibration_stimuli.png) | ![Loudness tab](docs/screenshots/calibration_loudness.png) | ![SPL tone tab](docs/screenshots/calibration_tone.png) |
+| Stimuli / naming | Clip check |
+|:---:|:---:|
+| ![Stimuli tab](docs/screenshots/calibration_stimuli.png) | ![Clip check tab](docs/screenshots/calibration_clips.png) |
+| **Loudness & trim** | **SPL tone** |
+| ![Loudness tab](docs/screenshots/calibration_loudness.png) | ![SPL tone tab](docs/screenshots/calibration_tone.png) |
 
 </details>
 
@@ -45,11 +47,13 @@ and homage.
 | **Emoticon buttons** | Crisp at any screen size (drawn at 512 px from the original artwork); captions in English, Spanish or Traditional Chinese, or none, set in Noto Sans |
 | **Begin screen** | The participant starts the session with a big **Begin** button (or Space/Enter); the report's start time and duration count from that press |
 | **Background pictures** | Calm, text-free backgrounds to keep participants engaged: a soothing gradient by default, 30 bundled scenes, your own pictures via **Add picture…**, or a slideshow that changes every N trials |
-| **Practice and balanced order** | Opt-in practice trials with feedback before the test (never scored), and a shuffle with at most N of one emotion in a row |
+| **Practice and balanced order** | Opt-in practice trials with feedback before a training session (never scored), and a shuffle with at most N of one emotion in a row |
+| **Replays** | Off by default; when allowed, a limit per trial that starts at the number of emotions tested (1–10, or no limit) |
+| **Participant IDs** | BIDS-style `sub-001`, filled in with the next free number; an ID that already has reports can be amended, reused or edited |
 | **Engagement and pacing** | Opt-in: a *Next* button between trials (the original's Extra button), a star every N trials, a break screen every N trials. None of it depends on whether answers are right |
 | **Pause and safe quit** | **P** pauses and resumes; **Esc** asks before quitting. A trial interrupted either way is replayed, and the per-trial CSV counts it |
 | **Crash-safe autosave** | Every trial is on disk the moment it ends; an interrupted session resumes at the next trial, in the same order |
-| **Calibration** | Per-corpus loudness normalization (LUFS), speech-endpoint trim, BIDS-style renaming |
+| **Calibration** | Check a stimulus set at a glance (waveform, spectrogram and RMS curve of every clip, flags for clipping, DC offset, noise, cut-off speech); equalise loudness (ITU-R BS.1770) and trim silence, with before/after charts; BIDS-style renaming; an SPL tone at the session volume. Every step is explained in the window |
 | **Experimenter monitor** | Live per-trial accuracy and RT on the experimenter's screen while the participant runs |
 | **Reports** | Self-contained HTML, PDF (confusion heatmap + RT charts), Excel (4 sheets), CSV |
 | **Multi-display** | Experiment auto-routes to the participant's screen; setup stays on the experimenter's |
@@ -247,7 +251,23 @@ python -m emognition
 
 ### 1. Setup window
 
-Fill in the participant ID, select your audio folder, and choose a session mode:
+The settings are grouped in boxes: **Participant**, **Session** and **Order and
+replays** on the left; **Participant screen**, **Engagement and pacing** and
+**Audio and files** on the right. Hover over any setting for what it does, what
+it does to the data, and its default. Settings that don't apply to the current
+choices are hidden: Practice trials outside the training modes, Retry until
+correct outside Active Training, the slideshow options unless the background
+is the slideshow.
+
+**Participant ID** is filled in with the next free BIDS-style ID (`sub-001`,
+`sub-002`, ...), counting the reports and unfinished sessions in the save
+folder, and moves on after every recorded session; **New ID** fills it in
+again. If an ID you type already has reports, the window offers to **use** the
+next free variant (`sub-003` becomes `sub-005` if `sub-004` is taken; `jo`
+becomes `jo2`), to **reuse** it (the earlier reports are kept: every file name
+carries its date and time), or to **edit** it.
+
+Choose a session mode:
 
 | Mode | What it does |
 |---|---|
@@ -261,12 +281,14 @@ chooses again until the right one is picked, without being shown the answer.
 Only the first answer is scored and timed. The per-trial CSV's `attempts` and
 `choices` columns keep every answer, e.g. `Sad > Angry > Happy`.
 
-**Practice trials** (0 = off) come right after Begin. Each one gets
-active-training feedback, even in a Test, and then *Well done! Now for the
-real thing.* waits for *Start*. Practice answers are never scored. They are
-kept in the session's `.json`, not the CSV. The practice clips are picked from
-the session's own clips, one emotion each before any repeats, so those clips are
-heard twice. To avoid that, point `--practice-dir` at separate clips.
+**Practice trials** (training modes only; 0 = off) come right after Begin.
+Each one gets active-training feedback, and then *Well done! Now for the real
+thing.* waits for *Start*. Practice answers are never scored. They are kept in
+the session's `.json`, not the CSV. The practice clips are picked from the
+session's own clips, one emotion each before any repeats, so those clips are
+heard twice. To avoid that, point `--practice-dir` at separate clips. A Test
+has no practice: to warm a participant up before one, run a short Active
+Training session first.
 
 **At most N of one emotion in a row** (0 = no limit) shuffles so that long runs
 of one emotion can't happen; a run invites guessing. The order is still random
@@ -274,8 +296,15 @@ and reproducible from the recorded seed, and with no limit, a seed gives the
 same order as before. If the clips can't be arranged that way, for example when
 most of them are one emotion, the session says so instead of starting.
 
-Click **Calibration** before your first run with a new stimulus corpus to
-normalize loudness and inspect file naming.
+**Allow replays** is off by default. Ticking it lets the participant hear a
+clip again (the replay button, or **R**) up to a limit per trial, which starts
+at the number of emotions being tested (2 for happy vs sad) and can be set from
+1 to 10, or to *no limit*. Once a trial's replays are used up the button goes
+away. Each replay restarts the RT clock at its onset, and the per-trial CSV's
+`replays` column counts them.
+
+**Calibration...** opens the stimulus tools (next section); **Resume...** lists
+the unfinished sessions in the save folder.
 
 **Background** sets what the participant sees behind the buttons:
 
@@ -302,8 +331,7 @@ When the session starts, the participant window shows the background and a
 large **Begin** button. The session, and its recorded start time, begins when
 the participant clicks it, or when the experimenter presses Space or Enter.
 
-**Engagement and pacing** (all off by default, on the setup window's second
-options row):
+**Engagement and pacing** (all off by default):
 
 - **Next button**: after each answer, the participant clicks *Ready for the next
   one?* (or the experimenter presses Space) to hear the next clip. This is the
@@ -332,7 +360,52 @@ column of the per-trial CSV counts how often that happened on each trial, since
 the participant then heard the clip more than once. The experimenter monitor
 shows *Paused* or *Quit?* while the session waits.
 
-### 2. Stimulus corpus
+### 2. Calibration
+
+Open **Calibration...** before the first session with a new set of recordings.
+It works on one recordings folder (the setup window's Audio folder) and never
+changes it, except for the explicit Rename. Each tab explains its methods, with
+the folder's own numbers, in a *How it works* panel, and every control has a
+tooltip.
+
+- **Stimuli / naming**: what each file name says (emotion, speaker sex), a chart
+  of clips per emotion and sex (unequal counts let a response bias score above
+  chance), the `stimuli.tsv` manifest with its `stimuli.json` data dictionary,
+  and renaming legacy names to BIDS style.
+- **Clip check**: a card per recording, all on one time scale: the waveform, a
+  spectrogram (0–8 kHz) and the short-time RMS curve the end-of-speech detector
+  decides on, with its threshold and the detected speech. Flags point at the
+  clips worth a listen: clipped samples, a DC offset, a low level (peak below
+  −20 dBFS), noise within 30 dB of the speech, speech running into the start or
+  end of the file, a sample rate or channel count unlike the rest. Click a card
+  for a large view with axes, which also shows what trimming would cut.
+- **Loudness & trim**: *Preview* shows what calibration would change for every
+  clip (duration, silence before and after the speech, loudness, peak), as a
+  table and as before/after charts with the target, ceiling and padding.
+  *Apply* writes a calibrated copy to `<folder>_calibrated/`, with a
+  `calibration.json` record for your methods section, and measures the written
+  files again. Point the setup window's Audio folder at it to use it.
+- **SPL tone**: a 1 kHz tone at the recordings' average RMS, played through the
+  same stereo stream and at the same Volume as the session's clips, for setting
+  the presentation level with a sound level meter.
+
+**End of speech is not end of file.** Each file's RMS is taken in 20 ms frames
+every 10 ms, and frames within 40 dB of the loudest one count as speech; speech
+starts at the first such frame and ends at the end of the last. What follows is
+trailing silence (188–276 ms in the bundled clips), which the file-offset RT
+includes. Trimming keeps 100 ms before and after the speech and never adds
+silence. Loudness is matched with ITU-R BS.1770 (LUFS, target −23, as in EBU
+R128) by default, or by RMS or peak; no sample may pass −1 dBFS, so a clip
+that would clip is held below the target and flagged PEAK-LIMITED.
+
+**Setting the level.** Set the Volume in the setup window first. Put the meter
+where the participant's head will be, or the earphone on a coupler; play the
+tone; and turn the amplifier or the system volume until the meter reads your
+protocol's level, e.g. 65 dB SPL (at 1 kHz the A, C and Z weightings agree).
+Then leave every volume control alone. If you calibrated, set the level from
+the calibrated folder: trimming and normalising change the files' RMS.
+
+### 3. Stimulus corpus
 
 The app accepts two naming conventions:
 
@@ -353,7 +426,7 @@ speaker-02_emotion-happy_sex-f.wav  ...
 Use **Calibration → Stimuli / Naming** to inspect what the app has parsed from
 your folder and confirm each file's detected emotion and sex before running.
 
-### 3. Reports
+### 4. Reports
 
 After each session these files are written to your chosen save folder. The raw
 CSV goes first, so the data is safe even if a later format fails:
@@ -381,9 +454,10 @@ records which background picture was on screen.
 
 **If a session is interrupted** (a crash, a power cut, the window closed), its
 trials are not lost: each one is written to
-`ParticipantID_YYYYMMDD_HHMMSS.partial.jsonl` the moment it ends. The next time
-you click Proceed with the same participant ID and save folder, the setup
-window offers to **Resume**. The session then carries on at the next trial with
+`ParticipantID_YYYYMMDD_HHMMSS.partial.jsonl` the moment it ends. The setup
+window's **Resume...** button lists every unfinished session in the save folder
+(participant, start time, trials done), and clicking Proceed with the same
+participant ID offers it too. The session then carries on at the next trial with
 the same settings and trial order, and its reports cover all of it. From the
 command line, use `--resume <that file>`. The `.partial.jsonl` file is deleted
 once the reports are written. A session stopped with Esc writes reports for the
@@ -428,11 +502,12 @@ pytest -v tests/test_timing.py   # just the timing tests
 ```
 emognition/
   core/        UI-free logic: emotions, stimuli, timing, scoring, session modes
-  audio/       Loudness normalization (LUFS), speech endpoint detection/trim
+  audio/       Loudness normalization (LUFS), speech endpoints/trim, clip analysis, SPL tone
   naming/      BIDS-style canonical names + legacy parser + TSV manifest
+  imaging/     Backgrounds, picture import, the calibration clip cards (Pillow)
   ui/          PyQt6 setup/calibration/monitor windows; PsychoPy experiment window
   reports/     HTML, PDF, Excel, CSV writers
-  io/          Cross-platform file-open helper
+  io/          File helpers: open/reveal, autosave and resume, spreadsheet-safe text
 assets/
   audio/       10 reference clips (5 emotions × 2 sexes), BIDS-named
   images/      Emoticon buttons, backgrounds, icon
@@ -491,7 +566,7 @@ Options:
   --setup            Same as above
   --calibrate        Open the Calibration window
   --selfcheck        Headless import test — use to verify a frozen bundle
-  --participant ID   Participant label [Participant01]
+  --participant ID   Participant label [sub-001]
   --experimenter ID  Experimenter name [APPstaff]
   --audio-dir PATH   Folder of .wav stimuli (default: bundled reference clips)
   --save-dir PATH    Output folder for reports [save_location/ next to the app,
@@ -499,24 +574,26 @@ Options:
   --mode MODE        test | passive | active  [test]
   --emotions TAGS    Comma-separated subset, e.g. hap,sad,ang  [all five]
   --caption LANG     none | english | mandarin | spanish  [none]
-  --volume FLOAT     Playback volume 0–1  [0.8]
+  --volume FLOAT     Playback volume 0–1, for the clips and the SPL tone  [0.8]
   --fullscreen       Run the experiment window fullscreen
   --screen INT       Display index for the experiment window [0]
   --no-shuffle       Present clips in folder order instead of shuffled
   --allow-replays    Show a replay button (and 'r' key)
+  --max-replays N    With --allow-replays: at most N replays per trial (0 = no limit)  [0]
   --amp-visualizer   Show a green amplitude LED during playback
   --background SPEC  default | none | slideshow | picture file | picture folder  [default]
   --background-every N        Slideshow: change picture every N trials (1–20)  [5]
   --[no-]background-shuffle   Slideshow: shuffle the picture order  [on]
   --seed N           Random seed for the trial and picture order  [random; recorded]
   --max-run N        Shuffle with at most N of one emotion in a row (0 = no limit)  [0]
-  --practice N       N practice trials with feedback before the test, not scored  [0]
+  --practice N       Training modes: N practice trials with feedback first, not scored  [0]
   --practice-dir PATH     Clips for the practice trials  [the session's own clips]
   --next-button      Between trials, wait for a click on "Ready for the next one?"
   --stars-every N    A star every N trials (0 = off)  [0]
   --break-every N    A break screen every N trials (0 = off)  [0]
   --retry-until-correct   Active training: grey out a wrong face and ask again
                           until right (only the first answer is scored)
+  --play-tone        Play the SPL tone (RMS --tone-rms, --tone-seconds long, at --volume)
   --resume LOG       Continue an interrupted session from its .partial.jsonl file
                      (its settings and trial order; only the display is new)
   --no-begin         Start straight away, without the Begin screen (automation)
