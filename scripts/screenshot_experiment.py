@@ -41,13 +41,16 @@ win = visual.Window(
 )
 
 # Build a TestExperiment in Test mode with English captions, all 5 emotions,
-# over the default background (the calm gradient).
+# over the default background (the calm gradient), with replays allowed so the
+# replay button is in the picture.
 exp = TestExperiment(
     win,
     caption=Caption.ENGLISH,
     emotions=list(EMOTIONS_IN_ORDER),
     mode=SessionMode.TEST,
     background=resolve_background(SPEC_DEFAULT, picture_folders=background_folders()),
+    allow_replays=True,
+    max_replays=5,
 )
 
 # Simulate mid-session state: 4 of 10 trials done.
@@ -94,7 +97,8 @@ except Exception:
     font = ImageFont.load_default()
 
 text = ("Experiment screen: participant hears a speech clip, then clicks "
-        "the emotion they perceived. Buttons activate only after the clip ends.")
+        "the emotion they perceived. Buttons activate only after the clip ends; "
+        "the replay button (bottom left) appears when replays are allowed.")
 chars_per_line = max(40, w // (font_size // 2 + 1))
 wrapped = "\n".join(textwrap.wrap(text, width=chars_per_line))
 

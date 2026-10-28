@@ -42,12 +42,12 @@ and homage.
 |---|---|
 | **Millisecond-accurate RTs** | PTB-scheduled audio onset; RT measured from both offset (default, matching legacy) and onset |
 | **Test mode** | Blind test — no feedback — full confusion-matrix report |
-| **Passive training** | Correct label revealed after each clip; participant learns the mapping |
-| **Active training** | Participant responds, then correct (green) / wrong (orange) feedback before advancing; optionally *retry until correct*, as in the original |
+| **Familiarization** | The participant just listens and watches: each clip's correct face is revealed after it (the original's passive training) |
+| **Practice** | The participant responds, then gets correct (green) / wrong (orange) feedback before advancing; optionally *retry until correct*, as in the original (its active training) |
 | **Emoticon buttons** | Crisp at any screen size (drawn at 512 px from the original artwork); captions in English, Spanish or Traditional Chinese, or none, set in Noto Sans |
 | **Begin screen** | The participant starts the session with a big **Begin** button (or Space/Enter); the report's start time and duration count from that press |
 | **Background pictures** | Calm, text-free backgrounds to keep participants engaged: a soothing gradient by default, 30 bundled scenes, your own pictures via **Add picture…**, or a slideshow that changes every N trials |
-| **Practice and balanced order** | Opt-in practice trials with feedback before a training session (never scored), and a shuffle with at most N of one emotion in a row |
+| **Balanced order** | A shuffle with at most N of one emotion in a row, reproducible from the recorded seed |
 | **Replays** | Off by default; when allowed, a limit per trial that starts at the number of emotions tested (1–10, or no limit) |
 | **Participant IDs** | BIDS-style `sub-001`, filled in with the next free number; an ID that already has reports can be amended, reused or edited |
 | **Engagement and pacing** | Opt-in: a *Next* button between trials (the original's Extra button), a star every N trials, a break screen every N trials. None of it depends on whether answers are right |
@@ -255,40 +255,42 @@ The settings are grouped in boxes: **Participant**, **Session** and **Order and
 replays** on the left; **Participant screen**, **Engagement and pacing** and
 **Audio and files** on the right. Hover over any setting for what it does, what
 it does to the data, and its default. Settings that don't apply to the current
-choices are hidden: Practice trials outside the training modes, Retry until
-correct outside Active Training, the slideshow options unless the background
-is the slideshow.
+choices are hidden: Retry until correct outside Practice, the slideshow options
+until Slideshow is ticked, the replay limit until replays are allowed.
+
+Your settings are remembered: they're saved when a session starts, when
+Calibration opens and when the window closes. **Reset to defaults** (top right)
+puts every session option back — Test with all five emotions, shuffled, no
+replays, full screen, no captions, the calm gradient, no pacing — and keeps the
+audio and save folders, the experimenter and the Volume (your SPL calibration
+depends on it).
 
 **Participant ID** is filled in with the next free BIDS-style ID (`sub-001`,
 `sub-002`, ...), counting the reports and unfinished sessions in the save
-folder, and moves on after every recorded session; **New ID** fills it in
-again. If an ID you type already has reports, the window offers to **use** the
+folder, and moves on after every recorded session. **New ID** fills it in
+again after you've typed something else (it's greyed out while the field
+already holds the next free ID). If an ID you type already has reports, the
+window offers to **use** the
 next free variant (`sub-003` becomes `sub-005` if `sub-004` is taken; `jo`
 becomes `jo2`), to **reuse** it (the earlier reports are kept: every file name
 carries its date and time), or to **edit** it.
 
-Choose a session mode:
+Choose a session mode, listed in the order a protocol usually runs them:
 
-| Mode | What it does |
-|---|---|
-| **Test** | Blind test — no feedback |
-| **Passive Training** | Correct answer shown after each clip |
-| **Active Training** | Participant responds, then correct/wrong feedback |
+| Mode | What it does | In the original |
+|---|---|---|
+| **Familiarization** | The participant listens and watches: after each clip its face lights up. Nothing to answer | passive training |
+| **Practice** | The participant answers, then sees the correct face (green) and, if wrong, their choice (orange). Answers are recorded | active training |
+| **Test** | No feedback; this is what the confusion matrix, % correct, Hu and κ come from | test |
 
-**Retry until correct** (Active Training only) works the way the original
+On the command line they are `--mode passive`, `--mode active` and `--mode
+test` (the default), as before.
+
+**Retry until correct** (Practice only) works the way the original
 did: a wrong answer greys out that face ("Not quite!") and the participant
 chooses again until the right one is picked, without being shown the answer.
 Only the first answer is scored and timed. The per-trial CSV's `attempts` and
 `choices` columns keep every answer, e.g. `Sad > Angry > Happy`.
-
-**Practice trials** (training modes only; 0 = off) come right after Begin.
-Each one gets active-training feedback, and then *Well done! Now for the real
-thing.* waits for *Start*. Practice answers are never scored. They are kept in
-the session's `.json`, not the CSV. The practice clips are picked from the
-session's own clips, one emotion each before any repeats, so those clips are
-heard twice. To avoid that, point `--practice-dir` at separate clips. A Test
-has no practice: to warm a participant up before one, run a short Active
-Training session first.
 
 **At most N of one emotion in a row** (0 = no limit) shuffles so that long runs
 of one emotion can't happen; a run invites guessing. The order is still random
@@ -303,8 +305,11 @@ at the number of emotions being tested (2 for happy vs sad) and can be set from
 away. Each replay restarts the RT clock at its onset, and the per-trial CSV's
 `replays` column counts them.
 
-**Calibration...** opens the stimulus tools (next section); **Resume...** lists
-the unfinished sessions in the save folder.
+**Calibration...** opens the stimulus tools (next section). **Resume...**
+lists the unfinished sessions in the save folder; **Clear...** under it puts
+away the ones you won't finish: they move to the save folder's `cleared/`
+folder (nothing is deleted, and an ID used there is never handed out again)
+and stop being offered.
 
 **Background** sets what the participant sees behind the buttons:
 
@@ -321,11 +326,16 @@ the unfinished sessions in the save folder.
   metadata, including phone GPS. Delete files from that folder to remove them.
   Bright photos are dimmed slightly, and the on-screen text gets a translucent
   panel behind it.
-- **Slideshow (all pictures)**: the bundled and added pictures take turns,
-  changing every *N* trials (1–20) and optionally shuffled, as in the original.
-  Pictures only change *between* trials and are decoded ahead of time, so they
-  never touch audio timing or reaction times.
 - **None (plain)**: the classic plain grey screen.
+
+Tick **Slideshow** to let the bundled and added pictures take turns, starting
+with the one chosen above: a new picture every *N* trials (1–20), shuffled or
+in the list's order, as in the original. Pictures only change *between* trials
+and are decoded ahead of time, so they never touch audio timing or reaction
+times.
+
+**Full screen** is on by default; with a second display connected, the session
+opens full screen there automatically and the setup window stays on yours.
 
 When the session starts, the participant window shows the background and a
 large **Begin** button. The session, and its recorded start time, begins when
@@ -571,7 +581,7 @@ Options:
   --audio-dir PATH   Folder of .wav stimuli (default: bundled reference clips)
   --save-dir PATH    Output folder for reports [save_location/ next to the app,
                      or in the current folder when run from source]
-  --mode MODE        test | passive | active  [test]
+  --mode MODE        test | passive (Familiarization) | active (Practice)  [test]
   --emotions TAGS    Comma-separated subset, e.g. hap,sad,ang  [all five]
   --caption LANG     none | english | mandarin | spanish  [none]
   --volume FLOAT     Playback volume 0–1, for the clips and the SPL tone  [0.8]
@@ -584,14 +594,13 @@ Options:
   --background SPEC  default | none | slideshow | picture file | picture folder  [default]
   --background-every N        Slideshow: change picture every N trials (1–20)  [5]
   --[no-]background-shuffle   Slideshow: shuffle the picture order  [on]
+  --background-first PICTURE  Slideshow: the picture to start with  [the first in the order]
   --seed N           Random seed for the trial and picture order  [random; recorded]
   --max-run N        Shuffle with at most N of one emotion in a row (0 = no limit)  [0]
-  --practice N       Training modes: N practice trials with feedback first, not scored  [0]
-  --practice-dir PATH     Clips for the practice trials  [the session's own clips]
   --next-button      Between trials, wait for a click on "Ready for the next one?"
   --stars-every N    A star every N trials (0 = off)  [0]
   --break-every N    A break screen every N trials (0 = off)  [0]
-  --retry-until-correct   Active training: grey out a wrong face and ask again
+  --retry-until-correct   Practice: grey out a wrong face and ask again
                           until right (only the first answer is scored)
   --play-tone        Play the SPL tone (RMS --tone-rms, --tone-seconds long, at --volume)
   --resume LOG       Continue an interrupted session from its .partial.jsonl file
