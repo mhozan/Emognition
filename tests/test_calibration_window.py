@@ -26,6 +26,7 @@ QtGui = pytest.importorskip("PyQt6.QtGui")
 QtWidgets = pytest.importorskip("PyQt6.QtWidgets")
 
 from emognition.audio import average_rms  # noqa: E402
+from emognition.audio.loudness import NormalizationMethod  # noqa: E402
 from emognition.ui import calibration_window  # noqa: E402
 from emognition.ui.assets import audio_dir  # noqa: E402
 from emognition.ui.calibration_charts import nice_ticks, range_text, summary_lines  # noqa: E402
@@ -76,10 +77,12 @@ def _bundled_wavs():
 # -- Loudness & trim ---------------------------------------------------------------
 
 def test_preview_and_apply_run_in_the_background(app, calib, two_clips, tmp_path):
+    assert calib.method.currentData() is NormalizationMethod.RMS                 # the default
     calib.folder.setText(str(two_clips))
     calib._preview_loudness()
     assert calib._busy is not None and "Analysing" in calib.loud_status.text()   # returned at once
     assert _wait(app, lambda: calib._busy is None and calib.loud_table.rowCount() == 2)
+    assert "RMS level spread" in calib.loud_status.text()
     assert not calib.strip.measured and len(calib.strip.metrics) == 5            # predicted
     assert "In this folder" in calib.loud_help.toPlainText()                     # its own numbers
     calib._apply_loudness()
@@ -159,7 +162,7 @@ def test_deep_analysis_makes_a_card_per_clip(app, calib, two_clips):
     cc.start_deep_analysis()
     assert cc.stack.currentIndex() == 1                                          # the Cards view
     assert _wait(app, lambda: not cc.busy)
-    assert cc.cards_model.rowCount() == 2 and cc.deep_btn.text() == "Deep analysis (done)"
+    assert cc.cards_model.rowCount() == 2 and cc.deep_btn.text() == "Analyze (done)"
     cc.cards.resize(800, 400)
     assert not cc.cards.grab().isNull()
     cc.cards.setCurrentIndex(cc.cards_model.index(1, 0))                        # a card shows its clip

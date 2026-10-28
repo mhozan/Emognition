@@ -146,6 +146,24 @@ def test_gui_and_cli_share_one_padding_default():
     assert "default=DEFAULT_PAD_S * 1000.0" in script
 
 
+def test_rms_is_the_default_method_in_the_library_and_the_cli():
+    import inspect
+
+    from emognition.audio.preprocess import plan_batch
+
+    assert inspect.signature(plan_batch).parameters["method"].default is NormalizationMethod.RMS
+    script = open(os.path.join(os.path.dirname(__file__), os.pardir, "scripts",
+                               "calibrate_audio.py"), encoding="utf-8").read()
+    assert 'default="rms"' in script
+
+
+def test_titles_read_right_inside_a_sentence():
+    from emognition.audio.review import TITLES, in_sentence
+
+    assert [in_sentence(TITLES[m]) for m in NormalizationMethod] == ["loudness", "RMS level",
+                                                                     "peak level"]
+
+
 def test_apply_plan_refuses_to_overwrite_originals(tmp_path):
     from emognition.audio import apply_plan, plan_batch
 

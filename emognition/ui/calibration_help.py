@@ -35,6 +35,7 @@ from ..audio.analysis import (
 )
 from ..audio.loudness import DEFAULT_CEILING_DB, DEFAULT_TARGET_DB, NormalizationMethod
 from ..audio.preprocess import DEFAULT_PAD_S, SIDECAR_NAME, BatchPlan
+from ..audio.review import TITLES, in_sentence
 
 # Styles for the QTextBrowser panels (Qt's rich text knows this CSS subset).
 HELP_CSS = """
@@ -100,11 +101,11 @@ TIPS: dict[str, str] = {
         "Make a spectrogram card for every clip (the Cards view), on one time scale, to look "
         "over the whole set at once. The estimate is measured on this computer; Cancel stops "
         "it and keeps the cards made so far."),
-    "cancel": "Stop the deep analysis; the cards made so far stay.",
+    "cancel": "Stop the analysis; the cards made so far stay.",
     "view_table": (
         "One row per clip: the quick check's numbers and flags. Click a column header to sort; "
         "flagged clips come first."),
-    "view_cards": "The deep analysis' spectrogram cards (run Deep analysis to fill it).",
+    "view_cards": "A spectrogram card for every clip (click Analyze to fill it).",
     "flagged_only": "Show only the clips with a flag.",
     "play": (
         "Hear the selected clip as a participant will: through the session's audio path, at its "
@@ -124,15 +125,18 @@ TIPS: dict[str, str] = {
     "col_flags": "What the quick check found; hover the row for what each means and what to do.",
     # Loudness & trim
     "method": (
-        "What to equalise. Perceived loudness (LUFS) is the recommended default: clips that "
-        "measure the same LUFS sound equally loud. RMS and peak are simpler level measures."),
+        "What to equalise. RMS level, the default, gives every clip the same average level, "
+        "so the SPL tone played from the calibrated folder matches each clip, not just their "
+        "average. Perceived loudness (LUFS) weights frequencies roughly as the ear does and "
+        "skips pauses. Peak only lines up the loudest samples."),
     "method_lufs": (
         f"ITU-R BS.1770 integrated loudness: K-weighted (the ear's frequency sensitivity, "
         f"roughly) and gated, so pauses don't count. Target {minus(f'{_LUFS_TARGET:g}')} LUFS "
         "(EBU R128). Clips under 0.4 s can't be measured."),
     "method_rms": (
-        f"Root-mean-square level of the trimmed clip, pauses included, in dBFS. Target "
-        f"{minus(f'{_RMS_TARGET:g}')} dBFS. Close to what the original version did."),
+        f"The default. Root-mean-square level of the trimmed clip, pauses included, in dBFS. "
+        f"Target {minus(f'{_RMS_TARGET:g}')} dBFS: afterwards every clip has the RMS the SPL "
+        "tone plays at. Close to what the original version did."),
     "method_peak": (
         f"Every clip's highest sample brought to {minus(f'{_PEAK_TARGET:g}')} dBFS. Equal peaks "
         "are not equal loudness; use it only to match another lab's peak-normalised set."),
@@ -230,7 +234,7 @@ header to sort; hover a row for every number.</p>
 with the detected speech and, washed out, what trimming would cut. <b>Play</b>
 (or Space, or a double-click) plays it through the session's own audio path, at
 its Volume, with a playhead.</p>
-<p><b>Deep analysis</b> makes a spectrogram card for every clip (the Cards
+<p><b>Analyze</b> makes a spectrogram card for every clip (the Cards
 view), so the whole set can be looked over at once. The button says roughly how
 long it will take on this computer, and it can be cancelled.</p>
 
@@ -304,7 +308,7 @@ def _folder_numbers(plan: BatchPlan) -> str:
     else:
         parts.append(f"After trimming every clip keeps {pad:.0f} ms on each side. ")
     parts.append(
-        f"Measured loudness spans {_num(f'{min(loud):.1f}')} to {_num(f'{max(loud):.1f}')} "
+        f"Measured {in_sentence(TITLES[plan.method])} spans {_num(f'{min(loud):.1f}')} to {_num(f'{max(loud):.1f}')} "
         f"(a spread of {_num(f'{max(loud) - min(loud):.1f}')} {unit}).")
     if limited:
         short_by = [plan.gain_applied_db(c) - c.gain_db for c in limited]
@@ -339,13 +343,16 @@ most {_PAD_MS:.0f} ms on each side.</p>
 
 <h3>Loudness</h3>
 <ul>
-<li><b>LUFS</b> (default): ITU-R BS.1770 integrated loudness &mdash; K-weighted
+<li><b>RMS</b> (default): 20&middot;log<sub>10</sub> of the trimmed clip's RMS,
+pauses included. Target {_num(f'{_RMS_TARGET:g}')} dBFS. Every calibrated clip
+then has the same RMS, the quantity the SPL tone reproduces, so the meter
+reading holds for each clip, not just on average (a PEAK-LIMITED clip stays
+below it).</li>
+<li><b>LUFS</b>: ITU-R BS.1770 integrated loudness &mdash; K-weighted
 (a high-shelf plus a high-pass filter, roughly the ear's sensitivity) and gated
 (400 ms blocks quieter than {minus('-70')} LUFS, or more than 10 LU below the
 rest, are ignored), so pauses don't count. Target {_num(f'{_LUFS_TARGET:g}')}
 LUFS (EBU R128).</li>
-<li><b>RMS</b>: 20&middot;log<sub>10</sub> of the trimmed clip's RMS, pauses
-included. Target {_num(f'{_RMS_TARGET:g}')} dBFS.</li>
 <li><b>Peak</b>: the highest sample. Target {_num(f'{_PEAK_TARGET:g}')} dBFS.</li>
 </ul>
 <p>Gain = target &minus; measured, applied to the trimmed clip. No sample may

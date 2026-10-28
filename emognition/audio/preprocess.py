@@ -112,7 +112,7 @@ def plan_batch(
     paths: Sequence[str],
     out_dir: str,
     *,
-    method: NormalizationMethod = NormalizationMethod.LUFS,
+    method: NormalizationMethod = NormalizationMethod.RMS,
     target_db: float | None = None,
     threshold_db: float = -40.0,
     pad_s: float = DEFAULT_PAD_S,

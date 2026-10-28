@@ -15,11 +15,15 @@ decibels, so normalisation is always the same one-liner --
 
 regardless of whether we're matching perceived loudness (LUFS), RMS, or peak.
 
-* **LUFS** (the default, ``pyloudnorm`` / ITU-R BS.1770) is *perceived* loudness:
-  it K-weights the spectrum and gates out silence, so two clips at the same LUFS
-  genuinely *sound* equally loud -- which is what we want participants to hear.
-* **RMS (dBFS)** and **peak (dBFS)** are simpler energy/level measures, offered as
-  options (RMS ~ what the original did).
+* **RMS (dBFS)**, the default, is the clip's average energy (~ what the original
+  did). It is also the quantity the SPL tone reproduces: once every clip has the
+  same RMS, a sound level meter reading taken with the tone holds for each clip,
+  not just on average.
+* **LUFS** (``pyloudnorm`` / ITU-R BS.1770) is *perceived* loudness: it K-weights
+  the spectrum and gates out silence, so two clips at the same LUFS genuinely
+  *sound* equally loud.
+* **Peak (dBFS)** only lines up the loudest samples; offered to match another
+  lab's peak-normalised set.
 
 After applying gain we respect a peak **ceiling** (default -1 dBFS) so the result
 can't clip; if hitting the loudness target would clip, we back the gain off and
@@ -40,8 +44,8 @@ _EPS = 1e-12
 class NormalizationMethod(Enum):
     """How to equalise loudness across clips."""
 
-    LUFS = "lufs"   # perceived loudness (ITU-R BS.1770) -- recommended default
-    RMS = "rms"     # root-mean-square level in dBFS
+    LUFS = "lufs"   # perceived loudness (ITU-R BS.1770)
+    RMS = "rms"     # root-mean-square level in dBFS -- the default
     PEAK = "peak"   # peak level in dBFS
 
 

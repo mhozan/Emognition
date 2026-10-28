@@ -56,7 +56,7 @@ from PyQt6.QtWidgets import (
 
 from ..audio import NormalizationMethod, apply_plan, average_rms, plan_batch
 from ..audio.analysis import db, wav_files
-from ..audio.review import before_after, measure_written
+from ..audio.review import before_after, in_sentence, measure_written
 from ..config import DEFAULT_VOLUME
 from ..core.emotions import EMOTIONS_IN_ORDER
 from ..naming import (
@@ -372,8 +372,8 @@ class CalibrationWindow(QWidget):
     def _loudness_tab(self) -> QWidget:
         self.method = QComboBox()
         for method, text, tip in (
+            (NormalizationMethod.RMS, "RMS level (dBFS)", TIPS["method_rms"]),     # the default
             (NormalizationMethod.LUFS, "Perceived loudness (LUFS)", TIPS["method_lufs"]),
-            (NormalizationMethod.RMS, "RMS level (dBFS)", TIPS["method_rms"]),
             (NormalizationMethod.PEAK, "Peak level (dBFS)", TIPS["method_peak"]),
         ):
             self.method.addItem(text, method)
@@ -479,7 +479,7 @@ class CalibrationWindow(QWidget):
         self.loud_status.setText(
             f"{len(plan.clips)} clips · up to {plan.max_trim_ms:.0f} ms of silence trimmed per clip "
             f"· gain {minus(f'{min(gains):+.1f}')} to {minus(f'{max(gains):+.1f}')} dB "
-            f"· {loud.title.lower()} spread "
+            f"· {in_sentence(loud.title)} spread "
             f"{fmt_value(loud.spread_before, unit)} → {fmt_value(loud.spread_after, unit)} {unit}"
             + ("  (already calibrated: nothing here is worth changing)" if plan.is_minor() else "")
         )
@@ -531,7 +531,7 @@ class CalibrationWindow(QWidget):
         unit = "LU" if loud.unit == "LUFS" else "dB"
         self.loud_status.setText(
             f"Wrote {len(written)} files to {plan.out_dir} · measured again: "
-            f"{loud.title.lower()} spread {fmt_value(loud.spread_after, unit)} {unit}. "
+            f"{in_sentence(loud.title)} spread {fmt_value(loud.spread_after, unit)} {unit}. "
             "Point the setup window's Audio folder at it to use it.")
         self.use_calibrated.show()
 

@@ -47,6 +47,12 @@ TITLES: dict[NormalizationMethod, str] = {
 }
 
 
+def in_sentence(title: str) -> str:
+    """A panel title inside a sentence: "Loudness" -> "loudness"; "RMS level" keeps its capitals."""
+    first = title.split(" ", 1)[0]
+    return title if first.isupper() else title[:1].lower() + title[1:]
+
+
 @dataclass(frozen=True, slots=True)
 class Written:
     """One calibrated file, measured after it was written."""

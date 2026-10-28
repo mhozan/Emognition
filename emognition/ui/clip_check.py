@@ -19,8 +19,8 @@ Built to stay responsive with a large stimulus set:
    span and what the trim would cut. It can be played -- Space, a double-click
    or the Play button -- through the session's own audio path and Volume, with
    a playhead.
-3. **Deep analysis** (on request, with an estimate of how long it will take): a
-   spectrogram card for every clip, filled in as they're made; cancellable.
+3. **Analyze** (the deep analysis, on request, with an estimate of how long it
+   will take): a spectrogram card for every clip, filled in as they're made; cancellable.
    Cards are kept as compressed PNG and decoded only when they're on screen, so
    even a large folder costs little memory.
 
@@ -497,7 +497,7 @@ class ClipCheckTab(QWidget):
     def _build(self) -> None:
         self.check_btn = self._button("Check again", TIPS["check_again"], secondary=True)
         self.check_btn.clicked.connect(lambda: self.refresh(self._folder_source(), force=True))
-        self.deep_btn = self._button("Deep analysis", TIPS["deep"])
+        self.deep_btn = self._button("Analyze", TIPS["deep"])
         self.deep_btn.clicked.connect(self.start_deep_analysis)
         self.cancel_btn = self._button("Cancel", TIPS["cancel"], secondary=True)
         self.cancel_btn.clicked.connect(self.cancel_deep_analysis)
@@ -790,11 +790,11 @@ class ClipCheckTab(QWidget):
         clips = self.table_model.clips
         self.deep_btn.setEnabled(bool(clips) and self._deep_job is None)
         if not clips:
-            self.deep_btn.setText("Deep analysis")
+            self.deep_btn.setText("Analyze")
         elif all(c.path in self._card_pngs for c in clips):
-            self.deep_btn.setText("Deep analysis (done)")         # shows the cards again, at once
+            self.deep_btn.setText("Analyze (done)")         # shows the cards again, at once
         else:
-            self.deep_btn.setText(f"Deep analysis ({eta_text(self.estimate())})")
+            self.deep_btn.setText(f"Analyze ({eta_text(self.estimate())})")
 
     def start_deep_analysis(self) -> None:
         """A spectrogram card for every clip, flagged first; shown as they're made."""
@@ -859,8 +859,8 @@ class ClipCheckTab(QWidget):
         n = self.cards_model.rowCount()
         self.status.setText(
             folder_summary(self.table_model.clips, self.table_model.flags)
-            + (f" · deep analysis cancelled after {n} cards" if cancelled
-               else f" · deep analysis: {n} cards in {seconds:.1f} s"))
+            + (f" · analysis cancelled after {n} cards" if cancelled
+               else f" · analysis: {n} cards in {seconds:.1f} s"))
         self._update_deep_button()
 
     def _on_deep_failed(self, message: str) -> None:
@@ -869,7 +869,7 @@ class ClipCheckTab(QWidget):
         self._deep_job = None
         self.progress.hide()
         self.cancel_btn.hide()
-        self.status.setText(f"Deep analysis stopped: {message}")
+        self.status.setText(f"Analysis stopped: {message}")
         self._update_deep_button()
 
     def _show_progress(self, what: str, done: int, total: int, *, eta: bool = False) -> None:
@@ -879,7 +879,7 @@ class ClipCheckTab(QWidget):
         self.progress.show()
         if eta and done:
             left = (time.perf_counter() - self._deep_t0) / done * (total - done)
-            self.status.setText(f"Deep analysis: {done} of {total} clips · {eta_text(left)} left")
+            self.status.setText(f"Analysis: {done} of {total} clips · {eta_text(left)} left")
 
     # -- listening ---------------------------------------------------------------------
 

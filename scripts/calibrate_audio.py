@@ -43,7 +43,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--out", default=None,
                         help="output folder (default: <input>_calibrated)")
     parser.add_argument("--method", choices=[m.value for m in NormalizationMethod],
-                        default="lufs", help="loudness metric (default: lufs)")
+                        default="rms", help="loudness metric (default: rms)")
     parser.add_argument("--target", type=float, default=None,
                         help="target level in the metric's dB units (default per method)")
     parser.add_argument("--pad-ms", type=float, default=DEFAULT_PAD_S * 1000.0,
