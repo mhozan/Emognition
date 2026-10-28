@@ -53,7 +53,7 @@ and homage.
 | **Engagement and pacing** | Opt-in: a *Next* button between trials (the original's Extra button), a star every N trials, a break screen every N trials. None of it depends on whether answers are right |
 | **Pause and safe quit** | **P** pauses and resumes; **Esc** asks before quitting. A trial interrupted either way is replayed, and the per-trial CSV counts it |
 | **Crash-safe autosave** | Every trial is on disk the moment it ends; an interrupted session resumes at the next trial, in the same order |
-| **Calibration** | Check a stimulus set at a glance (waveform, spectrogram and RMS curve of every clip, flags for clipping, DC offset, noise, cut-off speech); equalise loudness (ITU-R BS.1770) and trim silence, with before/after charts; BIDS-style renaming; an SPL tone at the session volume. Every step is explained in the window |
+| **Calibration** | Check a stimulus set at a glance (waveform, spectrogram and RMS curve of every clip, flags for clipping, DC offset, noise, cut-off speech); equalise level (RMS by default, or ITU-R BS.1770 loudness) and trim silence, with before/after charts; BIDS-style renaming; an SPL tone at the session volume. Every step is explained in the window |
 | **Experimenter monitor** | Live per-trial accuracy and RT on the experimenter's screen while the participant runs |
 | **Reports** | Self-contained HTML, PDF (confusion heatmap + RT charts), Excel (4 sheets), CSV |
 | **Multi-display** | Experiment auto-routes to the participant's screen; setup stays on the experimenter's |
@@ -392,9 +392,9 @@ tooltip.
   large view — waveform, spectrogram (0–8 kHz) and the short-time RMS curve the
   end-of-speech detector decides on, with what trimming would cut — and
   **Play** (or Space) plays it through the session's own audio path, at its
-  Volume, with a playhead. **Deep analysis**, on request, makes a spectrogram
-  card for every clip on one time scale; its button estimates how long that
-  will take on your computer, and it can be cancelled.
+  Volume, with a playhead. **Analyze**, on request, makes a spectrogram card
+  for every clip on one time scale; the button estimates how long that will
+  take on your computer, and it can be cancelled.
 - **Loudness & trim**: *Preview* shows what calibration would change for every
   clip (duration, silence before and after the speech, loudness, peak), as a
   table and as before/after charts with the target, ceiling and padding.
@@ -410,9 +410,11 @@ every 10 ms, and frames within 40 dB of the loudest one count as speech; speech
 starts at the first such frame and ends at the end of the last. What follows is
 trailing silence (188–276 ms in the bundled clips), which the file-offset RT
 includes. Trimming keeps 100 ms before and after the speech and never adds
-silence. Loudness is matched with ITU-R BS.1770 (LUFS, target −23, as in EBU
-R128) by default, or by RMS or peak; no sample may pass −1 dBFS, so a clip
-that would clip is held below the target and flagged PEAK-LIMITED.
+silence. Levels are matched by RMS by default (target −23 dBFS: every
+calibrated clip then has the RMS the SPL tone plays at), or by ITU-R BS.1770
+loudness (LUFS, target −23, as in EBU R128) or peak; no sample may pass
+−1 dBFS, so a clip that would clip is held below the target and flagged
+PEAK-LIMITED.
 
 **Setting the level.** Set the Volume in the setup window first. Put the meter
 where the participant's head will be, or the earphone on a coupler; play the
@@ -518,7 +520,7 @@ pytest -v tests/test_timing.py   # just the timing tests
 ```
 emognition/
   core/        UI-free logic: emotions, stimuli, timing, scoring, session modes
-  audio/       Loudness normalization (LUFS), speech endpoints/trim, clip analysis, SPL tone
+  audio/       Loudness normalization (RMS, LUFS, peak), speech endpoints/trim, clip analysis, SPL tone
   naming/      BIDS-style canonical names + legacy parser + TSV manifest
   imaging/     Backgrounds, picture import, the calibration clip cards (Pillow)
   ui/          PyQt6 setup/calibration/monitor windows; PsychoPy experiment window
