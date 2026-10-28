@@ -9,7 +9,7 @@
 """Which background picture the participant sees on which trial (UI-free).
 
 The original program could fill the participant window with pictures from a
-folder and swap them every few responses -- a way to keep children engaged.
+folder and swap them every few responses -- a way to keep participants engaged.
 
     Homage to the original (bgchanger.m):
         indx=1+ceil(S.keypresscount/S.intervl);

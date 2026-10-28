@@ -6,9 +6,9 @@
 # as published by the Free Software Foundation, either version 3 of the
 # License, or (at your option) any later version. See the LICENSE file.
 
-"""What happens between two trials: the optional, child-friendly pacing.
+"""What happens between two trials: the optional pacing.
 
-All of it is off by default, and none of it depends on how well the child is
+All of it is off by default, and none of it depends on how well the participant is
 doing -- it marks *progress*, so it can't bias which answers they give:
 
 * a **star** every N trials (a row under the progress bar fills up; the last

@@ -12,7 +12,7 @@ Run with:  .venv/bin/python scripts/generate_backgrounds.py
 
 The pictures are drawn procedurally (numpy + Pillow, fixed seeds), so they are
 reproducible, licence-clean (no third-party art) and easy to tweak. Design rules,
-because these sit behind an emotion-recognition task for children:
+because these sit behind an emotion-recognition task:
 
 * calm and static -- soft shapes, low contrast, no motion;
 * no text and **no faces or characters** (a face could prime emotion judgements);

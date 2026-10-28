@@ -86,7 +86,7 @@ def background_path() -> str:
 
 
 def backgrounds_dir() -> str:
-    """Folder of the bundled, child-friendly participant-window backgrounds.
+    """Folder of the bundled, calm participant-window backgrounds.
 
     The MATLAB app shipped a ``background_pics/`` folder beside the executable
     for the same purpose; these pictures are generated reproducibly by

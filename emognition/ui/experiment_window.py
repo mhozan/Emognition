@@ -43,15 +43,15 @@ The trial loop (Test mode)::
         RT = (response time) - (t=0); offset RT = onset RT - clip duration
 
 The experimenter's keys: **P** pauses (P again resumes) and **Escape** asks
-"Quit this session?" (Y quits, N carries on) -- one stray press, often a child's,
-used to end the session. A clip or an answer interrupted either way is replayed
+"Quit this session?" (Y quits, N carries on) -- one stray press by the
+participant used to end the session. A clip or an answer interrupted either way is replayed
 from the start (an RT that spans a pause would be meaningless) and counted in
 ``Response.n_pauses``.
 
-Between trials, optional child-friendly pacing (core/pacing.py; all off by
+Between trials, optional pacing (core/pacing.py; all off by
 default, none of it tied to correctness): a star every N trials, a break screen
 every N trials, and a "Ready for the next one?" button -- the original's Extra
-button -- that the child clicks to hear the next clip.
+button -- that the participant clicks to hear the next clip.
 
 Two response modalities, one shared clock (reset at audio onset):
   * number keys 1..N  -> pyglet keyboard via psychopy.event
@@ -140,7 +140,7 @@ _PANEL_OPACITY = 0.45
 _PANEL_RADIUS = 0.03
 _PANEL_PAD = (0.035, 0.022)   # horizontal, vertical padding around a prompt
 
-# The Begin screen: a big friendly target for children; Space/Enter for adults.
+# The Begin screen: a big, easy target for the participant; Space/Enter for the experimenter.
 _BEGIN_LABEL = "Begin"
 _BEGIN_KEYS = ("space", "return", "num_enter")
 _BEGIN_SIZE = (0.42, 0.14)
@@ -300,7 +300,7 @@ class BeginButton:
     """A large rounded button: "Begin", and the between-trial "Next"/"Continue".
 
     The original's "Begin Test" was a small dark button in the bottom-left corner
-    (proceed.m); this one is big enough for a child to find and hit, and as wide
+    (proceed.m); this one is big enough for any participant to find and hit, and as wide
     as its label needs (never narrower than 3x its height). The rounded outline
     is computed once; ``contains`` tests that exact shape.
     """

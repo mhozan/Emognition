@@ -218,15 +218,15 @@ class ConfigWindow(QWidget):
         self.caption = QComboBox(); self.caption.addItems(_CAPTIONS)
         self.mode = QComboBox()
         self.mode.addItems([_MODE_LABELS[m] for m in _MODES])
-        # Child-friendly pacing between trials (all off by default).
+        # Optional pacing between trials (all off by default).
         self.next_button = QCheckBox("Next button")
         self.next_button.setToolTip(
-            "Between trials, the child clicks 'Ready for the next one?' to hear the next "
+            "Between trials, the participant clicks 'Ready for the next one?' to hear the next "
             "clip (the original's Extra button).")
         self.stars_every = self._every_spinbox("A star every N trials, filling a row under "
                                                "the progress bar. Never tied to correctness.")
         self.break_every = self._every_spinbox("A 'Time for a short break!' screen every N "
-                                               "trials; the child clicks Continue.")
+                                               "trials; the participant clicks Continue.")
         self.practice = self._every_spinbox("Practice trials with feedback before the test, "
                                             "picked from the clips (one per emotion first). "
                                             "They are never scored.", maximum=20)
@@ -610,7 +610,7 @@ class ConfigWindow(QWidget):
         """Ask before reusing a participant ID that already has reports here.
 
         The previous ID is remembered between sessions, so it's easy to run the
-        next child under the last one's ID by mistake.
+        next participant under the previous one's ID by mistake.
         """
         folder = settings.save_dir or _default_save_dir()
         mine = session_file_pattern(settings.participant, ".csv")

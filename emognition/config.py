@@ -92,7 +92,7 @@ class ExperimentSettings:
     # Active training only: a wrong answer greys out that face and asks again
     # until the right one is chosen (the original's "Try until you get it right!").
     retry_until_correct: bool = False
-    # Child-friendly pacing between trials (core/pacing.py), all off by default:
+    # Optional pacing between trials (core/pacing.py), all off by default:
     # the original's "Extra button", a star every N trials, a break every N trials.
     next_button: bool = False
     stars_every: int = 0

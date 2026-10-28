@@ -44,9 +44,9 @@ and homage.
 | **Active training** | Participant responds, then correct (green) / wrong (orange) feedback before advancing; optionally *retry until correct*, as in the original |
 | **Emoticon buttons** | Crisp at any screen size (drawn at 512 px from the original artwork); captions in English, Spanish or Traditional Chinese, or none, set in Noto Sans |
 | **Begin screen** | The participant starts the session with a big **Begin** button (or Space/Enter); the report's start time and duration count from that press |
-| **Background pictures** | Calm, text-free backgrounds to keep children engaged: a soothing gradient by default, five bundled scenes, your own pictures via **Add picture…**, or a slideshow that changes every N trials |
+| **Background pictures** | Calm, text-free backgrounds to keep participants engaged: a soothing gradient by default, five bundled scenes, your own pictures via **Add picture…**, or a slideshow that changes every N trials |
 | **Practice and balanced order** | Opt-in practice trials with feedback before the test (never scored), and a shuffle with at most N of one emotion in a row |
-| **Child-friendly pacing** | Opt-in: a *Next* button between trials (the original's Extra button), a star every N trials, a break screen every N trials. None of it depends on whether answers are right |
+| **Engagement and pacing** | Opt-in: a *Next* button between trials (the original's Extra button), a star every N trials, a break screen every N trials. None of it depends on whether answers are right |
 | **Pause and safe quit** | **P** pauses and resumes; **Esc** asks before quitting. A trial interrupted either way is replayed, and the per-trial CSV counts it |
 | **Crash-safe autosave** | Every trial is on disk the moment it ends; an interrupted session resumes at the next trial, in the same order |
 | **Calibration** | Per-corpus loudness normalization (LUFS), speech-endpoint trim, BIDS-style renaming |
@@ -299,10 +299,10 @@ When the session starts, the participant window shows the background and a
 large **Begin** button. The session, and its recorded start time, begins when
 the participant clicks it, or when the experimenter presses Space or Enter.
 
-**Child-friendly pacing** (all off by default, on the setup window's second
+**Engagement and pacing** (all off by default, on the setup window's second
 options row):
 
-- **Next button**: after each answer, the child clicks *Ready for the next
+- **Next button**: after each answer, the participant clicks *Ready for the next
   one?* (or the experimenter presses Space) to hear the next clip. This is the
   original's "Extra button".
 - **Star every N trials**: a row of stars under the progress bar fills up,
