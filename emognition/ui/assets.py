@@ -110,6 +110,11 @@ def background_folders() -> tuple[str, str]:
     return backgrounds_dir(), user_backgrounds_dir()
 
 
+def ui_icon_path(name: str) -> str:
+    """A control icon of the Qt theme (check mark, arrows), drawn by scripts/generate_ui_icons.py."""
+    return _image(os.path.join("ui", f"{name}.png"))
+
+
 def replay_button_path() -> str:
     """The replay-button icon (shown after each clip when replays are allowed)."""
     return _image("replaybutton.png")

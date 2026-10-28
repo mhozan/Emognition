@@ -61,6 +61,7 @@ from ..core.backgrounds import (
 )
 from ..io.autosave import find_interrupted, read_session_log
 from ..io.lines import LineBuffer
+from .theme import apply_theme
 from .assets import audio_dir as _bundled_audio_dir
 from .assets import (
     background_folders,
@@ -87,22 +88,16 @@ _PICTURE_FILTER = "Pictures ({})".format(" ".join(
     f"*.{ext} *.{ext.upper()}" for ext in ("png", "jpg", "jpeg", "bmp", "gif", "webp")
 ))
 
-# Light, high-contrast theme for the form (overrides the OS theme so labels are
-# never light-on-light regardless of the user's desktop appearance).
+# Layout and accents only: the colours, fields, checkboxes and arrows come from
+# the shared theme (ui/theme.py), so every window and dialog looks the same.
 _STYLE = """
-QWidget { font-size: 14px; color: #20203a; }
-QLabel { background: transparent; color: #20203a; }
+QWidget { font-size: 14px; }
+QLabel { background: transparent; }
 QLabel#title { font-size: 22px; font-weight: 700; color: #2a2250; }
 QLabel#subtitle { color: #5a5a7a; }
 QFrame#card { background: #ffffff; border-radius: 14px; }
-QLineEdit, QComboBox, QSpinBox {
-    background: #ffffff; color: #20203a;
-    border: 1px solid #c4c4d6; border-radius: 7px; padding: 7px 9px;
-}
 QLabel#preview { border: 1px solid #c4c4d6; border-radius: 6px; }
-QLineEdit:focus, QComboBox:focus { border: 1px solid #6c5ce7; }
-QComboBox::drop-down { border: none; width: 22px; }
-QCheckBox { background: transparent; color: #20203a; spacing: 7px; }
+QCheckBox { background: transparent; }
 QPushButton {
     background: #6c5ce7; color: #ffffff; border: none;
     border-radius: 9px; padding: 9px 18px; font-weight: 700;
@@ -804,12 +799,13 @@ class ConfigWindow(QWidget):
 
 
 def configure_app(app: QApplication) -> QApplication:
-    """Quit only when the setup window itself closes.
+    """The shared light theme (ui/theme.py), and quit only when the setup window closes.
 
     Qt's default -- quit when the last *visible* window closes -- fired when the
     experimenter closed the monitor mid-session (the setup window is hidden
     then), and quitting destroys the QProcess, which kills the experiment.
     """
+    apply_theme(app)
     app.setQuitOnLastWindowClosed(False)
     return app
 

@@ -54,6 +54,7 @@ from ..naming import (
     write_manifest,
 )
 from .assets import audio_dir, self_command
+from .theme import apply_theme
 
 
 def _table(headers: list[str]) -> QTableWidget:
@@ -372,7 +373,7 @@ class CalibrationWindow(QWidget):
 
 def run_calibration_ui() -> int:
     """Open the Calibration window standalone; returns the Qt exit code."""
-    app = QApplication.instance() or QApplication(sys.argv[:1])
+    app = apply_theme(QApplication.instance() or QApplication(sys.argv[:1]))
     window = CalibrationWindow()
     window.show()
     return app.exec()

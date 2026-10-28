@@ -385,3 +385,24 @@ def test_monitor_shrugs_off_unknown_or_odd_events(app):
     m.handle_event({})
     m.handle_event({"status": "trial", "index": 1, "total": 0})     # used to divide by zero
     assert m._lbl_trial.text() == "1 / 0"
+
+
+# --- one readable theme, whatever the desktop's (ui/theme.py) -----------------------
+
+def test_theme_overrides_a_dark_desktop_palette(app):
+    from PyQt6.QtGui import QColor, QPalette
+
+    from emognition.ui.theme import apply_theme
+
+    dark = QPalette()
+    for role in (QPalette.ColorRole.Window, QPalette.ColorRole.Base, QPalette.ColorRole.Button):
+        dark.setColor(role, QColor("#202020"))
+    for role in (QPalette.ColorRole.Text, QPalette.ColorRole.WindowText, QPalette.ColorRole.ButtonText):
+        dark.setColor(role, QColor("#f0f0f0"))
+    app.setPalette(dark)                     # what a dark desktop theme hands Qt
+    apply_theme(app)
+    p, R, G = app.palette(), QPalette.ColorRole, QPalette.ColorGroup
+    assert p.color(R.Base).lightness() > 240 and p.color(R.Window).lightness() > 230
+    assert p.color(R.Text).lightness() < 60 and p.color(R.ButtonText).lightness() < 60
+    assert p.color(G.Disabled, R.Text) != p.color(G.Active, R.Text)   # greyed, visibly
+    assert p.color(R.ToolTipBase).lightness() < 80 and p.color(R.ToolTipText).lightness() > 240
