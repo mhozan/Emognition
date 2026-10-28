@@ -8,17 +8,20 @@
 
 """Take screenshots of each UI panel and save to docs/screenshots/.
 
-Run with:  DISPLAY=:0 .venv/bin/python scripts/take_screenshots.py
+Run with (nothing is shown on screen):
+    QT_QPA_PLATFORM=offscreen .venv/bin/python scripts/take_screenshots.py
 """
 import sys
 import os
 import io
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from PyQt6.QtWidgets import QApplication, QTabWidget
+from PyQt6.QtWidgets import QApplication
 from PIL import Image, ImageDraw, ImageFont
 
-app = QApplication(sys.argv[:1])
+from emognition.ui.config_window import configure_app
+
+app = configure_app(QApplication(sys.argv[:1]))     # the app's own light theme
 OUT = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "docs", "screenshots"))
 os.makedirs(OUT, exist_ok=True)
 
@@ -83,60 +86,66 @@ def save(img: Image.Image, name: str) -> None:
 from emognition.ui.config_window import ConfigWindow
 from emognition.config import ExperimentSettings
 
-w1 = ConfigWindow(settings_path="/dev/null")
+import tempfile
+
+# A fresh settings file (none yet: the defaults), and placeholders for local paths.
+w1 = ConfigWindow(settings_path=os.path.join(tempfile.mkdtemp(), "settings.json"))
 w1.apply_settings(ExperimentSettings(
-    participant="P01",
+    participant="sub-001",
     experimenter="Researcher",
     audio_dir="<your audio folder>",
     save_dir="<your save folder>",
 ))
+w1._refresh_resume()                 # the placeholder folder has no unfinished sessions
 img = grab_widget(w1)
 w1.close()
 save(annotate(img, "Experimenter setup: configure participant, audio folder, mode, and emotions before each session."), "setup.png")
 
 
-# ── 2. Calibration — three tabs ──────────────────────────────────────────────
-from emognition.ui.calibration_window import CalibrationWindow
+# ── 2. Calibration — four tabs ───────────────────────────────────────────────
+from PyQt6.QtCore import QEventLoop, QTimer
+
 from emognition.ui.assets import audio_dir
+from emognition.ui.calibration_window import CalibrationWindow
 
-w2 = CalibrationWindow()
+
+def settle(window, timeout_ms: int = 30000) -> None:
+    """Wait for the tab's background measurement (each tab measures when shown)."""
+    loop, timer = QEventLoop(), QTimer()
+    done = lambda: window._busy is None and not window._refresh_after_task  # noqa: E731
+    timer.timeout.connect(lambda: done() and loop.quit())
+    timer.start(20)
+    QTimer.singleShot(timeout_ms, loop.quit)
+    loop.exec()
+    timer.stop()
+    for _ in range(3):
+        app.processEvents()
+
+
+w2 = CalibrationWindow(folder=audio_dir(), volume=0.8)
+w2.resize(1280, 820)
 w2.show()
-app.processEvents()
-tabs: QTabWidget = w2.findChild(QTabWidget)
-
-# Replace local paths with a generic placeholder for all tabs.
-for field in (w2.stim_dir, w2.loud_dir, w2.tone_dir):
-    field.setText("<your audio folder>")
-app.processEvents()
-
-# Tab 0 — Stimuli / naming: load audio and inspect
-tabs.setCurrentIndex(0)
-w2.stim_dir.setText(audio_dir())   # real path needed to scan files
-app.processEvents()
-w2._inspect_stimuli()
-w2.stim_dir.setText("<your audio folder>")  # restore placeholder for screenshot
-app.processEvents()
-app.processEvents()
-img = grab_widget(w2)
-save(annotate(img, "Stimuli / naming: inspect each clip's recognized emotion, sex, and recording ID. Rename legacy filenames to BIDS-style canonical form."), "calibration_stimuli.png")
-
-# Tab 1 — Loudness & trim: preview normalization plan
-tabs.setCurrentIndex(1)
-w2.loud_dir.setText(audio_dir())
-app.processEvents()
-w2._preview_loudness()
-w2.loud_dir.setText("<your audio folder>")
-app.processEvents()
-app.processEvents()
-img = grab_widget(w2)
-save(annotate(img, "Loudness & trim: preview per-clip gain, silence trim, and duration changes. Apply to write a loudness-normalized copy of the corpus."), "calibration_loudness.png")
-
-# Tab 2 — SPL tone: no data to load, just the controls
-tabs.setCurrentIndex(2)
-app.processEvents()
-img = grab_widget(w2)
-save(annotate(img, "SPL tone: play a 1 kHz calibration tone matched to the corpus RMS so you can set booth SPL on a sound-level meter before the session."), "calibration_tone.png")
-
+for index, name, caption in (
+    (0, "calibration_stimuli.png",
+     "Stimuli / naming: what each file name says (emotion, speaker sex), how balanced the set is, "
+     "and the manifest. Every tab explains its methods in the panel on the right."),
+    (1, "calibration_clips.png",
+     "Clip check: a card per recording (waveform, spectrogram, and the RMS curve the end-of-speech "
+     "detector uses) with sanity flags; click one for the large view."),
+    (2, "calibration_loudness.png",
+     "Loudness & trim: every clip before and after calibration (duration, silence around the speech, "
+     "loudness, peak); Apply writes a calibrated copy and measures it again."),
+    (3, "calibration_tone.png",
+     "SPL tone: a 1 kHz tone at the recordings' average level, played at the session's Volume, "
+     "for setting the presentation level on a sound level meter."),
+):
+    w2.tabs.setCurrentIndex(index)
+    settle(w2)
+    w2.folder.setText("<your audio folder>")      # no local paths in the docs
+    img = grab_widget(w2)
+    w2.folder.setText(audio_dir())
+    save(annotate(img, caption), name)
+w2._wait_for_task()
 w2.close()
 
 
@@ -146,7 +155,7 @@ from emognition.ui.monitor_window import MonitorWindow
 w3 = MonitorWindow()
 w3.show()
 app.processEvents()
-w3.handle_event({"status": "start", "total": 10, "mode": "test", "participant": "P01"})
+w3.handle_event({"status": "start", "total": 10, "mode": "test", "participant": "sub-001"})
 app.processEvents()
 
 for i, (emotion, responded, correct, rt) in enumerate([

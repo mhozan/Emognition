@@ -28,6 +28,23 @@ import numpy as np
 from .loudness import to_mono
 
 
+def frame_rms(mono: np.ndarray, rate: int, frame_ms: float = 20.0,
+              hop_ms: float = 10.0) -> tuple[np.ndarray, int, int]:
+    """Short-time RMS: one value per *frame_ms* window, every *hop_ms*.
+
+    Returns ``(energies, frame, hop)`` with *frame* and *hop* in samples. This
+    is what :func:`detect_endpoints` decides on, so the calibration window
+    plots exactly the curve the detector saw.
+    """
+    frame = max(1, int(rate * frame_ms / 1000.0))
+    hop = max(1, int(rate * hop_ms / 1000.0))
+    if mono.shape[0] < frame:
+        return np.zeros(0), frame, hop
+    starts = range(0, mono.shape[0] - frame + 1, hop)
+    energies = np.array([math.sqrt(float(np.mean(mono[s:s + frame] ** 2))) for s in starts])
+    return energies, frame, hop
+
+
 def detect_endpoints(
     samples: np.ndarray,
     rate: int,
@@ -54,16 +71,10 @@ def detect_endpoints(
     if n == 0:
         return 0.0, 0.0
 
-    frame = max(1, int(rate * frame_ms / 1000.0))
-    hop = max(1, int(rate * hop_ms / 1000.0))
-    if n < frame:
+    energies, frame, hop = frame_rms(mono, rate, frame_ms, hop_ms)
+    if energies.size == 0:
         return 0.0, duration
 
-    # Per-frame RMS.
-    starts = range(0, n - frame + 1, hop)
-    energies = np.array([
-        math.sqrt(float(np.mean(mono[s:s + frame] ** 2))) for s in starts
-    ])
     peak = float(energies.max()) if energies.size else 0.0
     if peak <= 0.0:
         return 0.0, duration

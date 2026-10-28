@@ -69,3 +69,37 @@ def test_average_rms_of_bundled_clips_is_positive():
     ]
     rms = average_rms(paths)
     assert 0.0 < rms < 1.0
+
+
+def test_tone_plays_stereo_at_the_session_volume(monkeypatch):
+    """The tone takes the clips' path -- one stereo stream, at --volume -- so a level
+    set with it is the level the clips are heard at (it used to play mono at 1.0)."""
+    import sys
+    import types
+
+    from emognition import app, runtime
+
+    made = []
+
+    class FakeSound:
+        def __init__(self, value, stereo=None, **kwargs):
+            self.stereo, self.volume, self.played = stereo, 1.0, False
+            made.append(self)
+
+        def play(self):
+            self.played = True
+
+        def stop(self):
+            pass
+
+    fake = types.ModuleType("psychopy")
+    fake.sound = types.SimpleNamespace(Sound=FakeSound)
+    fake.core = types.SimpleNamespace(wait=lambda seconds: None, quit=lambda: None)
+    monkeypatch.setitem(sys.modules, "psychopy", fake)
+    monkeypatch.setattr(runtime, "bootstrap", lambda: None)
+    monkeypatch.setattr(runtime, "ptb_audio_problem", lambda *a, **k: None)
+    with pytest.raises(SystemExit) as exited:
+        app.main(["--play-tone", "--tone-rms", "0.05", "--tone-seconds", "2", "--volume", "0.6"])
+    assert exited.value.code == 0
+    (snd,) = made
+    assert snd.stereo is True and snd.volume == pytest.approx(0.6) and snd.played

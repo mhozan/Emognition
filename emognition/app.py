@@ -631,11 +631,16 @@ def _open_calibration_ui() -> int:
     return run_calibration_ui()
 
 
-def _play_tone(rms: float, seconds: float) -> int:
+def _play_tone(rms: float, seconds: float, volume: float = 0.8) -> int:
     """Play the SPL calibration tone, then exit (run as a subprocess, no window).
 
     Kept out of the Qt process on purpose; the Calibration window starts/stops
     this via QProcess so audio never shares the GUI process.
+
+    The tone goes through exactly the path a stimulus does -- one stereo stream
+    (a mono file plays in both ears), at the session's *volume* -- so a level
+    set on a meter with the tone is the level the clips are heard at. (It used
+    to play mono at full volume: 1.9 dB above the clips at the default 0.8.)
     """
     import tempfile
 
@@ -662,7 +667,8 @@ def _play_tone(rms: float, seconds: float) -> int:
         wav = fh.name
     try:
         sf.write(wav, tone, rate)
-        snd = sound.Sound(wav, stereo=False)
+        snd = sound.Sound(wav, stereo=True)       # as the session plays its clips
+        snd.volume = max(0.0, min(1.0, volume))
         snd.play()
         core.wait(seconds + 0.2)
         snd.stop()
@@ -727,7 +733,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--amp-visualizer", action="store_true",
                         help="show a green amplitude LED during playback")
     parser.add_argument("--volume", type=float, default=0.8,
-                        help="playback volume 0.0-1.0 (experimenter-set; default 0.8)")
+                        help="playback volume 0.0-1.0 for the clips, and for --play-tone "
+                             "(experimenter-set; default 0.8)")
     parser.add_argument("--save-dir", default=None,
                         help="folder for output reports (default: save_location/ next to "
                              "the app, or in the current folder when run from source)")
@@ -785,7 +792,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.selfcheck:
         return _selfcheck()
     if args.play_tone:
-        return _play_tone(args.tone_rms, args.tone_seconds)
+        return _play_tone(args.tone_rms, args.tone_seconds, args.volume)
     if args.calibrate:
         return _open_calibration_ui()
     # Bare launch (no args) or explicit --setup opens the experimenter screen;

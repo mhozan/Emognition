@@ -19,10 +19,12 @@ writes anything, and it writes to a *new* folder; originals are never touched.
 from __future__ import annotations
 
 import json
+import math
 import os
 from collections.abc import Sequence
 from dataclasses import dataclass
 
+import numpy as np
 import soundfile as sf
 
 from .endpoints import detect_endpoints, trim_samples
@@ -61,6 +63,7 @@ class ClipPlan:
     measured_db: float       # loudness of the trimmed clip (method units)
     gain_db: float           # gain that would be applied to hit the target
     will_limit: bool         # True if peak-ceiling would cap the gain (clip-safe)
+    peak_db: float = 0.0     # sample peak of the trimmed clip, dBFS, before any gain
 
     @property
     def trim_ms(self) -> float:
@@ -78,6 +81,10 @@ class BatchPlan:
     ceiling_db: float
     pad_s: float
     out_dir: str
+
+    def gain_applied_db(self, clip: ClipPlan) -> float:
+        """The gain *clip* really gets: the planned gain, or less where the ceiling caps it."""
+        return min(clip.gain_db, self.ceiling_db - clip.peak_db) if clip.will_limit else clip.gain_db
 
     @property
     def max_trim_ms(self) -> float:
@@ -126,6 +133,7 @@ def plan_batch(
         measured_db = measure(trimmed, rate, method)
         gain_db = target_db - measured_db
         _, will_limit = apply_gain(trimmed, gain_db, ceiling_db)
+        peak = float(np.max(np.abs(trimmed))) if trimmed.size else 0.0
 
         lead_trim_s = max(0.0, onset_s - pad_s)
         tail_trim_s = max(0.0, orig_duration - (offset_s + pad_s))
@@ -143,6 +151,7 @@ def plan_batch(
             measured_db=measured_db,
             gain_db=gain_db,
             will_limit=will_limit,
+            peak_db=20.0 * math.log10(max(peak, 1e-12)),
         ))
 
     return BatchPlan(

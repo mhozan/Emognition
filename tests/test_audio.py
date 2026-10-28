@@ -192,3 +192,121 @@ def test_speech_span_finds_the_speech_inside_the_silence(tmp_path):
 
     onset, offset = speech_span(_tone_file(tmp_path / "x_hap_f.wav", seconds=0.5, lead=0.3, tail=0.7))
     assert onset == pytest.approx(0.3, abs=0.02) and offset == pytest.approx(0.8, abs=0.02)
+
+
+# --- what the calibration window shows (analysis, cards, the plan's peaks) -------------
+
+def test_analysis_measures_level_clipping_and_the_speech_span(tmp_path):
+    import numpy as np
+    import soundfile as sf
+
+    from emognition.audio.analysis import analyse_clip
+
+    rate = 16000
+    t = np.arange(int(0.5 * rate)) / rate
+    tone = 0.5 * np.sin(2 * np.pi * 440 * t)
+    tone[100:103] = 1.0                                           # three clipped samples
+    data = np.concatenate([np.zeros(int(0.3 * rate)), tone, np.zeros(int(0.7 * rate))])
+    path = tmp_path / "x_hap_f.wav"
+    sf.write(str(path), data, rate, subtype="FLOAT")
+    a = analyse_clip(str(path))
+    assert a.duration == pytest.approx(1.5) and a.channels == 1 and a.clipped == 3
+    assert a.onset == pytest.approx(0.3, abs=0.02) and a.offset == pytest.approx(0.8, abs=0.02)
+    assert a.tail_silence == pytest.approx(0.7, abs=0.02)
+    assert a.peak_db == pytest.approx(0.0, abs=0.01)
+    assert a.rms_curve_db.max() == pytest.approx(20 * np.log10(0.5 / np.sqrt(2)), abs=0.5)
+    assert a.threshold_db == pytest.approx(a.rms_curve_db.max() - 40.0)
+    assert a.spectrogram_db.max() == 0.0 and a.spec_freqs.max() <= 8000.0
+    peak_bin = a.spec_freqs[int(np.argmax(a.spectrogram_db.max(axis=1)))]
+    assert abs(peak_bin - 440.0) < 40.0                           # the tone's frequency
+
+
+def test_clip_cards_share_a_time_scale(tmp_path):
+    import numpy as np
+
+    from emognition.audio.analysis import analyse_samples
+    from emognition.imaging.clips import clip_card
+
+    rate = 16000
+    short = analyse_samples(0.3 * np.sin(np.arange(rate) * 0.2), rate)          # 1 s
+    card = clip_card(short, width=300, height=160, span=2.0)                    # on a 2 s scale
+    assert card.size == (300, 160)
+    for y in (10, 60, 140):                                     # waveform, spectrogram, RMS curve
+        assert card.getpixel((280, y)) == (232, 232, 238)         # blank past its end
+    assert min(short.wave_min) == pytest.approx(-0.3, abs=0.01) and max(short.wave_max) == pytest.approx(0.3, abs=0.01)
+
+
+def test_plan_records_peaks_and_the_gain_really_applied(tmp_path):
+    import numpy as np
+    import soundfile as sf
+
+    from emognition.audio import NormalizationMethod, plan_batch
+
+    rate = 16000
+    loud = np.concatenate([np.zeros(4000), 0.9 * np.sin(np.arange(8000) * 0.3), np.zeros(4000)])
+    sf.write(str(tmp_path / "a_hap_f.wav"), loud, rate)
+    plan = plan_batch([str(tmp_path / "a_hap_f.wav")], str(tmp_path / "out"),
+                      method=NormalizationMethod.RMS, target_db=-3.0)
+    (clip,) = plan.clips
+    assert clip.peak_db == pytest.approx(20 * np.log10(0.9), abs=0.05)
+    assert clip.will_limit and plan.gain_applied_db(clip) == pytest.approx(-1.0 - clip.peak_db)
+
+
+def test_flags_point_at_the_clips_worth_a_listen():
+    from emognition.audio.analysis import analyse_samples, check_folder
+
+    rate = 16000
+    speech = np.zeros(rate)
+    speech[3200:12800] = 0.5 * np.sin(np.arange(9600) * 2 * np.pi * 220 / rate)   # 0.2-0.8 s
+    noise = 0.02 * np.random.default_rng(1).standard_normal(rate)
+    clips = [
+        analyse_samples(speech, rate, path="clean.wav"),
+        analyse_samples(np.clip(speech * 3, -1.0, 1.0), rate, path="clipped.wav"),
+        analyse_samples(speech + 0.05, rate, path="dc.wav"),
+        analyse_samples(speech * 0.05, rate, path="quiet.wav"),                 # peak -32 dBFS
+        analyse_samples(speech + noise, rate, path="noisy.wav"),                # 25 dB margin
+        analyse_samples(np.concatenate([speech[3200:12800], np.zeros(3200)]), rate, path="edge.wav"),
+        analyse_samples(speech[::2], rate // 2, path="slow.wav"),               # 8 kHz among 16
+    ]
+    keys = [{f.key for f in flags} for flags in check_folder(clips)]
+    assert keys[0] == set()
+    assert "clipped" in keys[1] and "dc" in keys[2] and keys[3] == {"quiet"}
+    assert keys[4] == {"noisy", "edge"}          # the noise counts as speech, to both ends
+    assert keys[5] == {"edge"} and keys[6] == {"rate"}
+    assert clips[0].noise_floor_db < -200 and clips[4].noise_floor_db == pytest.approx(-34, abs=2)
+
+
+def test_before_after_predicts_then_measures(tmp_path):
+    import soundfile as sf
+
+    from emognition.audio.review import before_after, measure_written
+
+    rate = 16000
+    tone = 0.3 * np.sin(np.arange(8000) * 2 * np.pi * 300 / rate)               # 0.5 s
+    for name, tail in (("a_hap_f.wav", 0.30), ("b_sad_m.wav", 0.05)):
+        sf.write(str(tmp_path / name), np.concatenate([np.zeros(3200), tone, np.zeros(int(tail * rate))]), rate)
+    paths = sorted(str(p) for p in tmp_path.glob("*.wav"))
+    plan = plan_batch(paths, str(tmp_path / "out"), method=NormalizationMethod.RMS)
+    predicted = {m.key: m for m in before_after(plan)}
+    assert predicted["tail"].before == pytest.approx((300, 50), abs=15)
+    assert predicted["tail"].after == pytest.approx((100, 50), abs=15)       # trimmed, never padded
+    assert predicted["lead"].after == pytest.approx((100, 100), abs=15)
+    assert predicted["loudness"].after == pytest.approx((plan.target_db,) * 2, abs=0.01)
+    assert predicted["peak"].reference == plan.ceiling_db
+
+    measured = {m.key: m for m in before_after(plan, measure_written(apply_plan(plan), plan.method))}
+    assert measured["tail"].after == pytest.approx(predicted["tail"].after, abs=15)
+    assert measured["loudness"].after == pytest.approx(predicted["loudness"].after, abs=0.2)
+    assert measured["duration"].after == pytest.approx(predicted["duration"].after, abs=0.001)
+
+
+def test_peak_normalisation_has_no_separate_peak_panel(tmp_path):
+    import soundfile as sf
+
+    from emognition.audio.review import before_after
+
+    sf.write(str(tmp_path / "a_hap_f.wav"), 0.2 * np.sin(np.arange(RATE) * 0.1), RATE)
+    plan = plan_batch([str(tmp_path / "a_hap_f.wav")], str(tmp_path / "out"), method=NormalizationMethod.PEAK)
+    metrics = before_after(plan)
+    assert [m.key for m in metrics] == ["duration", "lead", "tail", "loudness"]
+    assert metrics[-1].title == "Peak level" and metrics[-1].after == pytest.approx((-1.0,), abs=0.01)

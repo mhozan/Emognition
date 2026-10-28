@@ -1065,7 +1065,9 @@ class ConfigWindow(QWidget):
     def _open_calibration(self) -> None:
         from .calibration_window import CalibrationWindow
 
-        self._calib = CalibrationWindow()
+        # The folder being set up, and the Volume the SPL tone must play at (the session's).
+        self._calib = CalibrationWindow(folder=self.audio_dir.text().strip() or None,
+                                        volume=self.volume.value())
         # Delete on close so 'destroyed' fires and the setup window comes back.
         self._calib.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
         self._calib.destroyed.connect(self._on_calibration_closed)
