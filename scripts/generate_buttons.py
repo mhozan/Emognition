@@ -6,9 +6,12 @@
 # as published by the Free Software Foundation, either version 3 of the
 # License, or (at your option) any later version. See the LICENSE file.
 
-"""Generate the emoticon button images into assets/images/ (``<caption><emotion>.png``).
+"""Generate the participant-screen button images into assets/images/.
 
-Run with:  .venv/bin/python scripts/generate_emoticons.py [--size 512] [--out DIR]
+Run with:  .venv/bin/python scripts/generate_buttons.py [--size 512] [--out DIR]
+
+Two kinds: the emoticon faces (``<caption><emotion>.png``) and the replay
+button (``replaybutton.png``).
 
 The faces are the original Emognition artwork -- a 100 x 100 px bitmap set that
 looked soft and jagged once scaled up to a modern screen -- redrawn as geometry,
@@ -30,6 +33,10 @@ Both are SIL Open Font License; only the rendered PNGs ship with the app.
 
 Caption sets, by file prefix (= emognition.ui.assets.Caption): 0 English,
 1 Chinese, 2 none (the original default), 3 Spanish (Latin-American usage).
+
+The replay button keeps the original's idea -- a dark tile with a circular arrow
+and "REPLAY" -- drawn cleanly: a smooth clockwise ring ending in an arrowhead,
+on a rounded tile whose corners are transparent, so it sits on any background.
 """
 
 from __future__ import annotations
@@ -199,6 +206,56 @@ def render(emotion: str, caption: str, size: int, fonts) -> Image.Image:
     return image.resize((size, size), Image.Resampling.LANCZOS)
 
 
+# The replay button: a dark indigo tile, white ring arrow and label (0..1 units).
+REPLAY_TILE = (42, 39, 72, 255)
+REPLAY_EDGE = (78, 72, 122, 255)
+REPLAY_INK = (255, 255, 255, 255)
+REPLAY_RING = (0.5, 0.42, 0.235)          # centre x, centre y, radius
+REPLAY_ARC = (-25.0, 268.0)               # clockwise, degrees from 3 o'clock (y down)
+REPLAY_STROKE = 0.068
+REPLAY_LABEL_Y = 0.845                    # baseline of "REPLAY"
+REPLAY_LABEL_SIZE = 0.165
+
+
+def render_replay(size: int, fonts) -> Image.Image:
+    """The replay button, *size* x *size* px RGBA (transparent outside the tile)."""
+    big = size * SUPERSAMPLE
+    image = Image.new("RGBA", (big, big), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(image)
+    pad, radius = 0.02 * big, 0.2 * big
+    draw.rounded_rectangle([pad, pad, big - pad, big - pad], radius=radius, fill=REPLAY_EDGE)
+    edge = 0.018 * big
+    draw.rounded_rectangle([pad + edge, pad + edge, big - pad - edge, big - pad - edge],
+                           radius=radius - edge, fill=REPLAY_TILE)
+
+    cx, cy, r = (v * big for v in REPLAY_RING)
+    start, end = REPLAY_ARC
+    width = REPLAY_STROKE * big
+    # A thick ring is drawn as one arc (a wide polyline of many short segments
+    # leaves a saw-toothed edge at this weight), with a round cap at its tail.
+    outer = r + width / 2
+    draw.arc([cx - outer, cy - outer, cx + outer, cy + outer], start, end,
+             fill=REPLAY_INK, width=round(width))
+    tail = (cx + r * math.cos(math.radians(start)), cy + r * math.sin(math.radians(start)))
+    draw.ellipse([tail[0] - width / 2, tail[1] - width / 2, tail[0] + width / 2, tail[1] + width / 2],
+                 fill=REPLAY_INK)
+    # Arrowhead at the arc's end, pointing along the clockwise tangent.
+    theta = math.radians(end)
+    px, py = cx + r * math.cos(theta), cy + r * math.sin(theta)
+    tx, ty = -math.sin(theta), math.cos(theta)        # clockwise tangent (y down)
+    nx, ny = math.cos(theta), math.sin(theta)         # outward normal
+    length, half = 0.14 * big, 0.105 * big
+    tip = (px + tx * length * 0.75, py + ty * length * 0.75)
+    back = (px - tx * length * 0.25, py - ty * length * 0.25)
+    draw.polygon([tip, (back[0] + nx * half, back[1] + ny * half),
+                  (back[0] - nx * half, back[1] - ny * half)], fill=REPLAY_INK)
+
+    latin = fonts[0]
+    font = ImageFont.truetype(latin, REPLAY_LABEL_SIZE * big)
+    draw.text((0.5 * big, REPLAY_LABEL_Y * big), "REPLAY", font=font, fill=REPLAY_INK, anchor="ms")
+    return image.resize((size, size), Image.Resampling.LANCZOS)
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n", 1)[0])
     parser.add_argument("--size", type=int, default=512, help="image size in px (default 512)")
@@ -213,6 +270,9 @@ def main(argv: list[str] | None = None) -> int:
             path = os.path.join(args.out, f"{caption}{emotion}.png")
             render(emotion, caption, args.size, fonts).save(path, optimize=True)
             print(f"wrote {path}")
+    path = os.path.join(args.out, "replaybutton.png")
+    render_replay(args.size, fonts).save(path, optimize=True)
+    print(f"wrote {path}")
     return 0
 
 
